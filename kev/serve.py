@@ -178,6 +178,7 @@ def main():
     ap.add_argument("--run", default="runs/kev")
     ap.add_argument("--fallback", default="runs/smoke")
     ap.add_argument("--port", type=int, default=8008)
+    ap.add_argument("--host", default="0.0.0.0")   # 0.0.0.0: K8s probes/gateway reach the pod IP; override with 127.0.0.1 for local use
     a = ap.parse_args()
     from .evaluate import resolve_run
     is_hub_id = re.fullmatch(r"[\w.-]+/[\w.-]+", a.run) and not os.path.isdir(a.run)
@@ -191,7 +192,7 @@ def main():
     STATE.update(run=label, tok=tok, model=model, dev=dev, base=meta["base"], lora=meta["lora"])
     print(f"serving {label} ({run}) on {dev} :{a.port}")
     import uvicorn
-    uvicorn.run(app, host="127.0.0.1", port=a.port)
+    uvicorn.run(app, host=a.host, port=a.port)
 
 
 if __name__ == "__main__":

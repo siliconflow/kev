@@ -4,6 +4,15 @@ name: docker-build
 # Same convention as the vLLM/SGLang agent repos (FaaS Push Skill §7.5):
 #   - trigger: push to main (github.sha on main = merge commit)
 #   - image tag = 7-char short SHA of that commit; no latest/main tags (§7.1)
+#
+# Dual-registry push (2026-09-20): one build, two tags.
+#   primary  : hub.6scloud.com/d1r7umcsfi9c73b4drdg/kev:<short-sha>
+#   mirror   : hub.6scloud.com/clxuaivn500083i7ncuxpw8cf/${REMOTE_IMAGE_NAME}:${REMOTE_TAG_NAME}
+# REMOTE_IMAGE_NAME / REMOTE_TAG_NAME are read from repo secrets; when unset
+# they fall back to `kev` / the same short SHA (i.e. both namespaces get the
+# identical image:tag). Same registry host => one docker login covers both
+# pushes; the REGISTRY_USER account must hold push rights in BOTH namespaces
+# (if the mirror push 403s, that is an account-permission issue, not CI).
 on:
   push:
     branches: [main]
@@ -12,6 +21,7 @@ on:
 env:
   REGISTRY: hub.6scloud.com
   NAMESPACE: d1r7umcsfi9c73b4drdg
+  MIRROR_NAMESPACE: clxuaivn500083i7ncuxpw8cf
   IMAGE_NAME: kev
 
 jobs:
@@ -24,9 +34,20 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Compute image tag
+      - name: Compute image tags
         id: vars
-        run: echo "short=${GITHUB_SHA:0:7}" >> "$GITHUB_OUTPUT"
+        env:
+          REMOTE_IMAGE_NAME: ${{ secrets.REMOTE_IMAGE_NAME }}
+          REMOTE_TAG_NAME: ${{ secrets.REMOTE_TAG_NAME }}
+        run: |
+          short="${GITHUB_SHA:0:7}"
+          remote_image="${REMOTE_IMAGE_NAME:-kev}"
+          remote_tag="${REMOTE_TAG_NAME:-$short}"
+          {
+            echo "short=$short"
+            echo "remote_image=$remote_image"
+            echo "remote_tag=$remote_tag"
+          } >> "$GITHUB_OUTPUT"
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -40,16 +61,20 @@ jobs:
 
       # SF GPU Functions run nvidia instances only -> linux/amd64 (FaaS Push
       # Skill §7.3). If arm64 (Ascend) variants ever appear, add platforms here.
+      # One build, two tags: buildx pushes both in a single run.
       - name: Build and push
         uses: docker/build-push-action@v6
         with:
           context: .
           platforms: linux/amd64
           push: true
-          tags: ${{ env.REGISTRY }}/${{ env.NAMESPACE }}/${{ env.IMAGE_NAME }}:${{ steps.vars.outputs.short }}
+          tags: |
+            ${{ env.REGISTRY }}/${{ env.NAMESPACE }}/${{ env.IMAGE_NAME }}:${{ steps.vars.outputs.short }}
+            ${{ env.REGISTRY }}/${{ env.MIRROR_NAMESPACE }}/${{ steps.vars.outputs.remote_image }}:${{ steps.vars.outputs.remote_tag }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-      - name: Report image tag
+      - name: Report image tags
         run: |
-          echo "image: ${{ env.REGISTRY }}/${{ env.NAMESPACE }}/${{ env.IMAGE_NAME }}:${{ steps.vars.outputs.short }}"
+          echo "primary: ${{ env.REGISTRY }}/${{ env.NAMESPACE }}/${{ env.IMAGE_NAME }}:${{ steps.vars.outputs.short }}"
+          echo "mirror : ${{ env.REGISTRY }}/${{ env.MIRROR_NAMESPACE }}/${{ steps.vars.outputs.remote_image }}:${{ steps.vars.outputs.remote_tag }}"

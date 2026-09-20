@@ -50,12 +50,36 @@ def _probs(rec):
         t = time.time(); ps = model.probs(enc)
         if dev == "mps": torch.mps.synchronize()
         dt = time.time() - t
+    METRICS["latency_ms"].append(dt * 1000)
     return [p.tolist() for p in ps], {"tokens": len(enc["ids"]), "state_tokens": enc["seg"].count(0), "latency_ms": round(dt * 1000, 1)}
+
+
+METRICS = {"latency_ms": [], "requests": 0}
+
+_LAT_BUCKETS = [5, 10, 25, 50, 100, 250, 500, 1000, 2500, 5000, 10000]   # ms; bracket kev's ~30ms-1s prefill range
+
+
+@app.get("/metrics")
+def metrics():
+    """Prometheus text exposition (the platform's prometheusScraper polls this); no client dependency."""
+    from fastapi.responses import PlainTextResponse
+    lats = METRICS["latency_ms"]
+    def bucket_vals():
+        # cumulative Prometheus buckets: le=b counts every x <= b, so the values are non-decreasing in b
+        return [(b, sum(1 for x in lats if x <= b)) for b in _LAT_BUCKETS]
+    lines = [f"kev_requests_total {METRICS['requests']}", f"kev_inferences_total {len(lats)}"]
+    if lats:
+        lines += [f"kev_inference_latency_ms_count {len(lats)}", f"kev_inference_latency_ms_sum {sum(lats):.1f}"]
+        lines += [f'kev_inference_latency_ms_bucket{{le="{b}"}} {c}' for b, c in bucket_vals()]
+        lines.append(f'kev_inference_latency_ms_bucket{{le="+Inf"}} {len(lats)}')
+    lines.append(f'kev_model_info{{run="{STATE.get("run") or ""}",base="{STATE.get("base") or ""}",device="{STATE.get("dev") or ""}"}} 1')
+    return PlainTextResponse("\n".join(lines) + "\n")
 
 
 @app.post("/v1/systemone")
 def systemone(req: SystemOneRequest):
     """TypeSafe-compatible endpoint: typed questions in, typed answers out, one prefill pass."""
+    METRICS["requests"] += 1
     rec, meta = to_record(req)
     ps, m = _probs(rec)
     answers = to_answers(ps, meta)

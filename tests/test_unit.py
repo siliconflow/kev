@@ -97,3 +97,58 @@ def test_encode_positions_restart_per_branch(tok):
     assert all(enc["pos"][i] == S for i in starts)
     assert enc["labels"] == [0, 1] and [len(o) for o in enc["opt_idx"]] == [2, 3]
     assert all(enc["ids"][d] == tok.convert_tokens_to_ids(SPECIAL[4]) for d in enc["decide_idx"])
+
+
+def test_ms_snapshot_downloads_and_resumes_from_cache(tmp_path, monkeypatch):
+    """_ms_snapshot: fetches the file listing + raw files, verifies sha256, re-runs hit the cache (no re-download)."""
+    import hashlib, io, json
+    from unittest.mock import patch
+    from kev.evaluate import _ms_snapshot
+
+    blob = b"weights-bytes"
+    sha = hashlib.sha256(blob).hexdigest()
+    listing = {"Data": {"Files": [{"Path": "config.json", "Sha256": hashlib.sha256(b"{}").hexdigest(), "Size": 2, "Type": "blob"},
+                                  {"Path": "model.safetensors", "Sha256": sha, "Size": len(blob), "Type": "blob"}]}}
+
+    def fake_urlopen(url, timeout=None):
+        if "repo/files" in url:
+            return io.BytesIO(json.dumps(listing).encode())
+        assert "FilePath=" in url
+        if "config.json" in url:
+            return io.BytesIO(b"{}")
+        return io.BytesIO(blob)
+
+    with patch("kev.evaluate.urllib.request.urlopen", side_effect=fake_urlopen):
+        dest = _ms_snapshot("Qwen/Qwen3-4B-Base", cache_root=str(tmp_path))
+        assert open(f"{dest}/model.safetensors", "rb").read() == blob
+        assert open(f"{dest}/config.json", "rb").read() == b"{}"
+
+        # corrupt the cached file: the sha256 check must trigger a re-download
+        open(f"{dest}/model.safetensors", "wb").write(b"corrupt")
+        _ms_snapshot("Qwen/Qwen3-4B-Base", cache_root=str(tmp_path))
+        assert open(f"{dest}/model.safetensors", "rb").read() == blob
+
+    # listing counts as 2 files but config.json never changed; second call downloaded only the corrupted one
+    with patch("kev.evaluate.urllib.request.urlopen", side_effect=fake_urlopen) as m:
+        _ms_snapshot("Qwen/Qwen3-4B-Base", cache_root=str(tmp_path))
+        assert m.call_count == 1   # the listing only — both files are intact in the cache
+
+
+def test_metrics_endpoint_shapes():
+    """/metrics: text exposition with buckets, and request counters increment."""
+    import importlib
+    from fastapi.testclient import TestClient
+    import kev.serve as S
+    client = TestClient(S.app)
+
+    r = client.get("/metrics")
+    assert r.status_code == 200 and "kev_requests_total" in r.text and 'kev_model_info{run=""' in r.text
+    assert 'kev_inference_latency_ms_bucket{le="+Inf"}' not in r.text   # no inferences yet
+
+    # fake an inference latency, then the histogram + Inf bucket must appear, monotonically increasing
+    S.METRICS["latency_ms"].append(42.0); S.METRICS["requests"] += 1
+    r = client.get("/metrics")
+    assert 'le="+Inf"} 1' in r.text and "kev_inference_latency_ms_sum 42.0" in r.text
+    buckets = [float(l.split("} ")[1]) for l in r.text.splitlines() if "latency_ms_bucket" in l and "+Inf" not in l]
+    assert buckets == sorted(buckets) and buckets[-1] == 1
+    S.METRICS["latency_ms"].clear(); S.METRICS["requests"] = 0   # don't leak into other tests' module state

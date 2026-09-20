@@ -7,7 +7,7 @@
 4. isolation: can question B read a secret placed in sibling question A? (must not) / in state (should)
 5. latency + equality: packed N questions vs N separate calls
 """
-import argparse, json, math, os, random, time, string
+import argparse, json, math, os, random, time, string, urllib.parse
 from collections import defaultdict
 import numpy as np
 import torch
@@ -25,11 +25,57 @@ def ece(conf, correct, bins=10):
     return float(e)
 
 
+def _default_hf_timeouts():
+    """Slow-mirror deployments: raise hf_hub's 10s socket timeouts before huggingface_hub reads them at import.
+    setdefault, so an explicit HF_HUB_*_TIMEOUT always wins; no-op when the module is already imported."""
+    os.environ.setdefault("HF_HUB_ETAG_TIMEOUT", "30")
+    os.environ.setdefault("HF_HUB_DOWNLOAD_TIMEOUT", "600")
+
+
 def resolve_run(run):
     """Local run directory, or a Hub repo id like jaredpalmer/kev-0.5b (downloaded to the HF cache)."""
+    _default_hf_timeouts()
     if os.path.isdir(run): return run
     from huggingface_hub import snapshot_download
     return snapshot_download(run, allow_patterns=["*.json", "*.safetensors", "*.pt", "*.txt", "*.jinja"])
+
+
+# ModelScope mirrors popular bases (Qwen/...) with the same repo id; the raw-file endpoint 302s to a CDN.
+# Used only when the caller can't reach HF (KEV_BASE_HUB=modelscope) — the adapter still comes from the Hub.
+MS_API = "https://modelscope.cn/api/v1/models"
+
+def _ms_snapshot(repo, cache_root=None):
+    """Download a ModelScope repo (all files) to ~/.cache/kev-modelscope/<namespace>/<name>, stdlib only.
+    Files are cached by their listed Sha256 — a completed tree is never re-downloaded."""
+    import shutil, urllib.request
+    root = os.path.expanduser(cache_root or os.environ.get("KEV_MS_CACHE", "~/.cache/kev-modelscope"))
+    dest = os.path.join(root, *repo.split("/"))
+    os.makedirs(dest, exist_ok=True)
+    url = f"{MS_API}/{repo}/repo/files?Revision=master&Recursive=true"
+    with urllib.request.urlopen(url, timeout=60) as r:
+        import json as _json; files = _json.load(r)["Data"]["Files"]
+    n = 0
+    for f in files:
+        if f.get("Type") == "tree": continue
+        path, sha = f["Path"], f.get("Sha256")
+        out = os.path.join(dest, path); os.makedirs(os.path.dirname(out) or dest, exist_ok=True)
+        if os.path.exists(out) and (not sha or _file_sha256(out) == sha):
+            continue
+        with urllib.request.urlopen(f"{MS_API}/{repo}/repo?FilePath={urllib.parse.quote(path)}&Revision=master", timeout=60) as r, open(out + ".part", "wb") as w:
+            shutil.copyfileobj(r, w)
+        os.replace(out + ".part", out)   # atomic: a .part file is never mistaken for a complete download
+        n += 1
+    print(f"modelscope: {repo} -> {dest} ({n} file(s) downloaded, {len(files) - n} cached)")
+    return dest
+
+
+def _file_sha256(path):
+    import hashlib
+    h = hashlib.sha256()
+    with open(path, "rb") as f:
+        for chunk in iter(lambda: f.read(1 << 20), b""):
+            h.update(chunk)
+    return h.hexdigest()
 
 
 def load(run, dev, dtype=None):
@@ -39,8 +85,14 @@ def load(run, dev, dtype=None):
     run = resolve_run(run)
     meta = torch.load(f"{run}/head.pt", map_location="cpu")
     dtype = dtype or {"bf16": torch.bfloat16, "fp16": torch.float16}.get(os.environ.get("KEV_DTYPE", ""), torch.float32)
-    tok = load_tokenizer(meta["base"], revision=meta.get("base_revision"))
-    m = DecisionModel(meta["base"], tok, dev, lora=None, revision=meta.get("base_revision"), head_dim=meta.get("head_dim", 256),
+    # Base from ModelScope (KEV_BASE_HUB=modelscope) when HF is slow/unreachable: swap the pinned HF id for a
+    # local MS snapshot path. base_revision pins an HF commit and is meaningless on the MS mirror (master).
+    if os.environ.get("KEV_BASE_HUB") == "modelscope":
+        base, base_revision = _ms_snapshot(meta["base"]), None
+    else:
+        base, base_revision = meta["base"], meta.get("base_revision")
+    tok = load_tokenizer(base, revision=base_revision)
+    m = DecisionModel(base, tok, dev, lora=None, revision=base_revision, head_dim=meta.get("head_dim", 256),
                       option_isolation=meta.get("option_isolation", False), dtype=dtype)
     from peft import PeftModel
     m.lm = PeftModel.from_pretrained(m.lm, run).to(dev)   # trainable token embeddings, if any, are inside the adapter

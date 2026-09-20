@@ -35,6 +35,12 @@ RUN pip install --no-cache-dir --no-deps .
 RUN useradd --create-home --shell /bin/bash appuser
 USER appuser
 
+# Weights are pulled from HF Hub at runtime via HF_ENDPOINT=hf-mirror.com;
+# that mirror only fronts plain HTTP downloads. The hub's Xet middleware
+# would bypass it and hit cas-server-xethub.hf.sc4.ai directly (unreachable
+# from CN networks) -> snapshot_download ConnectionError. Disable Xet.
+ENV HF_HUB_DISABLE_XET=1
+
 EXPOSE 8000
 # The SF cloud-function yaml overrides `command` for serve flags
 # (see deploy/kev-4b-4090.yaml in os_jev_exp).

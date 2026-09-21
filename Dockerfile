@@ -24,6 +24,13 @@ WORKDIR /workspace
 # DeltaNet layers on CUDA (README: "install flash-linear-attention for the
 # Qwen3.5 models"; without it the recurrent path falls back to a slow one).
 COPY pyproject.toml ./
+# causal-conv1d: optimized Triton kernel for the Qwen3.5 Gated DeltaNet
+# causal-conv path. transformers 5.17 hub_kernels needs the causal_conv1d pip
+# distribution present to skip its reference fallback (deploy 2026-09-21 log
+# warning). PyPI ships sdist only (needs nvcc); use the prebuilt cp312 +
+# cu12 torch2.8 + cxx11abiTRUE wheel from upstream GitHub Releases instead.
+# (If the URL ever 404s, pip falls back to the sdist; the gcc/g++ from the
+# apt layer then fail fast at build time, not silently at runtime.)
 RUN pip install --no-cache-dir --index-url https://download.pytorch.org/whl/cu124 \
       "torch~=2.8.0" \
     && pip install --no-cache-dir \
@@ -31,13 +38,6 @@ RUN pip install --no-cache-dir --index-url https://download.pytorch.org/whl/cu12
       "pydantic>=2.9" "scikit-learn>=1.9.1" "transformers>=5.17,<6" \
       "fastapi>=0.115" "typesafe-sdk>=0.6.0" "uvicorn>=0.30" \
       "flash-linear-attention" "triton>=3.7.1" \
-    # causal-conv1d: optimized Triton kernel for the Qwen3.5 Gated DeltaNet
-    # causal-conv path. PyPI ships sdist only (needs nvcc); use the prebuilt
-    # cp312 + cu12 torch2.8 + cxx11abiTRUE wheel from upstream GitHub Releases
-    # instead (pip falls back to sdist if the URL ever 404s; gcc/g++ from the
-    # apt layer then fail fast at build time, not silently at runtime).
-    # transformers 5.17 hub_kernels only needs the causal_conv1d pip distribution
-    # present to skip the reference fallback (deploy 2026-09-21 log warning).
     && pip install --no-cache-dir \
       "causal-conv1d @ https://github.com/Dao-AILab/causal-conv1d/releases/download/v1.7.0/causal_conv1d-1.7.0+cu12torch2.8cxx11abiTRUE-cp312-cp312-linux_x86_64.whl"
 

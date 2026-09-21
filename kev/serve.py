@@ -7,7 +7,7 @@ import torch
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-from .api import SystemOneRequest, to_record, to_answers, output_tokens
+from .api import SystemOneRequest, to_record, to_answers, output_tokens, with_date_facts
 from .data import DISTRACTORS, NONE
 from .evaluate import load
 from .model import encode
@@ -17,7 +17,11 @@ INFER_MAX_STATE, INFER_MAX_BRANCH = 8192, 8192
 
 app = FastAPI(title="kev")
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
-STATE = {"run": None, "tok": None, "model": None, "dev": None, "lock": threading.Lock()}
+STATE = {"run": None, "tok": None, "model": None, "dev": None, "lock": threading.Lock(), "prefix_cache": {}, "prefix_hits": 0, "prefix_misses": 0}
+PREFIX_CACHE_SIZE = int(os.environ.get("KEV_PREFIX_CACHE", "4"))          # states kept (KV + hidden); 0 disables
+PREFIX_MIN_TOKENS = int(os.environ.get("KEV_PREFIX_MIN_TOKENS", "384"))
+TEMPERATURE = float(os.environ.get("KEV_TEMPERATURE", "1.0"))               # opt-in: probabilities ^ (1/T), renormalised; 2.0 is the value fitted in-distribution for the Qwen3.5 family (scripts/temperature_groups.py)
+DATE_FACTS = os.environ.get("KEV_DATE_FACTS", "0") == "1"                  # opt-in: append day counts between absolute dates in the state (api.with_date_facts)   # below this the branch-only pass is not faster on MPS (per-op overhead dominates)
 
 
 class Question(BaseModel):
@@ -41,17 +45,38 @@ def _rec(r: Record):
     return {"state": r.state, "questions": [{"instr": q.instr, "options": q.options, "label": 0} for q in r.questions]}
 
 
+def _sync(dev):
+    if dev == "mps": torch.mps.synchronize()
+    elif dev == "cuda": torch.cuda.synchronize()
+
+
 def _probs(rec):
+    """One forward pass; the state prefix (tokens up to the first question) is cached across requests, so a repeated state
+    only pays for its question branches. Exactness: the state's activations do not depend on the branches."""
     tok, model, dev = STATE["tok"], STATE["model"], STATE["dev"]
     try: enc = model.encode(tok, rec, max_state=INFER_MAX_STATE, max_branch=INFER_MAX_BRANCH)
     except ValueError as e: raise HTTPException(422, str(e))
+    Ls = enc["seg"].count(0); key = (tuple(enc["ids"][:Ls]), bool(enc.get("option_isolation")))
+    cache = STATE["prefix_cache"]
     with STATE["lock"]:
-        if dev == "mps": torch.mps.synchronize()
-        t = time.time(); ps = model.probs(enc)
-        if dev == "mps": torch.mps.synchronize()
-        dt = time.time() - t
+        _sync(dev); t = time.time()
+        eligible = PREFIX_CACHE_SIZE and Ls >= PREFIX_MIN_TOKENS
+        if eligible and key in cache:
+            prefix = cache.pop(key)                       # pop + reinsert = LRU order
+            ps = model.probs_with_prefix(enc, prefix); cache[key] = prefix
+            STATE["prefix_hits"] += 1; hit = True
+        elif eligible:
+            ps, prefix = model.probs_and_prefix(enc)      # one pass, and the state prefix is kept for next time
+            cache[key] = prefix
+            while len(cache) > PREFIX_CACHE_SIZE: cache.pop(next(iter(cache)))
+            STATE["prefix_misses"] += 1; hit = False
+        else:
+            ps = model.probs(enc); hit = False
+        _sync(dev); dt = time.time() - t
     METRICS["latency_ms"].append(dt * 1000)
-    return [p.tolist() for p in ps], {"tokens": len(enc["ids"]), "state_tokens": enc["seg"].count(0), "latency_ms": round(dt * 1000, 1)}
+    if TEMPERATURE != 1.0:                      # opt-in calibration: same as scaling the pointer logits by 1/T (argmax unchanged)
+        ps = [(lambda q: q / q.sum())(p.clamp_min(1e-9) ** (1.0 / TEMPERATURE)) for p in ps]
+    return [p.tolist() for p in ps], {"tokens": len(enc["ids"]), "state_tokens": Ls, "latency_ms": round(dt * 1000, 1), "prefix_cache_hit": hit}
 
 
 METRICS = {"latency_ms": [], "requests": 0}
@@ -80,6 +105,7 @@ def metrics():
 def systemone(req: SystemOneRequest):
     """TypeSafe-compatible endpoint: typed questions in, typed answers out, one prefill pass."""
     METRICS["requests"] += 1
+    if DATE_FACTS: req = req.model_copy(update={"state": with_date_facts(req.state)})
     rec, meta = to_record(req)
     ps, m = _probs(rec)
     answers = to_answers(ps, meta)
@@ -103,6 +129,7 @@ def systemone_permute(r: PermuteSystemOne):
         order = list(keys)
         if i > 0: rng.shuffle(order)
         req = r.request.model_copy(update={"questions": {r.question: q.model_copy(update={"criteria": {k: q.criteria[k] for k in order}})}})
+        if DATE_FACTS: req = req.model_copy(update={"state": with_date_facts(req.state)})
         rec, meta = to_record(req); ps, m = _probs(rec)
         a = to_answers(ps, meta)[r.question]
         runs.append({"order": order, "probabilities": a["probabilities"], "choice": a["choice"], "latency_ms": m["latency_ms"]})
@@ -115,7 +142,7 @@ def systemone_separate(req: SystemOneRequest):
     """Answer each question in its own request against the same state (N passes). For packed-vs-separate comparison."""
     answers, tokens, ms = {}, 0, 0.0
     for qid, q in req.questions.items():
-        rec, meta = to_record(req.model_copy(update={"questions": {qid: q}})); ps, m = _probs(rec)
+        rec, meta = to_record(req.model_copy(update={"questions": {qid: q}, **({"state": with_date_facts(req.state)} if DATE_FACTS else {})})); ps, m = _probs(rec)
         answers.update(to_answers(ps, meta)); tokens += m["tokens"]; ms += m["latency_ms"]
     return {"model": req.model, "answers": answers, "usage": {"input_tokens": tokens, "output_tokens": output_tokens(STATE["tok"], answers)}, "latency_ms": round(ms, 1)}
 
@@ -129,7 +156,8 @@ def models():
 def info():
     ev = f"{STATE['run']}/eval.json"
     return {"run": STATE["run"], "device": STATE["dev"], "base": STATE["base"], "lora": STATE["lora"],
-            "none_option": NONE, "distractors": DISTRACTORS, "has_eval": os.path.exists(ev)}
+            "none_option": NONE, "distractors": DISTRACTORS, "has_eval": os.path.exists(ev),
+            "prefix_cache": {"size": PREFIX_CACHE_SIZE, "min_state_tokens": PREFIX_MIN_TOKENS, "hits": STATE["prefix_hits"], "misses": STATE["prefix_misses"], "cached_states": len(STATE["prefix_cache"])}}
 
 
 @app.get("/api/eval")
@@ -188,6 +216,7 @@ def main():
     run = resolve_run(run)
     dev = "cuda" if torch.cuda.is_available() else "mps" if torch.backends.mps.is_available() else "cpu"
     meta = torch.load(f"{run}/head.pt", map_location="cpu")
+    if dev == "mps" and not os.environ.get("KEV_ATTN"): os.environ["KEV_ATTN"] = "sdpa"   # serving default on Apple GPUs (parity measured)
     tok, model = load(run, dev)
     STATE.update(run=label, tok=tok, model=model, dev=dev, base=meta["base"], lora=meta["lora"])
     print(f"serving {label} ({run}) on {dev} :{a.port}")

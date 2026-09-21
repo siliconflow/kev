@@ -15,7 +15,7 @@ BASES = ("Qwen/Qwen2.5-0.5B", "Qwen/Qwen3-0.6B-Base")
 # partitions live in git; large training partitions are fetched from this dataset on first use and verified against
 # the manifest, so the suite hash and every provenance record stay unchanged.
 SUITES_DATASET = "jaredpalmer/kev-suites"
-SUITES_REVISION = "a3318ddc1f630c5673232efacd8123a84de3f480"
+SUITES_REVISION = "a957287d1c502a4e2e3b9d9d1325c2c6f27f181c"
 
 
 def digest(path):

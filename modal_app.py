@@ -32,6 +32,9 @@ image = (
     modal.Image.debian_slim(python_version="3.13")
     .apt_install("git")
     .uv_sync(uv_project_dir=str(ROOT), groups=[])           # exact locked deps; Linux torch wheels are the CUDA build
+    # Gated DeltaNet kernels for the Qwen3.5 hybrid backbones (transformers falls back to slow reference code without them)
+    # fla refuses its gated chunk backward on Hopper with Triton 3.4-3.7.0 (incorrect results, fla#640); torch 2.8 pins 3.4
+    .uv_pip_install("flash-linear-attention", "triton>=3.7.1")
     .env({"HF_HOME": HF_MOUNT, "HF_HUB_DISABLE_PROGRESS_BARS": "1", "TOKENIZERS_PARALLELISM": "false", "PYTHONUNBUFFERED": "1"})
     .add_local_python_source("kev")
     .add_local_file(ROOT / "uv.lock", "/root/uv.lock")
@@ -54,7 +57,14 @@ def local_source_hashes():
     return source_hashes()
 
 
-@app.function(image=image, gpu=GPU, cpu=2, memory=(32768, 49152), max_containers=8, retries=0, timeout=7200,
+@app.function(image=image, cpu=1, memory=1024, timeout=120)
+def remote_source_hashes():
+    """Hashes of kev/*.py inside the deployed image: the launcher compares them with the checkout before spawning."""
+    from kev.experiment import source_hashes
+    return source_hashes()
+
+
+@app.function(image=image, gpu=GPU, cpu=4, memory=(65536, 196608), max_containers=8, retries=0, timeout=14400,   # a 35B-A3B bf16 checkpoint (70 GB) is staged through host memory while loading; the old 48 GB cap stalled the container
               volumes={RUNS_MOUNT: runs_volume, HF_MOUNT: hf_cache}, secrets=secrets)
 def run_trial(study, index, label, config, suite, expected_sources, git_commit, existing=None, transfer=None):
     """One trial in one container. `existing` is a checkpoint path on the runs volume or a Hub id (legacy scoring)."""
@@ -201,9 +211,9 @@ def launch_detached(suite, plan_path, name, gpu, existing=(), transfer=None, bud
     from kev.experiment import load_plan
     if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_-]{0,79}", name): raise ValueError("study name must be a simple unique identifier")
     if (ROOT / "runs" / name).exists(): raise FileExistsError("choose a new study name; existing results are immutable")
-    if not 60 <= timeout <= 7200 or not 0 < budget <= 250: raise ValueError("timeout must be 60..7200 seconds and study budget <= $250")
+    if not 60 <= timeout <= 14400 or not 0 < budget <= 250: raise ValueError("timeout must be 60..14400 seconds and study budget <= $250")
     trials = load_plan(ROOT / suite, ROOT / plan_path) if plan_path else []
-    rates = {"H100": 3.95, "T4": .59}
+    rates = {"H100": 3.95, "H200": 4.54, "B200": 6.25, "T4": .59}
     upper = (rates[gpu] + 2 * .04730 + 48 * .008) * timeout / 3600 * (len(trials) + len(existing))
     if upper > budget: raise ValueError(f"timeout-based compute bound ${upper:.2f} exceeds budget ${budget:.2f}")
     commit, sources = local_git_commit(), local_source_hashes()
@@ -215,9 +225,14 @@ def launch_detached(suite, plan_path, name, gpu, existing=(), transfer=None, bud
     # parent whose loss would cancel children, nothing tied to this client. Results land on the volume; `pull` collects them.
     try:
         target = modal.Function.from_name(APP_NAME, "run_trial"); target.hydrate()
+        deployed_sources = modal.Function.from_name(APP_NAME, "remote_source_hashes").remote()
+        if deployed_sources != sources:
+            changed = sorted(k for k in set(deployed_sources) | set(sources) if deployed_sources.get(k) != sources.get(k))
+            raise SystemExit(f"deployed app has different kev/*.py than this checkout ({', '.join(changed)}); run `uv run modal deploy modal_app.py` first")
+    except SystemExit:
+        raise
     except Exception as error:
-        print(f"deployed app not found ({type(error).__name__}); using the ephemeral function - run `modal deploy modal_app.py` for durable studies", flush=True)
-        target = run_trial
+        raise SystemExit(f"deployed app not usable ({type(error).__name__}: {str(error)[:120]}); run `uv run modal deploy modal_app.py` first - spawns on the ephemeral app die with this client")
     fn = target.with_options(gpu=gpu, timeout=timeout, retries=0)
     calls = [fn.spawn(*job) for job in jobs]
     (ROOT / "runs").mkdir(exist_ok=True)
@@ -244,10 +259,10 @@ def launch(suite, plan_path, name, gpu, existing=(), transfer=None, budget=20.0,
         raise ValueError("study name must be a simple unique identifier")
     if (ROOT / "runs" / name).exists():
         raise FileExistsError("choose a new study name; existing results are immutable")
-    if not 60 <= timeout <= 7200 or not 0 < budget <= 250:   # overnight authorization: $500 total, tracked in PLAN.md
-        raise ValueError("timeout must be 60..7200 seconds and study budget <= $250")
+    if not 60 <= timeout <= 14400 or not 0 < budget <= 250:   # overnight authorization: $500 total, tracked in PLAN.md
+        raise ValueError("timeout must be 60..14400 seconds and study budget <= $250")
     trials = load_plan(ROOT / suite, ROOT / plan_path) if plan_path else []
-    rates = {"H100": 3.95, "T4": .59}
+    rates = {"H100": 3.95, "H200": 4.54, "B200": 6.25, "T4": .59}
     if gpu not in rates:
         raise ValueError("no verified cost bound for this GPU")
     upper = (rates[gpu] + 2 * .04730 + 48 * .008) * timeout / 3600 * (len(trials) + len(existing))

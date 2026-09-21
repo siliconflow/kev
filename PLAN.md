@@ -1,5 +1,59 @@
 # Research plan
 
+This file is the living plan: where Kev stands, what runs next and the criteria decided before the runs, and open questions. Completed plans stay as records ([`PLAN_Qwen35.md`](PLAN_Qwen35.md), the Qwen3.5 port, done 2026-09-20). Everything older is kept below under **History**, dated.
+
+## Where we stand (2026-09-20, evening)
+
+- **Family:** Kev-0.8B / 4B / 9B on Qwen3.5 bases, one recipe (`decision-v7`, LoRA r=16, lr 1e-4 / 5e-5 / 5e-5). Locked test, out of domain: 0.668 / 0.832 / **0.837**; Jev 0.857 on the development items. Qwen3 checkpoints published as the previous generation.
+- **Gap to Jev (Kev-9B, `transfer-v4` dev, 4.5 pp overall):** knowledge (MMLU 0.74 vs 0.90; MMLU-Pro 0.545 vs 0.84) — the untrained base scores the same, so this is base capacity; date arithmetic (`deadline` 0.72 vs 0.93) — any LoRA fine-tune on our format erodes the base's skill (0.82 → 0.72), while the readout is intact (giving the model the day count yields 0.93–1.0, issue #8); calibration — Brier 0.291 vs 0.211, **coverage at ≤ 5 % error 0.53 vs 0.70**, confident errors 7.5 % vs 3.7 %; robustness — assertion-style Noul instructions ("The customer sounds angry.") drove Kev-4B to 0.79 vs Jev 0.91 on scienthoon's tickets.
+- **Tools now available:** `--init_from` delta fine-tunes from a released checkpoint (minutes, not hours); `--data` JSONL for custom records; `transfer-v9` (MMLU-Pro, buried, unknowable) and the SemIf / scienthoon external suites; coverage-at-error-budget and unknowable metrics in `kev.benchmark`.
+- **Budget:** ~$370 of the $500 overnight authorization spent (family + Qwen3.5 port); ~$130 remains for tonight.
+
+## Tonight's autoresearch (2026-09-20 → 21)
+
+Ordered by expected value. Each trial is either a **delta** (warm start from the released checkpoint, new records mixed with a replay sample of `decision-v7`, lr 2e-5, 1 epoch) or a **probe** (no training). Selection on development partitions only; one locked read per adopted candidate.
+
+| # | question | run | cost | adopt if (pre-registered) |
+|---|---|---|---|---|
+| 1 | Does a bigger MoE base fix the knowledge column? | Zero-shot probe of `Qwen3.5-35B-A3B-Base` on `transfer-v4` + `v9` (H200) | $6 | **Proceed to a Kev-35B-A3B trial** only if MMLU-Pro ≥ 0.70 and overall ≥ the 9B base's 0.729. |
+| 2 | Can calibration be bought without accuracy? (a) per-(type, K) temperature fitted on dev; (b) unknowable records with **uniform targets** as a delta from Kev-9B / Kev-4B | (a) $0, (b) 2 deltas ~$8 | Adopt if coverage@5 % error improves ≥ +5 pp on `transfer-v4` dev with accuracy within 1 pp of the released checkpoint; for (b) also unknowable share ≥ 0.9 falls (4B: 0.19 → ≤ 0.10). Temperature is reported as a separate row, never folded into raw numbers. |
+| 3 | Date arithmetic by construction (issue #8): date-bearing families rendered with relational day counts and a `date_facts` field; opt-in `date_facts` request preprocessor | 2 deltas ~$8 | Adopt the renderings if `deadline` ≥ 0.85 **with** the preprocessor and raw `deadline` does not fall, accuracy elsewhere within 1 pp. Report raw and preprocessed separately. |
+| 4 | Assertion-style Noul instructions | 1 delta each at 9B / 4B ~$8 | Adopt if scienthoon `angry` ≥ 0.85 at 4B with `transfer-v4` within 1 pp. |
+| 5 | Where does the eroded arithmetic live? Retention ablation: 4B from scratch, LoRA on attention + MLP only (DeltaNet projections frozen) | 1 trial $5 | Informational; if `deadline` ≥ 0.65 raw, DeltaNet-frozen becomes a candidate recipe for a follow-up. |
+| 6 | Combined delta (2b + 3 + 4) from Kev-9B and Kev-4B | 2 deltas ~$10 | Same rules as its parts; this is the promotion candidate if the parts pass. |
+| 7 | Third-party comparability: Kev-9B / 4B on ekzhang's 1,000-question MMLU-Pro sample (seed 42); GPQA-diamond as an eval-only source if the dataset is accessible | $3 | Reporting only. |
+| 8 | If #1 passes: Kev-35B-A3B, `decision-v7`, lr 5e-5, LoRA on attention + DeltaNet + shared expert, routed experts frozen, H200/B200 | ~$40 | Ship as a hosted tier only if `transfer-v4` dev ≥ Kev-9B + 2 pp **and** MMLU-Pro ≥ 0.70; one locked read. |
+
+Rules: accuracy comparisons are record-clustered paired bootstraps on the same items; "within 1 pp" means the point estimate. Deltas replace a released checkpoint only after the locked read confirms no regression there. Every adopted change is written into the model cards with the criteria outcome, met or not.
+
+Deferred, in order: MLX serving for the hybrid on Mac (the release's one regression: 0.78 s vs 0.17 s at 4B); multilingual slices; high-cardinality column; GGUF/browser path.
+
+## Results so far (2026-09-21, 23:00; the Qwen3.6-35B-A3B trials are still running)
+
+Spend tonight ≈ $85 (probes $14, deltas 12 × ~$1.5, dense $5, benches ~$12, locked reads $6, two failed 35B launches $8, 35B trials ~$25 running). Working notes: `scratchpad.txt`.
+
+| # | result | verdict |
+|---|---|---|
+| 1 | **Qwen3.5-35B-A3B-Base** zero-shot: `transfer-v4` 0.720 (9B base 0.729), MMLU 0.82, **MMLU-Pro 0.590**, deadline 0.75, rules worse. | Gate failed (needed MMLU-Pro ≥ 0.70). No base-MoE trial. |
+| 1′ | **Qwen3.6-35B-A3B (post-trained)** zero-shot with the SemIf prompt: **0.812** = trained Kev-9B; MMLU 0.85, deadline 0.88, emotion 0.62; rules weak (0.62 / 0.56). Plain prompt 0.726. | Gate passed (≥ 0.76). Two trials (lr 5e-5, 2e-5, `--weights_dtype bf16`, routed experts frozen, 21 M LoRA params) running on H200s. |
+| 2a | Single temperature T ≈ 2.0 fitted in-distribution **does** transfer OOD on the Qwen3.5 family: Kev-9B Brier 0.291 → 0.267, ECE 0.105 → 0.039, confident errors 7.5 % → 3.2 % (Jev 3.7 %), accuracy and coverage unchanged. Per-(type, K) temperatures are worse (OOD Score items have a K the in-distribution fit never saw; per-group scaling scrambles the cross-group confidence ranking). | Adopt as a reported **calibrated row**; `KEV_TEMPERATURE` in `kev.serve`. The coverage criterion was ill-posed for a global T (monotone). Grouped T rejected. |
+| 2b | Unknowable records with uniform targets (delta): share of evidence-free items answered at ≥ 0.9 → **0.00** at both sizes (from 0.05 / 0.19), controls unchanged. Coverage@5 % on `transfer-v4` dev: 9B 0.53 → 0.48, 4B 0.54 → 0.57. | Confidence criterion passed decisively; coverage criterion failed at 9B. Partial. |
+| 3 | Date renderings (delta) + `date_facts` preprocessor: deadline 9B 0.72 → 0.80 raw → **0.90 with the preprocessor**; 4B 0.55 → 0.60 → 0.82 (0.85 in the combined delta). The preprocessor alone on the released models: 0.75 / 0.68 — training to *bind* the fact is what makes it work. | **Passed** (≥ 0.85 with preprocessor, raw not lower, accuracy within 1 pp). |
+| 4 | Assertion-style Noul (delta): scienthoon `angry` 4B 0.794 → 0.821 alone, 0.859 in the combined delta; 9B 0.911 → 0.924. Side effect: raises confidence on evidence-free items (unknowable share 0.05 → 0.25 at 9B) and adds a few p = 1.00 errors on Noul tasks (tweet, PAWS) that cut coverage. | Passed only in combination; the combination's coverage cost is partly this. |
+| 5 | Dense ablation (LoRA on attention + MLP only, DeltaNet frozen, 4B seed 1): deadline **0.53 → 0.53**, transfer 0.800 → 0.780. | Freezing the recurrent layers does not preserve date arithmetic. Not a candidate. |
+| 6 | Combined deltas, **locked test** (one read each): 9B + dates + unknowable **0.852** OOD (+1.8 pp [+0.8, +2.9] over Kev-9B's 0.837), Brier 0.237, deadline 0.88, pairs 0.81, coverage@5 % 0.62 (from 0.66); 9B + all 0.851; 4B + dates + unknowable 0.837 (+1.0 [−0.1, +2.1]), Brier 0.255, coverage 0.68; 4B + all 0.828 (neutral). | **Promotion candidates: the dates + unknowable deltas at both sizes**, published as Hub branch `night2-du` (main untouched, awaiting sign-off). Costs to state in the cards: coverage@5 % −4 pp at 9B, scienthoon ECE +3 pp, MMLU-Pro −3 pp at 9B. |
+| 7 | ekzhang's 1,000-question MMLU-Pro sample: Kev-9B **0.511**, Kev-4B 0.468, Kev-8B (Qwen3) 0.488 (8 questions over the 384-token state limit counted wrong). Jev 0.829; untrained one-token Qwen3.6-35B-A3B 0.588; his $5 SFT ≈ 0.71. | Reporting. Knowledge is base-bound; the 3.6 trial is the only lever. GPQA-diamond is gated — needs the account to accept terms. |
+
+## Open questions
+
+- Why does LoRA fine-tuning on classification-shaped data erase multi-step latent computation (dates) while leaving recall (MMLU) intact? Trial 5 is the first probe; a follow-up is layer-wise LoRA ablation.
+- Is the 9B → 35B-A3B step a knowledge gain only, or does the MoE also change calibration and rule composition? Trial 1 and, if it passes, trial 8.
+- Does the unknowable-record training transfer to *unseen* kinds of missing evidence (scienthoon's org-rule priority is the external test)?
+
+---
+
+# History
+
 ## Current decision
 
 Use **Qwen3-0.6B-Base as the research baseline**. Keep the released Qwen2.5 checkpoint as a historical reference, not as an equally funded development track. Preserve the MacBook training path; run the controlled studies on Modal H100s.
@@ -10,8 +64,8 @@ Evidence: [ablation-v2 ledger](runs/ablation-v2/results.jsonl), [Qwen3 seed 0](r
 
 ## Evidence and corrections
 
-- Original kev versus Jev on familiar sources: 79.7% versus 81.1% micro accuracy; macro difference −1.8 points, 95% CI [−5.5, +1.7]. An interval including zero is not evidence of equivalence. [Comparison](runs/kev-vs-jev-v1.json), [figure](docs/kev-vs-jev.png).
-- Original kev versus Jev on transfer-v1: 63.3% versus 82.3%, macro difference −19.1 points, CI [−23.1, −15.0]. The overlap check covered 1,360 decision-v1 training/calibration states, **not every example used to train the released checkpoint**. Public pretraining overlap is unknown for both models. [Comparison](runs/kev-vs-jev-transfer-v1.json), [manifest](evals/transfer-v1/manifest.json).
+- Original Kev versus Jev on familiar sources: 79.7% versus 81.1% micro accuracy; macro difference −1.8 points, 95% CI [−5.5, +1.7]. An interval including zero is not evidence of equivalence. [Comparison](runs/kev-vs-jev-v1.json), [figure](docs/kev-benchmark.png).
+- Original Kev versus Jev on transfer-v1: 63.3% versus 82.3%, macro difference −19.1 points, CI [−23.1, −15.0]. The overlap check covered 1,360 decision-v1 training/calibration states, **not every example used to train the released checkpoint**. Public pretraining overlap is unknown for both models. [Comparison](runs/kev-vs-jev-transfer-v1.json), [manifest](evals/transfer-v1/manifest.json).
 - Lower aggregate ECE on transfer-v1 did not establish generally better calibration. Qwen3 trial 6 gets 50% authorization accuracy with 99.6% mean confidence on transfer-v2. Its familiar-source ECE falls from .073 to .026 after fitting temperature on calibration; this does not establish transfer calibration. [Result](runs/ablation-v2/06-trial-6/result.json).
 - Jev's zero observed argmax flips do **not** prove architectural invariance. Its probabilities move under permutation. [Jev transfer-v1 report](runs/transfer-jev-v1/report.json).
 - A none-present accuracy of 25% means 75% wrong, not necessarily 75% selecting none. Report actual none-option mass and selection separately. [Original comparison diagnostics](runs/kev-vs-jev-transfer-v1.json).
@@ -117,7 +171,7 @@ Findings so far tonight (v4 suites; Jev dev 0.845 / transfer 0.857):
 - **Fine-tuning loses base capability** ([`scripts/base_mmlu_probe.py`](scripts/base_mmlu_probe.py): the base model,
   zero-shot, next-token logits over option letters, same 80 frozen items per task):
 
-  | task (transfer-v4 dev) | 0.6B base | kev 0.6B | 4B base | kev 4B | 8B base | kev 8B | Jev |
+  | task (transfer-v4 dev) | 0.6B base | Kev 0.6B | 4B base | Kev 4B | 8B base | Kev 8B | Jev |
   |---|---|---|---|---|---|---|---|
   | MMLU | 0.425 | 0.46 | 0.688 | 0.60-0.66 | **0.762** | 0.65 | 0.90 |
   | PAWS | 0.70 | 0.56 | 0.787 | 0.56-0.71 | **0.85** | 0.70-0.78 | 0.79 |
@@ -143,11 +197,11 @@ Findings so far tonight (v4 suites; Jev dev 0.845 / transfer 0.857):
   (0.686, PAWS 0.45); 1 epoch is better calibrated (Brier 0.379, confident errors 2.7%) at equal accuracy; the
   2-epoch 4B run on v5 (23.6k records, 5.9k steps at lr 2e-4) **collapsed** (dev 0.58) - long runs at lr 2e-4 are unstable.
 - Research previews published, each with one exploratory (ungated) locked-test read, all above their development numbers:
-  [`kev-0.6b`](https://huggingface.co/jaredpalmer/kev-0.6b) dev 0.805/0.598 -> test 0.819/0.631;
-  [`kev-4b`](https://huggingface.co/jaredpalmer/kev-4b) (lowdrift-4b-v4/01-trial-1) dev 0.843/0.759 -> test 0.852/0.794;
-  [`kev-8b`](https://huggingface.co/jaredpalmer/kev-8b) (recipe-8b-r1/00-trial-0) dev 0.869/0.774 -> test 0.869/0.799.
+  [Kev-0.6B](https://huggingface.co/jaredpalmer/kev-0.6b) dev 0.805/0.598 -> test 0.819/0.631;
+  [Kev-4B](https://huggingface.co/jaredpalmer/kev-4b) (lowdrift-4b-v4/01-trial-1) dev 0.843/0.759 -> test 0.852/0.794;
+  [Kev-8B](https://huggingface.co/jaredpalmer/kev-8b) (recipe-8b-r1/00-trial-0) dev 0.869/0.774 -> test 0.869/0.799.
   None passes the predeclared 70% held-out-pair screen (0.11 / 0.62 / 0.61), so none is a versioned release.
-- kev-0.6b research preview published ([`jaredpalmer/kev-0.6b`](https://huggingface.co/jaredpalmer/kev-0.6b),
+- Kev-0.6B research preview published ([`jaredpalmer/kev-0.6b`](https://huggingface.co/jaredpalmer/kev-0.6b),
   card [`docs/model-cards/kev-0.6b.md`](docs/model-cards/kev-0.6b.md)); one exploratory (ungated) locked-test read:
   decision 0.819, transfer 0.631 ([`runs/locked/kev-06b-preview-ungated/summary.json`](runs/locked/kev-06b-preview-ungated/summary.json)).
 
@@ -197,7 +251,7 @@ Final replication (03:30): 4B lr 5e-5 at three seeds transfer 0.759 / 0.758 / 0.
 
 Where the 8B loses the 70% held-out-pair screen (64 relevant pairs; needs 45, has 39-43; Jev 55):
 
-| held-out family | kev-8b seeds 0 / 1 | Jev | missing from training |
+| held-out family | Kev-8B seeds 0 / 1 | Jev | missing from training |
 |---|---|---|---|
 | authorization | 20/20, 20/20 | 20/20 | - |
 | (A or B) and C | 6/8, 8/8 | 6/8 | - |
@@ -223,7 +277,7 @@ seed of 64 pairs. Study `v7-release-candidates`: 4B and 8B at lr 5e-5, two seeds
 
 **Untrained baselines on the same frozen items** (`scripts/base_mmlu_probe.py`, zero-shot letter logits, Modal):
 
-| transfer-v4 dev | 8B base, untrained | 30B-A3B base, untrained | kev-8b | Jev |
+| transfer-v4 dev | 8B base, untrained | 30B-A3B base, untrained | Kev-8B | Jev |
 |---|---|---|---|---|
 | accuracy | 0.726 | 0.707 | **0.774** | 0.857 |
 | Brier | 0.366 | 0.365 | **0.339** | 0.211 |
@@ -232,7 +286,7 @@ seed of 64 pairs. Study `v7-release-candidates`: 4B and 8B at lr 5e-5, two seeds
 | Emotion | 0.30 | 0.31 | **0.57** | 0.59 |
 | held-out rule pairs | 0.55 | 0.44 | **0.61** | 0.86 |
 
-kev-8b vs its own untrained base: +5.8 pp [+1.8, +10.0]; vs the untrained 30B-A3B: +9.7 pp [+4.7, +14.4]. The
+Kev-8B vs its own untrained base: +5.8 pp [+1.8, +10.0]; vs the untrained 30B-A3B: +9.7 pp [+4.7, +14.4]. The
 recipe does real work (rule composition, classification-shaped tasks) and *loses* on knowledge/paraphrase, where both
 untrained models beat it (MMLU 0.75-0.79 vs 0.69; PAWS 0.82-0.84 vs 0.76). "A bigger untrained MoE gets Jev-class
 results for free" is false on this suite; "the fine-tune erodes base capability" is confirmed a third way.
@@ -254,19 +308,35 @@ which points at the readout/format rather than at drift (the third outcome in th
 8B on v7, two seeds: transfer **0.796** / 0.774, pairs 0.69 / 0.64. 4B on v8 (v7 + `shipping_delay`, a day-precision
 date-threshold Score family built for the deadline skill): 0.777 / 0.759, pairs 0.69 / 0.56, deadline 0.53 / 0.45 -
 the extra family did nothing. **No config passes the screen on every seed**; 8B seed 0 misses by one pair (44/64).
-The deciding family is `deadline` (0.45-0.60 for every kev; untrained 8B/30B bases 0.53-0.55; Jev 0.93): day-precision
+The deciding family is `deadline` (0.45-0.60 for every Kev; untrained 8B/30B bases 0.53-0.55; Jev 0.93): day-precision
 date arithmetic to a 3-level ordinal in one forward pass looks like a capability limit at <= 8B for this readout, not a
 data gap - two purpose-built training families did not move it.
 
 Published as **updated research previews** (no version tag; each card records one locked read):
-[`kev-4b`](https://huggingface.co/jaredpalmer/kev-4b) = `v7-rc3/01-trial-1` (dev 0.854 / 0.790; locked 0.856 / **0.806**),
-[`kev-8b`](https://huggingface.co/jaredpalmer/kev-8b) = `v7-final/00-trial-0` (dev 0.863 / 0.796; locked **0.870** / 0.780).
+[Kev-4B](https://huggingface.co/jaredpalmer/kev-4b) = `v7-rc3/01-trial-1` (dev 0.854 / 0.790; locked 0.856 / **0.806**),
+[Kev-8B](https://huggingface.co/jaredpalmer/kev-8b) = `v7-final/00-trial-0` (dev 0.863 / 0.796; locked **0.870** / 0.780).
 The 8B locked read was interrupted once before any aggregate existed and redone (recorded in its summary).
 
 What would cross the bar, in order of my confidence: (1) an ordinal readout that models cumulative thresholds for Score
 questions (the models hedge to the middle level on deadline); (2) explicit day-count rendering in training states
 (teaching the arithmetic is not the point of a decision model; giving it the number is); (3) capacity beyond 8B.
 Spend to date ~$250 of $500.
+
+**Release (2026-09-20).** The three checkpoints are published as the Kev family, no version tags (nothing overlapping to
+version; the 0.5B prototype stays on the Hub for reference). The 70% held-out-pair screen is no longer a publication gate
+(it was within seed noise and decided by one arithmetic family); it stays in `kev.experiment` as a research gate and in
+`release-check`. Final selection, every checkpoint the best of its size on the leaderboard:
+Kev-0.6B = `v7-06b/02-trial-2` (dev 0.801 / 0.620, locked 0.808 / 0.642; three v7 seeds 0.613 / 0.605 / 0.620, all above
+the previous 0.598), Kev-4B = `v7-rc3/01-trial-1`, Kev-8B = `v7-final/00-trial-0`. Serving: fp32-merged LoRA, SDPA on MPS,
+state-prefix KV cache, shape bucketing (all parity-tested).
+
+**Qwen3.5 generation (2026-09-20).** Same data and recipe on Qwen3.5-4B/9B bases (hybrid Gated DeltaNet + attention; questions run
+as causal rows from a shared state instead of under a packed mask). Development criteria set in advance were not met (accuracy CI
+includes zero; deadline 0.72 not 0.75); the single locked-test read shows Kev-9B **0.837** vs Kev-8B 0.780 out of domain
+(+7.3 pp [+2.8, +11.7], Brier 0.243 vs 0.327) and Kev-4B 0.832 vs 0.806. Published as the current family: `jaredpalmer/kev-9b`,
+`jaredpalmer/kev-4b` (Qwen3 weights at tag `qwen3`) and `jaredpalmer/kev-0.8b` (locked 0.827 / 0.668 vs Kev-0.6B 0.808 / 0.642, +4.8 pp
+[+0.2, +9.3]); the Qwen3 checkpoints stay published as the fast Mac option and are no longer developed. The deadline family is a training-data
+problem, not a readout problem (issue #8; adapter-merge probe). Full log: [PLAN_Qwen35.md](PLAN_Qwen35.md).
 
 Ops: two studies were lost to the local client disconnecting (Modal cancels `.starmap` inputs when the caller dies; `--detach`
 keeps only the last-triggered function). Studies now fan out server-side from the **deployed** app (`modal deploy modal_app.py`;
@@ -299,7 +369,7 @@ Relevant code: [suite builder](kev/study_v3.py), [rule generator](kev/compositio
 
 Maintained by `kev.autoresearch`; full table in [`runs/leaderboard.md`](runs/leaderboard.md). Selection uses development partitions only.
 
-- **Qwen3-0.6B-Base** incumbent (v4 suites): transfer 0.610, dev 0.799, seeds [0], knobs `{"epochs": 2, "lr": 0.0001, "p_none_pair": 0.25}`
+- **Qwen3-0.6B-Base** incumbent (v4 suites): transfer 0.620, dev 0.801, seeds [2], knobs `{"epochs": 2, "lr": 0.0001, "p_none_pair": 0.25}`
 - **Qwen3-4B-Base** incumbent (v4 suites): transfer 0.775, dev 0.858, seeds [0], knobs `{"epochs": 2, "lr": 5e-05, "p_none_pair": 0.25}`
 - **Qwen3-8B-Base** incumbent (v4 suites): transfer 0.796, dev 0.863, seeds [0], knobs `{"epochs": 2, "lr": 5e-05, "p_none_pair": 0.25}`
 

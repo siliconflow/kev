@@ -33,11 +33,13 @@ def _default_hf_timeouts():
 
 
 def resolve_run(run):
-    """Local run directory, or a Hub repo id like jaredpalmer/kev-0.5b (downloaded to the HF cache)."""
+    """Local run directory, or a Hub repo id like jaredpalmer/kev-4b, optionally pinned to a revision or tag with
+    `@` (jaredpalmer/kev-4b@qwen3); downloaded to the HF cache."""
     _default_hf_timeouts()
     if os.path.isdir(run): return run
     from huggingface_hub import snapshot_download
-    return snapshot_download(run, allow_patterns=["*.json", "*.safetensors", "*.pt", "*.txt", "*.jinja"])
+    repo, _, revision = run.partition("@")
+    return snapshot_download(repo, revision=revision or None, allow_patterns=["*.json", "*.safetensors", "*.pt", "*.txt", "*.jinja"])
 
 
 # ModelScope mirrors popular bases (Qwen/...) with the same repo id; the raw-file endpoint 302s to a CDN.
@@ -113,13 +115,23 @@ def _file_sha256(path):
     return h.hexdigest()
 
 
-def load(run, dev, dtype=None):
+def load(run, dev, dtype=None, merge=True, attn=None):
     """dtype: None = fp32 (exact; what every reported number uses). KEV_DTYPE=bf16 or dtype=torch.bfloat16 halves memory
-    for serving large backbones; probabilities then differ from the fp32 numbers in the third decimal."""
+    for serving large backbones; probabilities then differ from the fp32 numbers in the third decimal.
+
+    merge (default): fold the LoRA into the base weights in fp32 before any cast. Exact in fp32 (max |dp| 0 measured),
+    and in bf16 it is both faster (~15%) and closer to the fp32 numbers than running the unmerged adapter in bf16
+    (kev-4b, 24 dev records: max |dp| 0.017 vs 0.029, 0 vs 1 argmax flips). KEV_MERGE=0 keeps the adapter separate.
+    attn: attention backend; None = the model default (SDPA on CUDA, eager elsewhere). KEV_ATTN=sdpa enables SDPA on MPS
+    (measured parity with eager; a few percent faster)."""
     import os
     run = resolve_run(run)
     meta = torch.load(f"{run}/head.pt", map_location="cpu")
     dtype = dtype or {"bf16": torch.bfloat16, "fp16": torch.float16}.get(os.environ.get("KEV_DTYPE", ""), torch.float32)
+    import json as _json
+    adapter_cfg = _json.loads(open(f"{run}/adapter_config.json").read())
+    merge = merge and os.environ.get("KEV_MERGE", "1") != "0" and not adapter_cfg.get("trainable_token_indices")   # token-trained adapters stay unmerged
+    attn = attn or os.environ.get("KEV_ATTN") or None
     # Base from ModelScope (KEV_BASE_HUB=modelscope) when HF is slow/unreachable: swap the pinned HF id for a
     # local MS snapshot path. base_revision pins an HF commit and is meaningless on the MS mirror (master).
     if os.environ.get("KEV_BASE_HUB") == "modelscope":
@@ -128,16 +140,17 @@ def load(run, dev, dtype=None):
         base, base_revision = meta["base"], meta.get("base_revision")
     tok = load_tokenizer(base, revision=base_revision)
     m = DecisionModel(base, tok, dev, lora=None, revision=base_revision, head_dim=meta.get("head_dim", 256),
-                      option_isolation=meta.get("option_isolation", False), dtype=dtype)
+                      option_isolation=meta.get("option_isolation", False), dtype=torch.float32 if merge else dtype, attn=attn)
     from peft import PeftModel
     m.lm = PeftModel.from_pretrained(m.lm, run).to(dev)   # trainable token embeddings, if any, are inside the adapter
-    if dtype != torch.float32: m.lm = m.lm.to(dtype)
     scale = float(os.environ.get("KEV_LORA_SCALE", "1"))
     if scale != 1:   # WiSE-FT-style interpolation between the base (0) and the fine-tuned weights (1), at inference, no retraining
         for module in m.lm.modules():
             if hasattr(module, "scaling") and isinstance(module.scaling, dict):
                 for k in module.scaling: module.scaling[k] *= scale
         m.lora_scale = scale
+    if merge: m.lm = m.lm.merge_and_unload()               # in fp32: exact
+    if dtype != torch.float32: m.lm = m.lm.to(dtype)
     m.head.load_state_dict(meta["head"]); m.eval()
     return tok, m
 

@@ -7,6 +7,7 @@ materialize() -> internal record {"state": str, "questions": [{"instr", "options
 """
 import hashlib
 import json
+from pathlib import Path
 import random
 from datasets import load_dataset
 from .api import SystemOneRequest, to_record
@@ -318,6 +319,8 @@ def augment(req, rng, p_none=0.1, p_none_distract=0.12, p_distract=0.15):
         if q["type"] != "choice":
             out["questions"][qid] = q; continue
         crit, y = dict(q["criteria"]), q["label"]
+        if q.get("target") is not None:                       # soft-target questions: permute only; inserting or swapping options would change the target's meaning
+            keys = list(crit); rng.shuffle(keys); out["questions"][qid] = {**q, "criteria": {k: crit[k] for k in keys}}; continue
         r = rng.random()
         none_options = [(k, v) for k, v in NONE_OPTIONS if k not in crit]
         distractors = [k for k in DISTRACTORS if k not in crit]
@@ -347,6 +350,33 @@ def none_pair(req, rng):
     return [{"state": req["state"], "questions": {qid: present}}, {"state": req["state"], "questions": {qid: absent}}]
 
 
+def load_records(path, source="custom"):
+    """Labelled requests from a JSONL file, one per line, in the API's request shape plus a `label` on every question:
+
+        {"state": "...", "questions": {"team": {"type": "choice", "instructions": "...", "criteria": {"billing": "...", "other": null}, "label": "billing"},
+                                       "urgent": {"type": "noul", "instructions": "...", "label": true},
+                                       "priority": {"type": "score", "instructions": "...", "criteria": ["low", "medium", "high"], "label": 2}}}
+
+    Labels: the option name for choice, true/false for noul, the level index (from 0) for score. `_meta` and per-question
+    `src` are filled in so the records behave like a frozen suite's (source = `source`, id = line number)."""
+    import hashlib
+    records = []
+    for n, line in enumerate(Path(path).read_text().splitlines()):
+        if not line.strip(): continue
+        r = json.loads(line)
+        if "state" not in r or not isinstance(r.get("questions"), dict) or not r["questions"]:
+            raise ValueError(f"{path}:{n + 1}: a record needs a state and a non-empty questions object")
+        for qid, q in r["questions"].items():
+            if "label" not in q: raise ValueError(f"{path}:{n + 1}: question {qid!r} has no label")
+            q.setdefault("src", f"{source}_{q['type']}")
+        text = json.dumps(r["state"], sort_keys=True, ensure_ascii=False) if not isinstance(r["state"], str) else r["state"]
+        r["_meta"] = {**{"source": source, "variant": "clean", "id": f"{source}/{n}", "group_id": f"{source}/{n}", "row": n, "split": "custom",
+                         "text_sha256": hashlib.sha256(" ".join(text.casefold().split()).encode()).hexdigest()}, **r.get("_meta", {})}
+        records.append(r)
+    if not records: raise ValueError(f"{path}: no records")
+    return records
+
+
 def materialize(req):
     """Labelled request -> internal record via the serving path (api.to_record), attaching int labels and src."""
     clean = {"state": req["state"], "questions": {qid: {k: v for k, v in q.items() if k not in ("label", "src")} for qid, q in req["questions"].items()}}
@@ -356,4 +386,10 @@ def materialize(req):
         q["label"] = int(y) if m["type"] == "noul" else m["keys"].index(y) if m["type"] == "choice" else int(y)
         q["src"] = src_q["src"]; q["qtype"] = m["type"]; q["qid"] = qid
         q["keys"] = m["keys"] if m["type"] == "choice" else ["false", "true"] if m["type"] == "noul" else [str(i) for i in range(len(q["options"]))]
+        if src_q.get("target") is not None:
+            # soft target keyed by option name (choice), "false"/"true" (noul) or level index as a string (score); options the
+            # target does not name get 0, then the vector is normalised. Used for unknowable records (uniform over the options).
+            t = [float(src_q["target"].get(k, 0.0)) for k in q["keys"]]
+            if sum(t) <= 0: raise ValueError(f"target for {qid} puts no mass on any option")
+            q["target"] = [x / sum(t) for x in t]
     return rec

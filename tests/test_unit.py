@@ -152,3 +152,40 @@ def test_metrics_endpoint_shapes():
     buckets = [float(l.split("} ")[1]) for l in r.text.splitlines() if "latency_ms_bucket" in l and "+Inf" not in l]
     assert buckets == sorted(buckets) and buckets[-1] == 1
     S.METRICS["latency_ms"].clear(); S.METRICS["requests"] = 0   # don't leak into other tests' module state
+
+
+def test_load_records_jsonl(tmp_path):
+    """The fine-tuning input format from the README: API-shaped requests with a label per question, one per line."""
+    import json
+    from kev.data import load_records, materialize
+    rows = [{"state": {"subject": "Charged twice", "body": "Two charges for order 4411."},
+             "questions": {"team": {"type": "choice", "instructions": "Which team?", "criteria": {"billing": "Payments", "shipping": None}, "label": "billing"},
+                           "angry": {"type": "noul", "instructions": "Is the customer angry?", "label": False},
+                           "priority": {"type": "score", "instructions": "How urgent?", "criteria": ["low", "normal", "high"], "label": 1}}}]
+    p = tmp_path / "train.jsonl"; p.write_text("".join(json.dumps(r) + "\n" for r in rows))
+    recs = load_records(p)
+    assert recs[0]["_meta"]["source"] == "custom" and recs[0]["_meta"]["variant"] == "clean"
+    rec = materialize(recs[0])
+    assert [q["label"] for q in rec["questions"]] == [0, 0, 1] and rec["questions"][0]["src"] == "custom_choice"
+    bad = tmp_path / "bad.jsonl"; bad.write_text(json.dumps({"state": "x", "questions": {"q": {"type": "noul", "instructions": "?"}}}) + "\n")
+    try: load_records(bad); assert False
+    except ValueError as e: assert "no label" in str(e)
+
+
+def test_soft_targets_and_date_facts():
+    """Night-2 additions: a question with a soft target materializes to a normalized vector aligned with its keys, survives
+    option permutation, and trains with cross-entropy against the target; date_facts writes one sentence per date pair."""
+    import random, torch
+    from kev.api import date_facts, with_date_facts
+    from kev.data import augment, materialize
+    from kev.train import question_loss
+    req = {"state": "policy text", "questions": {"q": {"type": "choice", "instructions": "Which?", "criteria": {"a": None, "b": None, "c": None}, "label": "a",
+                                                        "target": {"a": 1, "b": 1, "c": 1}, "src": "t"}}}
+    rec = materialize(req)
+    assert rec["questions"][0]["target"] == [1 / 3] * 3
+    aug = augment(req, random.Random(0), p_none=1.0, p_none_distract=0.0, p_distract=0.0)      # would insert a none option for a hard-label question
+    assert set(aug["questions"]["q"]["criteria"]) == {"a", "b", "c"}, "soft-target questions are only permuted"
+    z = torch.tensor([2.0, 0.0, -2.0])
+    assert abs(question_loss(z, rec["questions"][0], "cpu", 0.0).item() - (-(torch.log_softmax(z, -1) / 3).sum()).item()) < 1e-6
+    assert date_facts("Due July 4, 2026. Received June 26, 2026. Shipped 2026-07-01.") == "June 26, 2026 is 8 days before July 4, 2026. 2026-07-01 is 3 days before July 4, 2026. 2026-07-01 is 5 days after June 26, 2026."
+    assert with_date_facts({"case": "one date: May 1, 2026"}) == {"case": "one date: May 1, 2026"}

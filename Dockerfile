@@ -29,13 +29,15 @@ COPY pyproject.toml ./
 # distribution present to skip its reference fallback (deploy 2026-09-21 log
 # warning). PyPI ships sdist only (needs nvcc); use the prebuilt wheel from
 # upstream GitHub Releases instead, matched to the resolved deps:
-#   torch 2.6.0+cu124  ->  cu12torch2.6, cxx11abiFALSE (pre-2.7 wheels),
-#   cp312 linux_x86_64 = this image (python 3.12, amd64).
+#   torch 2.6.0+cu124  ->  cu12torch2.6, cxx11abiTRUE, cp312 linux_x86_64.
+#   ABI NOTE: cu118/cu124 Linux torch wheels switched to manylinux 2.28 +
+#   CXX11_ABI=1 the week of 2024-12-16 (pytorch dev-discuss "PyTorch Linux
+#   Wheels switching ...") — BEFORE 2.6.0 GA. So torch 2.6.0+cu124 is a
+#   TRUE build; the FALSE wheel (bc0efee/f94c3a7, deployed 09-21) failed to
+#   import in-pod and hub_kernels swallowed the ImportError -> the
+#   "falling back" warning persisted (deploy log line 216).
 # (If the URL ever 404s, pip falls back to the sdist; the gcc/g++ from the
 # apt layer then fail fast at build time, not silently at runtime.)
-# NOTE: torch is unpinned here (pyproject range >=2.6,<2.9 resolves to 2.6.0
-# on the cu124 index for cp312) — if the index later serves 2.7/2.8, the
-# cxx11 ABI flips to TRUE above and the matching wheel must be swapped.
 RUN pip install --no-cache-dir --index-url https://download.pytorch.org/whl/cu124 \
       "torch>=2.6,<2.9" \
     && pip install --no-cache-dir \
@@ -44,7 +46,7 @@ RUN pip install --no-cache-dir --index-url https://download.pytorch.org/whl/cu12
       "fastapi>=0.115" "typesafe-sdk>=0.6.0" "uvicorn>=0.30" \
       "flash-linear-attention" "triton>=3.7.1" \
     && pip install --no-cache-dir \
-      "causal-conv1d @ https://github.com/Dao-AILab/causal-conv1d/releases/download/v1.7.0/causal_conv1d-1.7.0+cu12torch2.6cxx11abiFALSE-cp312-cp312-linux_x86_64.whl"
+      "causal-conv1d @ https://github.com/Dao-AILab/causal-conv1d/releases/download/v1.7.0/causal_conv1d-1.7.0+cu12torch2.6cxx11abiTRUE-cp312-cp312-linux_x86_64.whl"
 
 # 2) Source layer (installed separately so source-only commits rebuild fast).
 COPY kev ./kev

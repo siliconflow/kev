@@ -1,4 +1,4 @@
-# kev serving image for SF GPU Functions (4090 g1, kev-4b/kev-8b routes).
+# kev serving image for SF GPU Functions (4090 g1/g2, kev-{0.8b,4b,9b} routes).
 #
 # Base choice: kev is a pure PyTorch/peft stack (kev.serve: FastAPI + uvicorn +
 # torch + peft + transformers). No vLLM anywhere in the serving path, so this
@@ -19,13 +19,18 @@ WORKDIR /workspace
 # 1) Deps layer (cached; changes rarely).
 # torch first from the cu124 index (4090 = sm_89; pyproject pins torch>=2.6,<2.9
 # and cu124 wheels exist across that range), then the rest from PyPI.
+# 2026-09 upstream merge: Qwen3.5 generation (Kev-0.8B/4B/9B) — transformers 5
+# (hybrid Gated DeltaNet backbones), peft 0.21, flash-linear-attention for the
+# DeltaNet layers on CUDA (README: "install flash-linear-attention for the
+# Qwen3.5 models"; without it the recurrent path falls back to a slow one).
 COPY pyproject.toml ./
 RUN pip install --no-cache-dir --index-url https://download.pytorch.org/whl/cu124 \
       "torch>=2.6,<2.9" \
     && pip install --no-cache-dir \
-      "accelerate>=1.15.0" "datasets>=3.0" "numpy>=2.5.3" "peft>=0.15" \
-      "pydantic>=2.9" "scikit-learn>=1.9.1" "transformers>=4.51,<4.58" \
-      "fastapi>=0.115" "typesafe-sdk>=0.6.0" "uvicorn>=0.30"
+      "accelerate>=1.15.0" "datasets>=3.0" "numpy>=2.5.3" "peft>=0.21" \
+      "pydantic>=2.9" "scikit-learn>=1.9.1" "transformers>=5.17,<6" \
+      "fastapi>=0.115" "typesafe-sdk>=0.6.0" "uvicorn>=0.30" \
+      "flash-linear-attention" "triton>=3.7.1"
 
 # 2) Source layer (installed separately so source-only commits rebuild fast).
 COPY kev ./kev

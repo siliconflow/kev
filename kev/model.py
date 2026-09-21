@@ -3,7 +3,7 @@ import math, re
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from transformers import AutoModelForCausalLM, AutoTokenizer
+from transformers import AutoConfig, AutoModelForCausalLM, AutoTokenizer
 
 # Reuse existing rarely-used Qwen special tokens as delimiters (state, q, opt, /opt, decide) so no
 # embedding rows need to be added/trained; LoRA adapts their meaning.
@@ -136,7 +136,13 @@ class DecisionModel(nn.Module):
         # eager on MPS/CPU (known-good with our float 4D mask); SDPA on CUDA (accepts arbitrary additive masks).
         attn = attn or ("sdpa" if str(device).startswith("cuda") else "eager")
         # dtype: fp32 for training and exact evaluation; bf16 is a serving option for large backbones (8B on a 32 GB Mac)
-        self.lm = AutoModelForCausalLM.from_pretrained(name, revision=revision, dtype=dtype, attn_implementation=attn).model
+        # transformers 5.17 hard-reads config.pad_token_id in Qwen2/Qwen3.5 __init__ (nn.Embedding padding_idx);
+        # several public configs (e.g. Qwen2.5-0.5B) ship without the key -> AttributeError at load. Backfill it
+        # from AutoConfig before from_pretrained (tokenizer pad id, else 0 matching self.pad_id below).
+        cfg = AutoConfig.from_pretrained(name, revision=revision)
+        if getattr(cfg, "pad_token_id", None) is None:
+            cfg.pad_token_id = tok.pad_token_id if tok.pad_token_id is not None else 0
+        self.lm = AutoModelForCausalLM.from_pretrained(name, revision=revision, dtype=dtype, attn_implementation=attn, config=cfg).model
         self.pad_id = tok.pad_token_id if tok.pad_token_id is not None else 0
         # hybrid backbones (Qwen3.5: Gated DeltaNet layers, recurrent) cannot honour the block-causal mask, so every
         # question runs as its own causal row continuing from the state (rows_of). Attention-only backbones keep the

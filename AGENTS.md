@@ -81,6 +81,15 @@ See README.md (deep dive) and docs/model-cards/ (one card per checkpoint: recipe
 - Serving path (`kev.evaluate.load` + `kev.serve`): LoRA merged in fp32 then cast (`KEV_MERGE=0` to keep unmerged), `KEV_ATTN=sdpa` default on MPS,
   `KEV_SHAPE_BUCKET=64` on MPS, state-prefix KV LRU (`KEV_PREFIX_CACHE=4`, `KEV_PREFIX_MIN_TOKENS=384`). Any change here must keep the parity
   tests in tests/test_v3.py (merged vs unmerged, prefix vs full pass, bucket padding) passing; report numbers with the fp32 unmerged path.
+- Image channel (opt-in, 2026-09-24): `KEV_VISION=1` attaches the base checkpoint's untrained vision tower
+  (`model.visual.*` tensors, dropped by the text-only load path) and serves image requests. `state.images`
+  (list of data/https URLs) is stripped by `api.to_record` and never rendered into the text;
+  `serve._probs_images` forwards through `kev/vision.py` (official AutoImageProcessor patchify + row-form
+  splice, no projection: Qwen3.5 merger out_hidden == text hidden on both tested bases). Needs the `vision`
+  extra (torchvision, imported by transformers' qwen2_vl processor). Without the gate, or on a text-only
+  base, image requests get 422. Text path, training and the prefix cache are untouched
+  (tests/test_vision.py + tests/test_v3.py parity all green). "Channel open, untrained readout": an open
+  channel is not a capability claim - report TVD/separation, not bacc.
 
 ## Writing
 - Use simple technical English. For README tone, use Jared's older Formik, TSDX, Razzle, and Backpack READMEs as references: explain the developer's problem, address the reader directly, and show code early. Avoid slogans, canned contrasts, and repeated claims. Keep detailed experiment history in PLAN.md and the model cards rather than repeating it in the README.

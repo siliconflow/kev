@@ -36,6 +36,10 @@ serve = [
     "typesafe-sdk>=0.6.0",
     "uvicorn>=0.30",
 ]
+vision = [
+    "pillow>=10.0",
+    "torchvision>=0.21,<0.29",   # match the torch pin <2.9; imported by transformers' qwen2_vl image processor
+]
 
 [dependency-groups]
 dev = [

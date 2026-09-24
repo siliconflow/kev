@@ -52,7 +52,13 @@ def _sync(dev):
 
 def _probs(rec):
     """One forward pass; the state prefix (tokens up to the first question) is cached across requests, so a repeated state
-    only pays for its question branches. Exactness: the state's activations do not depend on the branches."""
+    only pays for its question branches. Exactness: the state's activations do not depend on the branches.
+
+    A record with rec["images"] (set by api.to_record from state.images) dispatches to the
+    image path: KEV_VISION attaches the base's untrained vision tower (kev.vision); without
+    it the request is refused with 422. Text records never enter that branch."""
+    if isinstance(rec, dict) and rec.get("images"):
+        return _probs_images({k: v for k, v in rec.items() if k != "images"}, rec["images"])
     tok, model, dev = STATE["tok"], STATE["model"], STATE["dev"]
     try: enc = model.encode(tok, rec, max_state=INFER_MAX_STATE, max_branch=INFER_MAX_BRANCH)
     except ValueError as e: raise HTTPException(422, str(e))
@@ -82,6 +88,32 @@ def _probs(rec):
 METRICS = {"latency_ms": [], "requests": 0}
 
 _LAT_BUCKETS = [5, 10, 25, 50, 100, 250, 500, 1000, 2500, 5000, 10000]   # ms; bracket kev's ~30ms-1s prefill range
+
+
+def _probs_images(rec, refs):
+    """Image path (rec has no "images" key here): decode refs -> PIL, forward through the
+    attached hook (kev.vision.VisionHook.probs_with_images). Independent of _probs' text
+    machinery - the text prefix cache does not apply (the state segment now holds tower
+    rows, so a cached text-state KV would be wrong)."""
+    if STATE.get("vision") is None:
+        raise HTTPException(422, "image requests need KEV_VISION=1 and a base with a vision tower")
+    from .vision import decode_image
+    try:
+        images = [decode_image(r) for r in refs[:4]]
+    except ValueError as e:
+        raise HTTPException(422, str(e))
+    hook = STATE["vision"]
+    with STATE["lock"]:
+        _sync(STATE["dev"]); t = time.time()
+        try:
+            ps, m = hook.probs_with_images(rec, images, max_state=INFER_MAX_STATE, max_branch=INFER_MAX_BRANCH)
+        except ValueError as e:
+            raise HTTPException(422, str(e))
+        _sync(STATE["dev"]); dt = time.time() - t
+    METRICS["latency_ms"].append(dt * 1000)
+    if TEMPERATURE != 1.0:   # same opt-in as the text path
+        ps = [(lambda q: q / q.sum())(p.clamp_min(1e-9) ** (1.0 / TEMPERATURE)) for p in ps]
+    return [p.tolist() for p in ps], {"tokens": m["tokens"], "state_tokens": m["state_tokens"], "latency_ms": round(dt * 1000, 1), "prefix_cache_hit": False}
 
 
 @app.get("/metrics")
@@ -219,6 +251,12 @@ def main():
     if dev == "mps" and not os.environ.get("KEV_ATTN"): os.environ["KEV_ATTN"] = "sdpa"   # serving default on Apple GPUs (parity measured)
     tok, model = load(run, dev)
     STATE.update(run=label, tok=tok, model=model, dev=dev, base=meta["base"], lora=meta["lora"])
+    if os.environ.get("KEV_VISION") == "1":
+        from .vision import attach
+        STATE.update(vision=attach(model, tok, STATE["base"],
+                                    meta.get("base_revision") if os.environ.get("KEV_BASE_HUB") != "modelscope" else None))
+    else:
+        STATE.update(vision=None)
     print(f"serving {label} ({run}) on {dev} :{a.port}")
     import uvicorn
     uvicorn.run(app, host=a.host, port=a.port)

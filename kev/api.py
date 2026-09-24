@@ -91,7 +91,15 @@ def with_date_facts(state):
 
 
 def to_record(req: SystemOneRequest):
-    """-> internal record for encode(), plus per-question metadata to map probabilities back."""
+    """-> internal record for encode(), plus per-question metadata to map probabilities back.
+
+    An object state may carry an `images` key (list of data/https URLs, the workspace
+    multimodal convention); it is stripped here and passed through as rec["images"] - it
+    is NEVER rendered into the text (URLs/base64 would poison the state segment)."""
+    state, images = req.state, None
+    if isinstance(state, dict) and isinstance(state.get("images"), list):
+        images = state["images"]
+        state = {k: v for k, v in state.items() if k != "images"}
     qs, meta = [], []
     for qid, q in req.questions.items():
         instr = render(q.instructions)
@@ -106,7 +114,10 @@ def to_record(req: SystemOneRequest):
             opts = [render(x) for x in q.criteria]
             meta.append({"id": qid, "type": "score", "legend": {str(i): render(x) for i, x in enumerate(q.criteria)}})
         qs.append({"instr": instr, "options": opts, "label": 0})
-    return {"state": render(req.state), "questions": qs}, meta
+    rec = {"state": render(state), "questions": qs}
+    if images is not None:
+        rec["images"] = images
+    return rec, meta
 
 
 def choice_confidence(p: list[float]) -> float:

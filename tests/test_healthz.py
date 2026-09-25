@@ -59,7 +59,7 @@ def test_healthz_ready_503s_when_inference_fails():
         class _T:
             def is_alive(self): return True
         thread = _T()
-        def answer(self, req): raise RuntimeError("CUDA out of memory. Tried to allocate 1.10 GiB.")
+        def submit(self, rec): raise RuntimeError("CUDA out of memory. Tried to allocate 1.10 GiB.")
     class FailingQueue:
         def qsize(self): return 37
 
@@ -87,17 +87,22 @@ def test_healthz_ready_ok_contract():
     import kev.serve as S
 
     class OKServer:
+        from concurrent.futures import Future
         class _T:
             def is_alive(self): return True
         thread = _T()
         queue = __import__("queue").Queue()
         batches = 12
-        def answer(self, req):
+        def submit(self, rec):
+            f = OKServer.Future(); f.set_result((
+                [[0.001, 0.999]], {"tokens": 9, "state_tokens": 4, "latency_ms": 21.4, "prefix_cache_hit": False}))
+            return f
+        def _body(self, req, meta, ps, m):
             return {"model": req.model,
                     "answers": {"probe": {"type": "score", "score": 1.0, "confidence": 1.0,
                                           "legend": {"0": "no", "1": "yes"},
                                           "probabilities": {"0": 0.001, "1": 0.999}}},
-                    "usage": {"input_tokens": 9, "output_tokens": 8}, "latency_ms": 21.4}
+                    "usage": {"input_tokens": 9, "output_tokens": 8}, "latency_ms": m["latency_ms"]}
     S.app.state.server = OKServer()
     try:
         client = TestClient(S.app)
@@ -170,12 +175,18 @@ def test_metrics_exposes_errors_queue_and_gpu_dimensions():
         lock = __import__("threading").Lock()
         prefix_cache = __import__("types").SimpleNamespace(hits=1, misses=2, size=4, min_tokens=384, entries=[])
 
+    MS.latency = S.LatencyView()
+    MS.latency.observe(21.4, 2)          # one batch of 2 requests @21.4ms
     S.app.state.server = MS()
     try:
         client = TestClient(S.app)
         txt = client.get("/metrics").text
         assert "kev_inference_errors_total " in txt
         assert "kev_queue_depth 3" in txt
+        assert "kev_latency_ms_count 2" in txt
+        assert "kev_latency_ms_sum 42.8" in txt
+        assert f'kev_latency_ms_bucket{{le="25"}} 2' in txt      # 21.4 <= 25
+        assert "kev_inferences_total 2" in txt                    # request-level count from the view
         # cpu device: NO gpu gauges (guard by device, not by import success)
         assert "kev_gpu_memory_allocated_bytes" not in txt
     finally:

@@ -23,6 +23,7 @@ from .device import default_device, sync
 from .model import SERVE_MAX_BRANCH, SERVE_MAX_STATE
 
 PREFIX_CACHE_SIZE = int(os.environ.get("KEV_PREFIX_CACHE", "4"))          # states kept (KV + hidden); 0 disables
+PROBE_WAIT_S = float(os.environ.get("KEV_PROBE_WAIT_S", "5"))             # /healthz/ready caps its wait (a wedged model thread cannot hang the probe)
 PREFIX_MIN_TOKENS = os.environ.get("KEV_PREFIX_MIN_TOKENS")               # states shorter than this are not cached; default = the model's prefix_min_tokens (0 for hybrid backbones and MLX, 384 for attention-only torch models)
 DATE_FACTS = os.environ.get("KEV_DATE_FACTS", "0") == "1"
 API_KEY = os.environ.get("KEV_API_KEY")                                  # unset = open server; set = require Authorization: Bearer <key>, as the TypeSafe clients always send
@@ -79,9 +80,11 @@ class Server:
     batched_requests: int = 0
     release_date: str = field(default="")   # for the TypeSafe model card; resolved once (may ask the Hub)
     vision: object = None   # kev.vision.VisionHook under KEV_VISION=1 (set in main); None keeps image requests a 422
+    latency: object = None   # LatencyView: request-level model-time observations for kev_latency_ms_*
 
     def __post_init__(self):
         self.release_date = self.release_date or self.checkpoint.release_date()
+        self.latency = self.latency or LatencyView()
         self.prefix_cache = PrefixCache(PREFIX_CACHE_SIZE, int(PREFIX_MIN_TOKENS) if PREFIX_MIN_TOKENS else self.model.prefix_min_tokens)
         self.queue, self.stopping = queue.Queue(), threading.Event()
         # the model thread gives up the GIL at every CUDA sync and waits to get it back while the event loop parses and
@@ -144,6 +147,11 @@ class Server:
         sync(self.device); dt = round((time.time() - t) * 1000, 1)
         self.prefix_cache.store(keys, cached, prefixes)
         self.batches += 1; self.batched_requests += len(encs)
+        # per-request latency observation for kev_latency_ms_*: a request's share of the batch is
+        # an honest request-level view (the batch runs as one fused pass; without separate streams
+        # there is no per-row timer to read). Same state -> same number, which is exactly what a
+        # latency histogram of "how long does serving this kind of request take" wants.
+        self.latency.observe(dt, len(encs))
         return [([q.tolist() for q in p], {"tokens": len(enc["ids"]), "state_tokens": enc["seg"].count(0), "latency_ms": dt, "prefix_cache_hit": c is not None})
                 for enc, p, c in zip(encs, ps, cached)]
 
@@ -212,6 +220,28 @@ METRICS = {"latency_ms": [], "requests": 0, "errors": 0}   # process-wide servin
 _LAT_BUCKETS = [5, 10, 25, 50, 100, 250, 500, 1000, 2500, 5000, 10000]   # ms; bracket kev's ~30ms-1s prefill range
 
 
+class LatencyView:
+    """Request-level latency observations for /metrics (kev_latency_ms_*): every served request
+    contributes its (batch-share) model time — the text batch path records one batch observation
+    for each request it carried, the image path one per call. Keeps count/sum/buckets so the
+    exposition needs no scan of a growth-unbounded list."""
+
+    def __init__(self):
+        self.count, self.sum_ms, self.buckets = 0, 0.0, [0] * len(_LAT_BUCKETS)
+
+    def observe(self, ms, n=1):
+        self.count += n; self.sum_ms += ms * n
+        for i, b in enumerate(_LAT_BUCKETS):
+            if ms <= b: self.buckets[i] += n
+
+    def expose(self, prefix):
+        if not self.count: return []
+        lines = [f"{prefix}_count {self.count}", f"{prefix}_sum {self.sum_ms:.1f}"]
+        lines += [f'{prefix}_bucket{{le="{b}"}} {c}' for b, c in zip(_LAT_BUCKETS, self.buckets)]
+        lines.append(f'{prefix}_bucket{{le="+Inf"}} {self.count}')
+        return lines
+
+
 def _probs_images(rec, refs):
     """Image path (rec has no "images" key here): decode refs -> PIL, forward through the
     attached hook (kev.vision.VisionHook.probs_with_images). Independent of the Server's text
@@ -233,7 +263,7 @@ def _probs_images(rec, refs):
         except ValueError as e:
             raise HTTPException(422, str(e))
         sync(s.device); dt = time.time() - t
-    METRICS["latency_ms"].append(dt * 1000)
+    app.state.server.latency.observe(dt * 1000)   # one request-level observation per image call
     return [p.tolist() for p in ps], {"tokens": m["tokens"], "state_tokens": m["state_tokens"], "latency_ms": round(dt * 1000, 1), "prefix_cache_hit": False}
 
 
@@ -270,7 +300,11 @@ def healthz_ready():
     t0 = time.perf_counter()
     try:
         s = app.state.server
-        body = s.answer(req)   # one real inference through the same dispatch every request takes
+        # one real inference through the same dispatch every request takes; bounded wait so a dead
+        # model thread (future never completing) turns into a 503 probe failure, not a hung probe
+        rec, meta = to_record(prepare(req))
+        ps, m = s.submit(rec).result(timeout=PROBE_WAIT_S)
+        body = s._body(req, meta, ps, m)
         answers = body["answers"]["probe"]
         ok = answers["type"] == "score" and answers["legend"] == {"0": "no", "1": "yes"} \
              and sum(answers["probabilities"].values()) > 0.99
@@ -278,25 +312,28 @@ def healthz_ready():
                 "queued": s.queue.qsize(), "batches": s.batches, "errors": METRICS["errors"]}
     except Exception as e:
         METRICS["errors"] += 1
-        return JSONResponse({"ok": False, "why": repr(e)[:300], "queued": getattr(app.state.server, "queue").qsize(),
+        s = getattr(app.state, "server", None)
+        q = getattr(getattr(s, "queue", None), "qsize", lambda: -1)()
+        return JSONResponse({"ok": False, "why": repr(e)[:300], "queued": q,
                              "errors": METRICS["errors"]}, status_code=503)
 
 
 @app.get("/metrics")
 def metrics():
     """Prometheus text exposition (the platform's prometheusScraper polls this); no client dependency.
-    Latency view here is the image path + any direct (sync) calls; batched text latencies live on the
-    Server (prefix_cache/batches in /v1/models), surfaced as kev_batches_* counters."""
+    kev_latency_ms_* is the request-level latency view (every served request: text batches and the
+    image path); kev_batches_*/kev_prefix_cache_* describe the Server that produced them."""
     from fastapi.responses import PlainTextResponse
-    s = app.state.server if hasattr(app.state, "server") else None
-    lats = METRICS["latency_ms"]
-    def bucket_vals():
-        return [(b, sum(1 for x in lats if x <= b)) for b in _LAT_BUCKETS]
-    lines = [f"kev_requests_total {METRICS['requests']}", f"kev_inferences_total {len(lats)}"]
-    if lats:
-        lines += [f"kev_inference_latency_ms_count {len(lats)}", f"kev_inference_latency_ms_sum {sum(lats):.1f}"]
-        lines += [f'kev_inference_latency_ms_bucket{{le="{b}"}} {c}' for b, c in bucket_vals()]
-        lines.append(f'kev_inference_latency_ms_bucket{{le="+Inf"}} {len(lats)}')
+    s = app.state.server if hasattr(app, "state") and hasattr(app.state, "server") else None
+    lines = [f"kev_requests_total {METRICS['requests']}"]
+    # request-level latency: every served request (text batch + image path) contributes its
+    # model time — the revival of the latency metric under its request-level name. The old
+    # kev_inference_latency_ms_* (pre-batching, image-path-only by the end) is superseded.
+    if s is not None:
+        lines += s.latency.expose("kev_latency_ms")
+        lines.append(f"kev_inferences_total {s.latency.count}")
+    else:
+        lines.append("kev_inferences_total 0")
     if s is not None:
         lines += [f"kev_batches_total {s.batches}", f"kev_batched_requests_total {s.batched_requests}",
                   f"kev_prefix_cache_hits_total {s.prefix_cache.hits}", f"kev_prefix_cache_misses_total {s.prefix_cache.misses}"]

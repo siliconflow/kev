@@ -263,7 +263,7 @@ def _probs_images(rec, refs):
         except ValueError as e:
             raise HTTPException(422, str(e))
         sync(s.device); dt = time.time() - t
-    app.state.server.latency.observe(dt * 1000)   # one request-level observation per image call
+    s.latency.observe(dt * 1000)   # one request-level observation per image call (s = server() above)
     return [p.tolist() for p in ps], {"tokens": m["tokens"], "state_tokens": m["state_tokens"], "latency_ms": round(dt * 1000, 1), "prefix_cache_hit": False}
 
 

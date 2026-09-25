@@ -157,13 +157,24 @@ class Server:
     def answer(self, req):
         """The /v1/systemone response body for one request."""
         rec, meta = to_record(prepare(req))
-        return self._body(req, meta, *self.probs(rec))
+        return self._answer_rec(rec, req, meta)
 
     async def answer_async(self, req):
         """answer() for the event loop: a request waiting on the model thread holds no worker thread, so a container takes
         as many concurrent requests as its batches can absorb (FastAPI runs sync endpoints on a 40-thread pool)."""
         rec, meta = to_record(prepare(req))
+        if rec.get("images"):
+            return self._answer_rec(rec, req, meta)   # the vision hook is synchronous; not one to hold a worker for
         return self._body(req, meta, *await asyncio.wrap_future(self.submit(rec)))
+
+    def _answer_rec(self, rec, req, meta):
+        """Image records (rec["images"], set by api.to_record from state.images) take the vision hook under
+        this Server's lock; text records go through the batched model thread. One dispatch for every caller
+        (systemone, permute, separate, direct answer()) - the hook answers 422 when no tower is attached."""
+        if rec.get("images"):
+            ps, m = _probs_images({k: v for k, v in rec.items() if k != "images"}, rec["images"])
+            return self._body(req, meta, ps, m)
+        return self._body(req, meta, *self.probs(rec))
 
     def _body(self, req, meta, ps, m):
         answers = to_answers(ps, meta)
@@ -224,14 +235,6 @@ def _probs_images(rec, refs):
         sync(s.device); dt = time.time() - t
     METRICS["latency_ms"].append(dt * 1000)
     return [p.tolist() for p in ps], {"tokens": m["tokens"], "state_tokens": m["state_tokens"], "latency_ms": round(dt * 1000, 1), "prefix_cache_hit": False}
-
-
-def _probs(rec):
-    """Synchronous single-record path (used when the caller cannot await): image records dispatch to
-    kev.vision under KEV_VISION=1, text records go through the Server's model thread."""
-    if isinstance(rec, dict) and rec.get("images"):
-        return _probs_images({k: v for k, v in rec.items() if k != "images"}, rec["images"])
-    return server().probs(rec)
 
 
 @app.get("/metrics")

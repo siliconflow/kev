@@ -1,7 +1,7 @@
 """Opt-in image channel for the decision model (KEV_VISION=1). Channel open, untrained readout.
 
 Qwen3.5-Base checkpoints ship the full vision tower in the same safetensors (4B-Base: 297
-`model.visual.*` tensors; 0.8B-Base: 153), but kev.evaluate.load's path (AutoModelForCausalLM
+`model.visual.*` tensors; 0.8B-Base: 153), but the load path (AutoModelForCausalLM
 -> Qwen3_5ForCausalLM -> .model = Qwen3_5TextModel) drops them: the tower is never
 instantiated. That is exactly the state the LoRA and pointer head were trained in (training
 data is text-only, every generation), so re-attaching the untrained tower opens the image
@@ -46,6 +46,7 @@ import urllib.request
 
 import torch
 import torch.nn.functional as F
+from .model import MAX_STATE, MAX_BRANCH
 
 IMAGE_MIMES = ("image/jpeg", "image/png", "image/webp")
 IMAGE_MAX_BYTES = 5 * 1024 * 1024    # decoded, per image
@@ -131,10 +132,10 @@ def _resolve_snapshot(base, revision):
 
     if os.path.isdir(base):
         return base
-    # evaluate.load swaps the HF id for a local ModelScope snapshot under
+    # Checkpoint.base_dir swaps the HF id for a local ModelScope snapshot under
     # KEV_BASE_HUB=modelscope; the MS mirror carries the same weights - reuse that copy.
     if os.environ.get("KEV_BASE_HUB") == "modelscope":
-        from .evaluate import _ms_snapshot
+        from .checkpoint import _ms_snapshot
 
         return _ms_snapshot(base)
     root = os.path.expanduser("~/.cache/huggingface/hub")
@@ -243,7 +244,7 @@ class VisionHook:
         return out
 
     @torch.no_grad()
-    def probs_with_images(self, rec, images, max_state=384, max_branch=1024):
+    def probs_with_images(self, rec, images, max_state=MAX_STATE, max_branch=MAX_BRANCH):
         """probs() for a text record + PIL images: row form with the tower rows spliced
         into the placeholder embeddings. One implementation for every backbone (rows form
         is exact on any architecture, model.rows_of); the serving prefix cache does not

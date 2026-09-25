@@ -1,6 +1,6 @@
 # TODO: score `legend` must echo criteria levels with original JSON types
 
-**Status:** in progress (branch `fix/score-legend-type`) · **Severity:** blocks OpenRouter listing
+**Status:** fixed on main via PR #1 (f7ff45f); re-applied on top of the 2026-09-25 upstream sync (same code, upstream's `question_keys` shape). Upstream still carries the bug in `to_record`. · **Severity:** blocks OpenRouter listing
 **Reported:** 2026-09-25 by OpenRouter (relayed via Feishu, 王煜青) · **Repro cases:** string_levels PASS / object_levels, array_levels, mixed_levels FAIL
 
 ## Problem

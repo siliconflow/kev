@@ -30,11 +30,20 @@ def dataset_ref(repo):
     return repo.partition(":")[0], PARQUET_BRANCH.get(repo.partition(":")[0])
 
 
-def _dataset(repo, split, rng):
-    """repo may be 'owner/name' or 'owner/name:config'."""
+class Source(random.Random):
+    """One source's sampling context: a seeded RNG (the converters draw everything from it), the dataset revision to pin,
+    and the provenance of every row drawn (`origins`, filled by _sample so build() can attach it to each record)."""
+
+    def __init__(self, seed, revision=None):
+        super().__init__(seed)
+        self.revision = revision
+        self.origins = []
+
+
+def _dataset(repo, split, src):
+    """repo may be 'owner/name' or 'owner/name:config'; the Source carries the revision to pin."""
     name, _, config = repo.partition(":")
-    revision = getattr(rng, "revision", None) or PARQUET_BRANCH.get(name)
-    return load_dataset(name, config or None, split=split, revision=revision)
+    return load_dataset(name, config or None, split=split, revision=src.revision or PARQUET_BRANCH.get(name))
 
 NONE = "None of the above"
 # "None of the above" options must appear both as the correct answer and as a wrong alternative, with varied
@@ -73,23 +82,23 @@ def _desc(desc, rng, p_null=0.3, p_struct=0.1):
     return desc
 
 
-def _sample(ds, n, rng):
+def _sample(ds, n, src):
     rows = []
-    rng.origins = []
-    for i in rng.sample(range(len(ds)), min(n, len(ds))):
+    src.origins = []
+    for i in src.sample(range(len(ds)), min(n, len(ds))):
         row = ds[i]
         if row.get("label", 0) == -1:
             continue
         text = next((row[k] for k in ("text", "premise", "passage", "content", "question", "sentence") if isinstance(row.get(k), str)), json.dumps(row, sort_keys=True))
         normalized = " ".join(text.casefold().split())
-        rng.origins.append({"row": i, "text_sha256": hashlib.sha256(normalized.encode()).hexdigest(),
+        src.origins.append({"row": i, "text_sha256": hashlib.sha256(normalized.encode()).hexdigest(),
                             "row_sha256": hashlib.sha256(json.dumps(row, sort_keys=True).encode()).hexdigest()})
         rows.append(row)
     return rows
 
 
 def _banking(split, n, rng):
-    ds = _dataset("legacy-datasets/banking77", split=split, rng=rng)
+    ds = _dataset("legacy-datasets/banking77", split=split, src=rng)
     names = ds.features["label"].names
     out = []
     for ex in _sample(ds, n, rng):
@@ -100,7 +109,7 @@ def _banking(split, n, rng):
 
 
 def _boolq(split, n, rng):
-    ds = _dataset("google/boolq", split=split, rng=rng)
+    ds = _dataset("google/boolq", split=split, src=rng)
     out = []
     for ex in _sample(ds, n, rng):
         q = {"type": "noul", "instructions": _instr(ex["question"].strip().rstrip("?") + "?", rng), "label": bool(ex["answer"]), "src": "boolq"}
@@ -110,7 +119,7 @@ def _boolq(split, n, rng):
 
 
 def _agnews(split, n, rng):
-    ds = _dataset("fancyzhx/ag_news", split=split, rng=rng)
+    ds = _dataset("fancyzhx/ag_news", split=split, src=rng)
     keys = list(AG)
     out = []
     for ex in _sample(ds, n, rng):
@@ -123,19 +132,19 @@ def _agnews(split, n, rng):
 
 
 def _mnli(split, n, rng):
-    ds = _dataset("nyu-mll/multi_nli", split=split, rng=rng)
+    ds = _dataset("nyu-mll/multi_nli", split=split, src=rng)
     keys = list(MNLI)
     return [{"state": _wrap_state(ex["premise"], rng), "questions": {"relation": {"type": "choice", "instructions": _instr(f'Hypothesis: "{ex["hypothesis"]}" How does it relate to the premise?', rng), "criteria": {k: _desc(v, rng) for k, v in MNLI.items()}, "label": keys[ex["label"]], "src": "mnli"}}}
             for ex in _sample(ds, n, rng) if ex["label"] >= 0]
 
 
 def _sst5(split, n, rng):
-    ds = _dataset("SetFit/sst5", split=split, rng=rng)
+    ds = _dataset("SetFit/sst5", split=split, src=rng)
     return [{"state": _wrap_state(ex["text"], rng), "questions": {"sentiment": {"type": "score", "instructions": _instr("What is the sentiment of this review sentence?", rng), "criteria": list(SST5), "label": ex["label"], "src": "sst5"}}} for ex in _sample(ds, n, rng)]
 
 
 def _yelp(split, n, rng):
-    ds = _dataset("Yelp/yelp_review_full", split=split, rng=rng)
+    ds = _dataset("Yelp/yelp_review_full", split=split, src=rng)
     out = []
     for ex in _sample(ds, n, rng):
         text = " ".join(ex["text"].split()[:220])
@@ -159,53 +168,53 @@ AMAZON = ["1 star: very negative", "2 stars: negative", "3 stars: mixed", "4 sta
 
 
 def _trec(split, n, rng):
-    ds = _dataset("CogComp/trec", split=split, rng=rng)
+    ds = _dataset("CogComp/trec", split=split, src=rng)
     keys = list(TREC)
     return [{"state": _wrap_state(ex["text"], rng), "questions": {"answer_type": {"type": "choice", "instructions": "What kind of answer does this question ask for?",
              "criteria": dict(TREC), "label": keys[ex["coarse_label"]], "src": "trec"}}} for ex in _sample(ds, n, rng)]
 
 
 def _dbpedia(split, n, rng):
-    ds = _dataset("fancyzhx/dbpedia_14", split=split, rng=rng)
+    ds = _dataset("fancyzhx/dbpedia_14", split=split, src=rng)
     names = [x.lower().replace(" ", "_") for x in ds.features["label"].names]
     return [{"state": _wrap_state(" ".join(ex["content"].split()[:200]), rng), "questions": {"category": {"type": "choice", "instructions": "Which category does the subject of this encyclopedia text belong to?",
              "criteria": {k: None for k in names}, "label": names[ex["label"]], "src": "dbpedia14"}}} for ex in _sample(ds, n, rng)]
 
 
 def _emotion(split, n, rng):
-    ds = _dataset("dair-ai/emotion:split", split=split, rng=rng)
+    ds = _dataset("dair-ai/emotion:split", split=split, src=rng)
     keys = list(EMOTION)
     return [{"state": ex["text"], "questions": {"emotion": {"type": "choice", "instructions": "Which emotion does the writer express?",
              "criteria": dict(EMOTION), "label": keys[ex["label"]], "src": "emotion"}}} for ex in _sample(ds, n, rng)]
 
 
 def _imdb(split, n, rng):
-    ds = _dataset("stanfordnlp/imdb", split=split, rng=rng)
+    ds = _dataset("stanfordnlp/imdb", split=split, src=rng)
     return [{"state": _wrap_state(" ".join(ex["text"].replace("<br />", " ").split()[:220]), rng), "questions": {"positive": {"type": "noul", "instructions": "Is this movie review positive?",
              "criteria": {"true": "The reviewer liked the film overall", "false": "The reviewer disliked the film overall"}, "label": ex["label"] == 1, "src": "imdb"}}} for ex in _sample(ds, n, rng)]
 
 
 def _amazon(split, n, rng):
-    ds = _dataset("SetFit/amazon_reviews_multi_en", split=split, rng=rng)
+    ds = _dataset("SetFit/amazon_reviews_multi_en", split=split, src=rng)
     return [{"state": _wrap_state(" ".join(ex["text"].split()[:220]), rng), "questions": {"stars": {"type": "score", "instructions": "How many stars did this product reviewer give?",
              "criteria": list(AMAZON), "label": ex["label"], "src": "amazon"}}} for ex in _sample(ds, n, rng)]
 
 
 def _qnli(split, n, rng):
-    ds = _dataset("nyu-mll/glue:qnli", split=split, rng=rng)
+    ds = _dataset("nyu-mll/glue:qnli", split=split, src=rng)
     return [{"state": _wrap_state(ex["sentence"], rng), "questions": {"answers": {"type": "noul", "instructions": f'Does the sentence contain the answer to this question: "{ex["question"]}"',
              "label": ex["label"] == 0, "src": "qnli"}}} for ex in _sample(ds, n, rng)]
 
 
 def _offensive(split, n, rng):
-    ds = _dataset("cardiffnlp/tweet_eval:offensive", split=split, rng=rng)
+    ds = _dataset("cardiffnlp/tweet_eval:offensive", split=split, src=rng)
     return [{"state": ex["text"], "questions": {"offensive": {"type": "noul", "instructions": "Is this post offensive?",
              "criteria": {"true": "Contains insults, threats, profanity directed at someone, or hateful content", "false": "Not offensive"},
              "label": ex["label"] == 1, "src": "tweet_offensive"}}} for ex in _sample(ds, n, rng)]
 
 
 def _mmlu(split, n, rng):
-    ds = _dataset("cais/mmlu:all", split=split, rng=rng)
+    ds = _dataset("cais/mmlu:all", split=split, src=rng)
     out = []
     for ex in _sample(ds, n, rng):
         keys = ["a", "b", "c", "d"]
@@ -216,14 +225,14 @@ def _mmlu(split, n, rng):
 
 
 def _paws(split, n, rng):
-    ds = _dataset("google-research-datasets/paws:labeled_final", split=split, rng=rng)
+    ds = _dataset("google-research-datasets/paws:labeled_final", split=split, src=rng)
     return [{"state": _wrap_state(ex["sentence1"], rng), "questions": {"paraphrase": {"type": "noul", "instructions": f'Does this sentence mean the same thing: "{ex["sentence2"]}"',
              "criteria": {"true": "Same meaning, possibly reworded", "false": "Different meaning, even if most words match"}, "label": ex["label"] == 1, "src": "paws"}}}
             for ex in _sample(ds, n, rng)]
 
 
 def _sciq(split, n, rng):
-    ds = _dataset("allenai/sciq", split=split, rng=rng)
+    ds = _dataset("allenai/sciq", split=split, src=rng)
     out = []
     for ex in _sample(ds, n, rng):
         options = [ex["correct_answer"], ex["distractor1"], ex["distractor2"], ex["distractor3"]]
@@ -247,17 +256,17 @@ def _mcq(ex_q, labels, texts, answer_label, src, rng, state_extra=None):
 
 
 def _arc(split, n, rng):
-    ds = _dataset("allenai/ai2_arc:ARC-Challenge", split=split, rng=rng)
+    ds = _dataset("allenai/ai2_arc:ARC-Challenge", split=split, src=rng)
     return [_mcq(ex["question"], list(ex["choices"]["label"]), list(ex["choices"]["text"]), ex["answerKey"], "arc", rng) for ex in _sample(ds, n, rng)]
 
 
 def _openbookqa(split, n, rng):
-    ds = _dataset("allenai/openbookqa:main", split=split, rng=rng)
+    ds = _dataset("allenai/openbookqa:main", split=split, src=rng)
     return [_mcq(ex["question_stem"], list(ex["choices"]["label"]), list(ex["choices"]["text"]), ex["answerKey"], "openbookqa", rng) for ex in _sample(ds, n, rng)]
 
 
 def _csqa(split, n, rng):
-    ds = _dataset("tau/commonsense_qa", split=split, rng=rng)
+    ds = _dataset("tau/commonsense_qa", split=split, src=rng)
     return [_mcq(ex["question"], list(ex["choices"]["label"]), list(ex["choices"]["text"]), ex["answerKey"], "csqa", rng) for ex in _sample(ds, n, rng) if ex["answerKey"]]
 
 
@@ -295,14 +304,13 @@ def build(n_per_source, split="train", seed=0, exclude=(), only=(), revisions=No
     reqs = []
     for name, (fn, tr, te) in sources.items():
         if name in exclude or (only and name not in only): continue
-        rng = random.Random(source_seed(seed, name))
-        rng.revision = (revisions or {}).get(repos[name])
+        src = Source(source_seed(seed, name), (revisions or {}).get(repos[name]))
         source_split = tr if split == "train" else te
-        records = fn(source_split, n_per_source, rng)
-        if len(records) != len(rng.origins):
+        records = fn(source_split, n_per_source, src)
+        if len(records) != len(src.origins):
             raise ValueError(f"provenance mismatch for {name}")
-        for record, origin in zip(records, rng.origins):
-            record["_meta"] = {**origin, "source": name, "repo": repos[name], "revision": rng.revision,
+        for record, origin in zip(records, src.origins):
+            record["_meta"] = {**origin, "source": name, "repo": repos[name], "revision": src.revision,
                                "split": source_split, "id": f"{name}/{source_split}/{origin['row']}"}
         reqs.extend(records)
     random.Random(seed).shuffle(reqs)
@@ -339,8 +347,9 @@ def none_pair(req, rng):
     """Minimal pair for the none-of-the-above shortcut: the same state and question rendered twice, once with the true
     option present (a none option is wrong) and once with it removed (the same none option is right). Everything else,
     including option order, is identical, so the only difference the model can use is whether the evidence matches an
-    option. Returns [] when the request has no eligible Choice (>=3 options, no none key already present)."""
-    eligible = [(qid, q) for qid, q in req["questions"].items() if q["type"] == "choice" and len(q["criteria"]) >= 3]
+    option. Returns [] when the request has no eligible Choice (>=3 options, no none key already present, no soft target:
+    removing the labelled option or adding a none option would change what the target means, as in augment)."""
+    eligible = [(qid, q) for qid, q in req["questions"].items() if q["type"] == "choice" and len(q["criteria"]) >= 3 and q.get("target") is None]
     if not eligible: return []
     qid, q = rng.choice(eligible)
     nk, nd = rng.choice([o for o in NONE_OPTIONS if o[0] not in q["criteria"]] or [("none_of_these", None)])
@@ -359,33 +368,39 @@ def load_records(path, source="custom"):
 
     Labels: the option name for choice, true/false for noul, the level index (from 0) for score. `_meta` and per-question
     `src` are filled in so the records behave like a frozen suite's (source = `source`, id = line number)."""
-    import hashlib
     records = []
-    for n, line in enumerate(Path(path).read_text().splitlines()):
-        if not line.strip(): continue
-        r = json.loads(line)
-        if "state" not in r or not isinstance(r.get("questions"), dict) or not r["questions"]:
-            raise ValueError(f"{path}:{n + 1}: a record needs a state and a non-empty questions object")
-        for qid, q in r["questions"].items():
-            if "label" not in q: raise ValueError(f"{path}:{n + 1}: question {qid!r} has no label")
-            q.setdefault("src", f"{source}_{q['type']}")
-        text = json.dumps(r["state"], sort_keys=True, ensure_ascii=False) if not isinstance(r["state"], str) else r["state"]
-        r["_meta"] = {**{"source": source, "variant": "clean", "id": f"{source}/{n}", "group_id": f"{source}/{n}", "row": n, "split": "custom",
-                         "text_sha256": hashlib.sha256(" ".join(text.casefold().split()).encode()).hexdigest()}, **r.get("_meta", {})}
-        records.append(r)
+    with Path(path).open(encoding="utf-8") as f:
+        for n, line in enumerate(f):
+            if not line.strip(): continue
+            r = json.loads(line)
+            if "state" not in r or not isinstance(r.get("questions"), dict) or not r["questions"]:
+                raise ValueError(f"{path}:{n + 1}: a record needs a state and a non-empty questions object")
+            for qid, q in r["questions"].items():
+                if "label" not in q: raise ValueError(f"{path}:{n + 1}: question {qid!r} has no label")
+                q.setdefault("src", f"{source}_{q['type']}")
+            text = json.dumps(r["state"], sort_keys=True, ensure_ascii=False) if not isinstance(r["state"], str) else r["state"]
+            r["_meta"] = {**{"source": source, "variant": "clean", "id": f"{source}/{n}", "group_id": f"{source}/{n}", "row": n, "split": "custom",
+                             "text_sha256": hashlib.sha256(" ".join(text.casefold().split()).encode()).hexdigest()}, **r.get("_meta", {})}
+            records.append(r)
     if not records: raise ValueError(f"{path}: no records")
     return records
 
 
+def api_request(record):
+    """The /v1/systemone request body for a labelled record: state and typed questions only, never labels, targets or
+    metadata (this is what leaves the machine when a remote predictor is scored)."""
+    return {"state": record["state"], "questions": {
+        qid: {k: v for k, v in q.items() if k in ("type", "instructions", "criteria")}
+        for qid, q in record["questions"].items()}}
+
+
 def materialize(req):
     """Labelled request -> internal record via the serving path (api.to_record), attaching int labels and src."""
-    clean = {"state": req["state"], "questions": {qid: {k: v for k, v in q.items() if k not in ("label", "src")} for qid, q in req["questions"].items()}}
-    rec, meta = to_record(SystemOneRequest.model_validate(clean))
+    rec, meta = to_record(SystemOneRequest.model_validate(api_request(req)))
     for q, m, (qid, src_q) in zip(rec["questions"], meta, req["questions"].items()):
         y = src_q["label"]
-        q["label"] = int(y) if m["type"] == "noul" else m["keys"].index(y) if m["type"] == "choice" else int(y)
-        q["src"] = src_q["src"]; q["qtype"] = m["type"]; q["qid"] = qid
-        q["keys"] = m["keys"] if m["type"] == "choice" else ["false", "true"] if m["type"] == "noul" else [str(i) for i in range(len(q["options"]))]
+        q["label"] = m["keys"].index(y) if m["type"] == "choice" else int(y)   # noul labels are bools, score labels level indices
+        q["src"] = src_q["src"]; q["qtype"] = m["type"]; q["qid"] = qid; q["keys"] = m["keys"]
         if src_q.get("target") is not None:
             # soft target keyed by option name (choice), "false"/"true" (noul) or level index as a string (score); options the
             # target does not name get 0, then the vector is normalised. Used for unknowable records (uniform over the options).

@@ -7,152 +7,16 @@
 4. isolation: can question B read a secret placed in sibling question A? (must not) / in state (should)
 5. latency + equality: packed N questions vs N separate calls
 """
-import argparse, json, math, os, random, time, string, urllib.parse
+import argparse, json, math, random, time, string
 from collections import defaultdict
 import numpy as np
 import torch
 import torch.nn.functional as F
-from .data import build, augment, materialize, DISTRACTORS
-from .model import DecisionModel, load_tokenizer, encode
-
-
-def ece(conf, correct, bins=10):
-    conf, correct = np.asarray(conf), np.asarray(correct, dtype=float)
-    edges = np.linspace(0, 1, bins + 1); e = 0.0
-    for lo, hi in zip(edges[:-1], edges[1:]):
-        m = (conf >= lo) & (conf < hi) if hi < 1 else (conf >= lo) & (conf <= hi)
-        if m.any(): e += m.mean() * abs(correct[m].mean() - conf[m].mean())
-    return float(e)
-
-
-def _default_hf_timeouts():
-    """Slow-mirror deployments: raise hf_hub's 10s socket timeouts before huggingface_hub reads them at import.
-    setdefault, so an explicit HF_HUB_*_TIMEOUT always wins; no-op when the module is already imported."""
-    os.environ.setdefault("HF_HUB_ETAG_TIMEOUT", "30")
-    os.environ.setdefault("HF_HUB_DOWNLOAD_TIMEOUT", "600")
-
-
-def resolve_run(run):
-    """Local run directory, or a Hub repo id like jaredpalmer/kev-4b, optionally pinned to a revision or tag with
-    `@` (jaredpalmer/kev-4b@qwen3); downloaded to the HF cache."""
-    _default_hf_timeouts()
-    if os.path.isdir(run): return run
-    from huggingface_hub import snapshot_download
-    repo, _, revision = run.partition("@")
-    return snapshot_download(repo, revision=revision or None, allow_patterns=["*.json", "*.safetensors", "*.pt", "*.txt", "*.jinja"])
-
-
-# ModelScope mirrors popular bases (Qwen/...) with the same repo id; the raw-file endpoint 302s to a CDN.
-# Used only when the caller can't reach HF (KEV_BASE_HUB=modelscope) — the adapter still comes from the Hub.
-MS_API = "https://modelscope.cn/api/v1/models"
-
-def _ms_snapshot(repo, cache_root=None):
-    """Download a ModelScope repo (all files) to ~/.cache/kev-modelscope/<namespace>/<name>, stdlib only.
-    Files are cached by their listed Sha256 — a completed tree is never re-downloaded."""
-    import shutil, sys, time as _time, urllib.request
-    root = os.path.expanduser(cache_root or os.environ.get("KEV_MS_CACHE", "~/.cache/kev-modelscope"))
-    dest = os.path.join(root, *repo.split("/"))
-    os.makedirs(dest, exist_ok=True)
-    url = f"{MS_API}/{repo}/repo/files?Revision=master&Recursive=true"
-    for attempt in range(4):
-        try:
-            with urllib.request.urlopen(url, timeout=60) as r:
-                import json as _json; files = _json.load(r)["Data"]["Files"]
-            break
-        except Exception as e:
-            wait = 15 * (attempt + 1)
-            print(f"modelscope: file listing failed (attempt {attempt + 1}/4): {e!r}; retrying in {wait}s", flush=True)
-            if attempt == 3: raise
-            _time.sleep(wait)
-    files = [f for f in files if f.get("Type") != "tree"]
-    total = sum(f.get("Size", 0) for f in files)
-    print(f"modelscope: {repo} -> {dest} ({len(files)} files, {total / 1e9:.2f} GB); downloading (progress below)...", flush=True)
-    n = done_bytes = 0
-    for f in files:
-        path, sha, size = f["Path"], f.get("Sha256"), f.get("Size", 0)
-        out = os.path.join(dest, path); os.makedirs(os.path.dirname(out) or dest, exist_ok=True)
-        if os.path.exists(out) and (not sha or _file_sha256(out) == sha):
-            continue
-        # copy in 8MB chunks with per-file + running-total progress; a multi-GB shard takes minutes on a
-        # slow egress and silence looks like a hang in the pod log. Retry per file: transient CDN resets
-        # shouldn't kill a 20-minute download; .part keeps partial data but a reset mid-stream is easier
-        # to just restart cleanly from byte 0 (ModelScope's CDN is fast enough that this stays rare).
-        file_url = f"{MS_API}/{repo}/repo?FilePath={urllib.parse.quote(path)}&Revision=master"
-        got = 0
-        for attempt in range(4):
-            try:
-                if os.path.exists(out + ".part"): os.remove(out + ".part")
-                with urllib.request.urlopen(file_url, timeout=120) as r, open(out + ".part", "wb") as w:
-                    got = 0
-                    while True:
-                        chunk = r.read(8 << 20)
-                        if not chunk: break
-                        w.write(chunk); got += len(chunk); done_bytes += len(chunk)
-                        if got and size and got % (64 << 20) < (8 << 20):   # log every ~64 MB, one line each (pod log panels render \r poorly)
-                            print(f"  {path}: {got / 1e6:.0f}/{size / 1e6:.0f} MB (total {done_bytes / 1e9:.2f}/{total / 1e9:.2f} GB)", flush=True)
-                if size and got != size:
-                    raise IOError(f"incomplete read: {got} of {size} bytes")
-                os.replace(out + ".part", out)   # atomic: a .part file is never mistaken for a complete download
-                print(f"  {path}: {size / 1e6:.0f} MB done (total {done_bytes / 1e9:.2f}/{total / 1e9:.2f} GB)", flush=True)
-                break
-            except Exception as e:
-                done_bytes -= got if (size and got != size and got) else 0
-                wait = 15 * (attempt + 1)
-                print(f"  {path}: download failed (attempt {attempt + 1}/4): {e!r}; retrying in {wait}s", flush=True)
-                if attempt == 3: raise
-                _time.sleep(wait)
-        n += 1
-    print(f"modelscope: {repo} -> {dest} ({n} file(s) downloaded, {len(files) - n} cached)", flush=True)
-    return dest
-
-
-def _file_sha256(path):
-    import hashlib
-    h = hashlib.sha256()
-    with open(path, "rb") as f:
-        for chunk in iter(lambda: f.read(1 << 20), b""):
-            h.update(chunk)
-    return h.hexdigest()
-
-
-def load(run, dev, dtype=None, merge=True, attn=None):
-    """dtype: None = fp32 (exact; what every reported number uses). KEV_DTYPE=bf16 or dtype=torch.bfloat16 halves memory
-    for serving large backbones; probabilities then differ from the fp32 numbers in the third decimal.
-
-    merge (default): fold the LoRA into the base weights in fp32 before any cast. Exact in fp32 (max |dp| 0 measured),
-    and in bf16 it is both faster (~15%) and closer to the fp32 numbers than running the unmerged adapter in bf16
-    (kev-4b, 24 dev records: max |dp| 0.017 vs 0.029, 0 vs 1 argmax flips). KEV_MERGE=0 keeps the adapter separate.
-    attn: attention backend; None = the model default (SDPA on CUDA, eager elsewhere). KEV_ATTN=sdpa enables SDPA on MPS
-    (measured parity with eager; a few percent faster)."""
-    import os
-    run = resolve_run(run)
-    meta = torch.load(f"{run}/head.pt", map_location="cpu")
-    dtype = dtype or {"bf16": torch.bfloat16, "fp16": torch.float16}.get(os.environ.get("KEV_DTYPE", ""), torch.float32)
-    import json as _json
-    adapter_cfg = _json.loads(open(f"{run}/adapter_config.json").read())
-    merge = merge and os.environ.get("KEV_MERGE", "1") != "0" and not adapter_cfg.get("trainable_token_indices")   # token-trained adapters stay unmerged
-    attn = attn or os.environ.get("KEV_ATTN") or None
-    # Base from ModelScope (KEV_BASE_HUB=modelscope) when HF is slow/unreachable: swap the pinned HF id for a
-    # local MS snapshot path. base_revision pins an HF commit and is meaningless on the MS mirror (master).
-    if os.environ.get("KEV_BASE_HUB") == "modelscope":
-        base, base_revision = _ms_snapshot(meta["base"]), None
-    else:
-        base, base_revision = meta["base"], meta.get("base_revision")
-    tok = load_tokenizer(base, revision=base_revision)
-    m = DecisionModel(base, tok, dev, lora=None, revision=base_revision, head_dim=meta.get("head_dim", 256),
-                      option_isolation=meta.get("option_isolation", False), dtype=torch.float32 if merge else dtype, attn=attn)
-    from peft import PeftModel
-    m.lm = PeftModel.from_pretrained(m.lm, run).to(dev)   # trainable token embeddings, if any, are inside the adapter
-    scale = float(os.environ.get("KEV_LORA_SCALE", "1"))
-    if scale != 1:   # WiSE-FT-style interpolation between the base (0) and the fine-tuned weights (1), at inference, no retraining
-        for module in m.lm.modules():
-            if hasattr(module, "scaling") and isinstance(module.scaling, dict):
-                for k in module.scaling: module.scaling[k] *= scale
-        m.lora_scale = scale
-    if merge: m.lm = m.lm.merge_and_unload()               # in fp32: exact
-    if dtype != torch.float32: m.lm = m.lm.to(dtype)
-    m.head.load_state_dict(meta["head"]); m.eval()
-    return tok, m
+from .checkpoint import Checkpoint, LoadOptions
+from .data import NONE_OPTIONS, build, augment, materialize, DISTRACTORS
+from .device import default_device, empty_cache, sync
+from .metrics import ece
+from .suite import write_json
 
 
 def _probs(tok, model, req):
@@ -220,7 +84,6 @@ def test_iia(tok, model, reqs, rng):
 def test_none_of_the_above(tok, model, reqs, rng):
     """Add a 'none of the above' option. When the true option is still present it should get little mass;
     when the true option is removed it should be chosen. A shortcut model picks it in both cases."""
-    from .data import NONE_OPTIONS
     p_present, hit_present, hit_absent, n = [], 0, 0, 0
     for r in reqs:
         for qid, q in r["questions"].items():
@@ -262,13 +125,12 @@ def test_isolation(tok, model, rng, n=20):
 
 def test_packed_vs_separate(tok, model, reqs, rng, n=30):
     diffs, t_pack, t_sep, nq = [], 0.0, 0.0, 0
-    sync = torch.mps.synchronize if model.device == "mps" else (lambda: None)
     for r in [x for x in reqs if len(x["questions"]) >= 2][:n]:
         enc = model.encode(tok, materialize(r))
-        sync(); t = time.time(); pp = model.probs(enc); sync(); t_pack += time.time() - t
+        sync(model.device); t = time.time(); pp = model.probs(enc); sync(model.device); t_pack += time.time() - t
         for qi, qid in enumerate(r["questions"]):
             e1 = model.encode(tok, materialize(_one(r, qid)))
-            sync(); t = time.time(); p1 = model.probs(e1)[0]; sync(); t_sep += time.time() - t
+            sync(model.device); t = time.time(); p1 = model.probs(e1)[0]; sync(model.device); t_sep += time.time() - t
             diffs.append(float((pp[qi] - p1).abs().max())); nq += 1
     return {"n_questions": nq, "max_abs_prob_diff": float(np.max(diffs)), "mean_abs_prob_diff": float(np.mean(diffs)), "packed_s": t_pack, "separate_s": t_sep, "speedup": t_sep / t_pack}
 
@@ -327,17 +189,17 @@ def main():
     ap.add_argument("--baseline_instruct", default="", help="e.g. Qwen/Qwen2.5-0.5B-Instruct: chat-template letter-logit baseline")
     ap.add_argument("--seed", type=int, default=1)
     a = ap.parse_args()
-    dev = "mps" if torch.backends.mps.is_available() else "cpu"
+    dev = default_device()
     rng = random.Random(a.seed)
     reqs = build(a.n_per_source, "test", a.seed)
-    meta = torch.load(f"{a.run}/head.pt", map_location="cpu")
-    out = {"run": a.run, "holdout_sources": meta.get("holdout", [])}
+    ck = Checkpoint(a.run)
+    out = {"run": a.run, "holdout_sources": ck.meta.holdout}
     if a.baseline:
-        out["baseline_zero_shot_base"] = baseline_letter_logits(meta["base"], reqs, dev, random.Random(a.seed)); print(json.dumps(out, indent=1), flush=True)
+        out["baseline_zero_shot_base"] = baseline_letter_logits(ck.meta.base, reqs, dev, random.Random(a.seed)); print(json.dumps(out, indent=1), flush=True)
     if a.baseline_instruct:
         out["baseline_zero_shot_instruct"] = baseline_letter_logits(a.baseline_instruct, reqs, dev, random.Random(a.seed), chat=True); print(json.dumps(out["baseline_zero_shot_instruct"], indent=1), flush=True)
-    if dev == "mps": torch.mps.empty_cache()
-    tok, model = load(a.run, dev)
+    empty_cache(dev)
+    tok, model = ck.load(dev, LoadOptions.from_env())
     for name, fn in [("accuracy_calibration", lambda: test_accuracy(tok, model, reqs, random.Random(a.seed))),
                      ("temperature_scaling", lambda: test_temperature(tok, model, reqs, random.Random(a.seed))),
                      ("permutation", lambda: test_permutation(tok, model, reqs[:150], rng)),
@@ -350,7 +212,7 @@ def main():
         acc = out["accuracy_calibration"]
         out["held_out_sources"] = {s: acc[s] for s in acc if any(s.startswith(h) for h in out["holdout_sources"])}
         print("== held_out_sources (never seen in training)\n" + json.dumps(out["held_out_sources"], indent=1))
-    json.dump(out, open(f"{a.run}/eval.json", "w"), indent=1)
+    write_json(f"{a.run}/eval.json", out)
 
 
 if __name__ == "__main__":

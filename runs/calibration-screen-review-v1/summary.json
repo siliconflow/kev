@@ -1,0 +1,34 @@
+{
+  "study": "calibration-screen-4b-s11-r2",
+  "branch": "research/calibration-audit",
+  "outcome": "no arm passed the registered screen",
+  "selected_for_replication": null,
+  "final_test_evaluated": false,
+  "fresh_final_sha256": "23e786cc71a72fc15b565b80d720d3dcaffb2e5c7c79c5243077592df7a46370",
+  "matched_training": {"source_records":3425,"records_seen_with_augmentation":3899,"optimizer_steps":429,"forward_tokens":639399,"seed":11},
+  "recalibrated_development": [
+    {"arm":"parent","accuracy":0.7973,"coverage_at_5pct_error":0.5762,"aurc":0.0580,"nll":0.4740,"brier":0.2653,"ece":0.0478},
+    {"arm":"ce-control","accuracy":0.7973,"coverage_at_5pct_error":0.5320,"aurc":0.0625,"nll":0.4869,"brier":0.2737,"ece":0.0519},
+    {"arm":"smoothing-005","accuracy":0.8018,"coverage_at_5pct_error":0.0061,"aurc":0.1001,"nll":0.5281,"brier":0.2879,"ece":0.0671},
+    {"arm":"ce-brier-05","accuracy":0.7973,"coverage_at_5pct_error":0.5259,"aurc":0.0628,"nll":0.4888,"brier":0.2744,"ece":0.0561},
+    {"arm":"focal-1","accuracy":0.7988,"coverage_at_5pct_error":0.5015,"aurc":0.0606,"nll":0.4751,"brier":0.2678,"ece":0.0433}
+  ],
+  "interpretation": [
+    "Focal loss improved ECE slightly relative to the unchanged parent but did not improve threshold coverage or AURC. Lower ECE alone is not sufficient for promotion.",
+    "Label smoothing slightly improved accuracy while substantially worsening confidence ordering. Paired development AURC delta versus parent is +0.0422 with 95% interval [0.0228, 0.0651], where larger AURC is worse.",
+    "Ordinary continued training also reduced selective performance. A released-parent-only comparison would fail to isolate this effect.",
+    "This is one 4B seed, one epoch, one data mixture and one setting per loss, not proof that these losses never work.",
+    "No result justified replication under the registered gate. The fresh threshold and final partitions remain unscored. No fallback candidate was selected from historical test results."
+  ],
+  "larger_model_decision": "No scale-up justified by this screen. Keep PLAN_27b as a separate gated proposal; audit or targeted data experiments need a new registered hypothesis before more training.",
+  "published_changes": false,
+  "budget": {
+    "workspace_metered_before_usd":392.13507560,
+    "workspace_metered_after_usd":398.31507560,
+    "observed_workspace_increase_usd":6.18,
+    "earlier_provisional_metered_usd":403.86507560,
+    "successful_screen_compute_admission_bound_usd":18.92,
+    "authorized_total_usd":1000,
+    "caveat":"Workspace billing can lag and includes startup/storage or unrelated workspace activity; this is not an exact invoice for each individual trial."
+  }
+}

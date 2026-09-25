@@ -21,7 +21,8 @@ import torch
 from PIL import Image
 
 from kev.api import SystemOneRequest, to_record
-from kev.model import OPT_NONE, encode, rows_of
+from kev.device import default_device
+from kev.model import OPT_NONE, MAX_STATE, MAX_BRANCH, encode, rows_of
 from kev.model import load_tokenizer, DecisionModel
 
 SNAP = os.path.expanduser(
@@ -98,7 +99,7 @@ def test_inject_shifts_every_branch_index():
             {"instr": "product?", "options": ["mug", "lamp"], "label": 0},
         ],
     }
-    enc0 = encode(tok, rec, max_state=384, max_branch=1024)
+    enc0 = encode(tok, rec, max_state=MAX_STATE, max_branch=MAX_BRANCH)
     s0, sp0, rows0 = rows_of(enc0)
     n_per = [10, 8]
     enc1 = hook._inject(dict(enc0), n_per)
@@ -148,11 +149,14 @@ def sys_bin():
 
 
 def test_probes_dispatch_on_images_key():
-    """The image branch of _probs is keyed on rec['images'] alone - a plain
-    (non-list) value under a different key never triggers it."""
+    """The image branch is keyed on rec["images"] alone - a plain (non-list) value
+    under a different key never triggers it. Dispatch surface after the upstream
+    sync: Server._answer_rec + module-level _probs_images."""
     from kev import serve
-    # contract only: _probs_images must exist and be a separate function from _probs
-    assert callable(serve._probs_images) and serve._probs_images is not serve._probs
+    import inspect
+    assert callable(serve._probs_images)
+    assert hasattr(serve.Server, "_answer_rec")
+    assert 'rec.get("images")' in inspect.getsource(serve.Server._answer_rec)
 
 
 # --- tier 3: 0.8B full chain --------------------------------------------------------
@@ -163,7 +167,7 @@ def test_08b_full_chain():
     from kev.vision import attach
     from PIL import Image as _Image
 
-    dev = "mps" if torch.backends.mps.is_available() else "cpu"
+    dev = default_device()
     tok = load_tokenizer(SNAP)
     model = DecisionModel(SNAP, tok, dev, dtype=torch.float32)
     model.eval()
@@ -197,3 +201,34 @@ def test_08b_full_chain():
 #   embed() refuse loudly on tower/processor disagreement (see kev/vision.py); forcing
 #   a disagreement from tests needs injected processor fixtures - revisit if the
 #   assert line ever changes.
+
+def test_image_request_routes_to_vision_not_text_thread():
+    """Regression (upstream-sync merge): a record with state.images must dispatch to the vision
+    hook (422 when no tower is attached), never silently fall through to the text model thread.
+    Pins Server.answer/_answer_rec's dispatch without needing weights."""
+    from fastapi.testclient import TestClient
+    import kev.serve as S
+
+    class _NoServer: pass
+    # answer() dispatch happens before any model call: with no tower attached the image
+    # branch must raise 422, proving the text submit() path was not taken.
+    import threading
+    from kev.serve import Server
+
+    # A minimal Server instance whose model thread is never started: the image branch must
+    # raise 422 (no tower) BEFORE any text-thread submit, proving dispatch went to vision.
+    fs = Server.__new__(Server)   # skip __post_init__ (no model thread, no checkpoint)
+    fs.vision, fs.lock, fs.device = None, threading.Lock(), "cpu"
+    S.app.state.server = fs
+    try:
+        client = TestClient(S.app, raise_server_exceptions=False)
+        r = client.post("/v1/systemone", json={
+            "state": {"document": "x", "images": ["https://example.com/a.jpg"]},
+            "model": "kev-latest",
+            "questions": {"q": {"type": "noul", "instructions": "any?"}},
+        })
+        assert r.status_code == 422, r.text
+        assert "KEV_VISION" in r.text or "vision" in r.text
+    finally:
+        if hasattr(S.app.state, "server"):
+            del S.app.state.server

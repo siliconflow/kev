@@ -162,7 +162,11 @@ def test_probes_dispatch_on_images_key():
 # --- tier 3: 0.8B full chain --------------------------------------------------------
 
 
+_SNAP_HAS_PROCESSOR = os.path.isfile(os.path.join(SNAP, "preprocessor_config.json")) if os.path.isdir(SNAP) else False
+
+
 @pytest.mark.skipif(not os.path.isdir(SNAP), reason="Qwen3.5-0.8B-Base snapshot not cached")
+@pytest.mark.skipif(not _SNAP_HAS_PROCESSOR, reason="cached 0.8B base carries no preprocessor_config.json (text-only base); the full chain needs a vision-capable base snapshot")
 def test_08b_full_chain():
     from kev.vision import attach
     from PIL import Image as _Image

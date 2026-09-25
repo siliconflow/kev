@@ -775,3 +775,25 @@ def test_resume_points_are_committed_as_they_complete(tmp_path, monkeypatch, cap
     stop.set(); thread.join()
     out = capsys.readouterr().out
     assert len(commits) == 2 and "resume point 5 NOT committed" in out and "committed resume point 5 (step-0000005)" in out
+
+
+def test_ms_endpoint_env_precedence(monkeypatch):
+    """_ms_endpoint matches the ModelScope SDK standard: MODELSCOPE_ENDPOINT > MODELSCOPE_DOMAIN
+    (bare domain gets https://) > the public default. An in-cluster cache set via either variable
+    transfers the scale-out multi-GB base loads off modelscope.cn (fast replica cold starts)."""
+    from kev.checkpoint import _ms_endpoint
+    # default when neither set: the SF-side mirror, not the public origin
+    monkeypatch.delenv("MODELSCOPE_ENDPOINT", raising=False)
+    monkeypatch.delenv("MODELSCOPE_DOMAIN", raising=False)
+    assert _ms_endpoint() == "https://ms.sc4.ai:10443/api/v1/models"
+    # DOMAIN (deprecated form): bare domain gets a scheme and trailing slash stripped
+    monkeypatch.setenv("MODELSCOPE_DOMAIN", "ms-cache.svc.cluster.local:8080/")
+    assert _ms_endpoint() == "https://ms-cache.svc.cluster.local:8080/api/v1/models"
+    monkeypatch.setenv("MODELSCOPE_DOMAIN", "https://ms.sc4.ai")
+    assert _ms_endpoint() == "https://ms.sc4.ai/api/v1/models"
+    # ENDPOINT wins over DOMAIN when both are set
+    monkeypatch.setenv("MODELSCOPE_ENDPOINT", "http://cluster-cache:9000/")
+    assert _ms_endpoint() == "http://cluster-cache:9000/api/v1/models"
+    # ENDPOINT alone (the form the SDK prefers)
+    monkeypatch.delenv("MODELSCOPE_DOMAIN", raising=False)
+    assert _ms_endpoint() == "http://cluster-cache:9000/api/v1/models"

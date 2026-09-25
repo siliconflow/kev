@@ -54,7 +54,22 @@ def resolve_run(run):
 
 # ModelScope mirrors popular bases (Qwen/...) with the same repo id; the raw-file endpoint 302s to a CDN.
 # Used only when the caller can't reach HF (KEV_BASE_HUB=modelscope) — the adapter still comes from the Hub.
-MS_API = "https://modelscope.cn/api/v1/models"
+# The endpoint follows the ModelScope SDK's standard precedence (modelscope_hub config.py):
+# The endpoint follows the ModelScope SDK's standard precedence (modelscope_hub config.py):
+# MODELSCOPE_ENDPOINT > MODELSCOPE_DOMAIN (deprecated by the SDK; a bare domain gets https://) >
+# the default. The default is the SF-side mirror (ms.sc4.ai:10443, same repo tree and Sha256
+# listing as modelscope.cn) — scale-out replicas warm from it instead of the public origin;
+# point MODELSCOPE_ENDPOINT at an in-cluster cache when one is injected.
+def _ms_endpoint():
+    ep = os.environ.get("MODELSCOPE_ENDPOINT", "").strip()
+    if not ep:
+        ep = os.environ.get("MODELSCOPE_DOMAIN", "").strip()
+        if ep and not ep.startswith(("http://", "https://")):
+            ep = "https://" + ep
+    return (ep or "https://ms.sc4.ai:10443").rstrip("/") + "/api/v1/models"
+
+
+MS_API = _ms_endpoint()
 
 
 def _ms_snapshot(repo, cache_root=None):

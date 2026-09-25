@@ -46,6 +46,7 @@ import urllib.request
 
 import torch
 import torch.nn.functional as F
+from .model import MAX_STATE, MAX_BRANCH
 
 IMAGE_MIMES = ("image/jpeg", "image/png", "image/webp")
 IMAGE_MAX_BYTES = 5 * 1024 * 1024    # decoded, per image
@@ -243,7 +244,7 @@ class VisionHook:
         return out
 
     @torch.no_grad()
-    def probs_with_images(self, rec, images, max_state=384, max_branch=1024):
+    def probs_with_images(self, rec, images, max_state=MAX_STATE, max_branch=MAX_BRANCH):
         """probs() for a text record + PIL images: row form with the tower rows spliced
         into the placeholder embeddings. One implementation for every backbone (rows form
         is exact on any architecture, model.rows_of); the serving prefix cache does not

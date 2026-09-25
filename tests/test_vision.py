@@ -21,7 +21,8 @@ import torch
 from PIL import Image
 
 from kev.api import SystemOneRequest, to_record
-from kev.model import OPT_NONE, encode, rows_of
+from kev.device import default_device
+from kev.model import OPT_NONE, MAX_STATE, MAX_BRANCH, encode, rows_of
 from kev.model import load_tokenizer, DecisionModel
 
 SNAP = os.path.expanduser(
@@ -98,7 +99,7 @@ def test_inject_shifts_every_branch_index():
             {"instr": "product?", "options": ["mug", "lamp"], "label": 0},
         ],
     }
-    enc0 = encode(tok, rec, max_state=384, max_branch=1024)
+    enc0 = encode(tok, rec, max_state=MAX_STATE, max_branch=MAX_BRANCH)
     s0, sp0, rows0 = rows_of(enc0)
     n_per = [10, 8]
     enc1 = hook._inject(dict(enc0), n_per)
@@ -163,7 +164,7 @@ def test_08b_full_chain():
     from kev.vision import attach
     from PIL import Image as _Image
 
-    dev = "mps" if torch.backends.mps.is_available() else "cpu"
+    dev = default_device()
     tok = load_tokenizer(SNAP)
     model = DecisionModel(SNAP, tok, dev, dtype=torch.float32)
     model.eval()

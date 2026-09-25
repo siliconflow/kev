@@ -261,6 +261,7 @@ A request may carry any number of questions. The server runs them a token budget
 | `KEV_DTYPE=fp32` | Serve the exact fp32 path the evaluations use (bf16 is the default on GPUs) |
 | `KEV_API_KEY` | Require a bearer key |
 | `MODELSCOPE_ENDPOINT` | Base URL the `KEV_BASE_HUB=modelscope` base loads pull from (the ModelScope SDK's standard variable); overrides the default mirror `https://ms.sc4.ai:10443`. Point it at an in-cluster cache so scale-out replicas warm from the cache instead of any remote origin |
+| `KEV_PROBE_WAIT_S` | `/healthz/ready` caps its wait on the probe inference (default `5`); a wedged model thread yields 503, never a hung probe |
 | `MODELSCOPE_DOMAIN` | Same as `MODELSCOPE_ENDPOINT` but the SDK's deprecated form; a bare domain is upgraded to `https://` (`MODELSCOPE_ENDPOINT` wins when both are set) |
 
 ## How It Works

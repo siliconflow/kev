@@ -11,7 +11,7 @@ export type SystemOneRequest = { state: JSONContent; model: string; questions: R
 export type Answer =
   | { type: "noul"; noul: number }
   | { type: "choice"; choice: string; confidence: number; probabilities: Record<string, number> }
-  | { type: "score"; score: number; confidence: number; legend: Record<string, string>; probabilities: Record<string, number> };
+  | { type: "score"; score: number; confidence: number; legend: Record<string, JSONContent>; probabilities: Record<string, number> };
 
 export type SystemOneResponse = {
   model: string;

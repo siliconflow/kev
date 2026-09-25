@@ -25,6 +25,13 @@ function instructionText(q?: Question) {
   return typeof q.instructions === "string" ? q.instructions : JSON.stringify(q.instructions);
 }
 
+// Legend levels echo the caller's criteria verbatim and may be objects/arrays
+// (the contract keeps JSON types); bars need a plain-text label.
+function legendText(v: unknown): string {
+  if (typeof v === "string") return v;
+  return JSON.stringify(v);
+}
+
 export function AnswerCard({ id, question, answer, compare }: { id: string; question?: Question; answer: Answer; compare?: Answer }) {
   const instr = instructionText(question);
   const confidence = "confidence" in answer ? answer.confidence : undefined;
@@ -65,7 +72,7 @@ export function AnswerCard({ id, question, answer, compare }: { id: string; ques
             ))}
         {answer.type === "score" &&
           Object.entries(answer.probabilities).map(([k, p]) => (
-            <Bar key={k} label={`${k}  ${answer.legend[k]}`} p={p} top={Number(k) === Math.round(answer.score)} delta={compare?.type === "score" ? p - (compare.probabilities[k] ?? 0) : undefined} />
+            <Bar key={k} label={`${k}  ${legendText(answer.legend[k])}`} p={p} top={Number(k) === Math.round(answer.score)} delta={compare?.type === "score" ? p - (compare.probabilities[k] ?? 0) : undefined} />
           ))}
       </div>
     </section>

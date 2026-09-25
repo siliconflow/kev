@@ -182,7 +182,7 @@ The original [Kev-0.5B](https://huggingface.co/jaredpalmer/kev-0.5b) used Qwen2.
 
 For Choice with `K > 1` options, confidence is `(p_max − 1/K) / (1 − 1/K)`. A single option has confidence 1. Score confidence measures how close the distribution is to its most likely level. It's an approximation of TypeSafe's formula, which isn't public. Neither field is a measured accuracy rate.
 
-Objects and arrays are converted to labeled text. Delimiter-like strings in user input are escaped before tokenization. Invalid requests return `422`. `usage.output_tokens` counts tokens in the serialized answers, not generated tokens.
+Objects and arrays are converted to labeled text. Delimiter-like strings in user input are escaped before tokenization. Invalid requests return `422`. `usage.output_tokens` counts tokens in the serialized answers, not generated tokens. In score answers, `legend` echoes the criteria levels verbatim with their original JSON types.
 
 | Method | Path | Purpose |
 |---|---|---|

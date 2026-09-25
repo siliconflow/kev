@@ -9,7 +9,7 @@
 array, the `legend[i]` echoed in the response was flattened into a multi-line
 string by `render()` (`kev/api.py`, `to_record`):
 
-- object level `{"what": ..., "examples": [...]}` -> `"what: ...\nexamples:\n - ...""`
+- object level `{"what": ..., "examples": [...]}` -> `"what: ...\nexamples:\n - ..."`
 - array level `["cosmetic", "no functional impact"]` -> `"- cosmetic\n- no functional impact"`
 
 OpenRouter requires `legend[i]` to be byte-identical in type and structure to the

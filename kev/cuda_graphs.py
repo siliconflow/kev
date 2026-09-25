@@ -54,6 +54,8 @@ GRAPHS_KEPT = 256      # captured graphs kept, least recently used evicted (a bu
 PASS_TOKENS = 256      # tokens a pass costs however few it holds: below about this many, a pass is bound by reading the
                        # weights, not by compute (bf16 GEMMs: peak FLOP/s over memory bandwidth is ~200-400 on H100, H200, B200, L40S)
 HOT_BUCKET = 3         # eager passes after which a busy server captures a bucket's graph anyway (capture_due)
+GRAPH_BYTES_PER_TOKEN = 2048   # graph-private intermediates a captured token plausibly costs (bf16 activations x ~2 consumers); a heuristic gate, not physics
+GRAPH_MIN_FREE = 256 * 2**20   # a capture needs at least this much free-device VRAM whatever its size (largest observed graph-private pool: ~524 MiB for 75+ graphs)
 
 
 def bucket(n, steps=8, floor=16):
@@ -220,6 +222,23 @@ class CudaGraphs:
         if graph is not None: graph.replay()
         else: body(buf)
 
+    def _capture_need(self, key):
+        """Free VRAM a capture of `key` plausibly needs: the id buffer is the small part, the graph-private
+        intermediates of the pass dominate. Estimated from the bucket's token count at
+        GRAPH_BYTES_PER_TOKEN, floored at GRAPH_MIN_FREE - a conservative gate, not physics."""
+        kind, n, a = key[0], key[1], key[2]
+        # rows key: (rows, Nb, Lb, Sr) - Nb question rows of Lb tokens each, over a shared Sr-token state; a capture
+        # holds the row intermediates in its private pool, so the row tokens dominate. states key: (states, Nb, Sb) -
+        # Nb states of Sb tokens each. b (Sr) is read only for row keys, which is why the unpack is positional-safe.
+        tokens = (n * a + a * key[3]) if kind == "rows" else n * a
+        return max(GRAPH_MIN_FREE, tokens * GRAPH_BYTES_PER_TOKEN)
+
+    def _free_bytes(self):
+        """Free VRAM as the device sees it: reserved-but-unallocated caching-allocator slack is NOT free for a
+        graph-private pool, so read device free memory, not allocator slack."""
+        free, _total = torch.cuda.mem_get_info(self.device)
+        return free
+
     @torch.no_grad()
     def capture_pending(self, limit=None):
         """Capture graphs for up to `limit` (None = all) buckets that have run eagerly, the most-run first. The caller must
@@ -232,6 +251,14 @@ class CudaGraphs:
         for _ in range(len(self.pending) if limit is None else min(limit, len(self.pending))):
             key = max(self.pending, key=self.eager_runs.get)
             (body, buf), _ = self.pending.pop(key), self.eager_runs.pop(key)
+            if self._free_bytes() < self._capture_need(key):
+                # a low-VRAM server (24 GB full of cached states and fragmented segments) would enter a
+                # capture it cannot finish (2026-09-25: one 222 MiB capture at 57 MiB free, then every
+                # later shape failing on the polluted pool state); the gate marks the bucket eager for good
+                # and leaves the NEXT capture a clean allocator - after the cache turns over and VRAM frees.
+                self.failed[key] = (f"gated: {self._free_bytes() // 2**20} MiB free < {self._capture_need(key) // 2**20} MiB needed", buf)
+                print(f"kev.cuda_graphs: capturing {key} skipped, it runs eagerly: {self.failed[key][0]}", flush=True)
+                continue
             current, graph = torch.cuda.current_stream(), torch.cuda.CUDAGraph()
             self.stream.wait_stream(current)
             try:
@@ -260,7 +287,9 @@ class CudaGraphs:
         return bool(runs) and (idle or max(runs) >= HOT_BUCKET)
 
     def stats(self):
-        return {"captured": self.captures, "kept": len(self.graphs), "pending": len(self.pending), "failed": len(self.failed)}
+        return {"captured": self.captures, "kept": len(self.graphs), "pending": len(self.pending), "failed": len(self.failed),
+                "gated": sum(1 for why, _ in self.failed.values() if why.startswith("gated")),
+                "free_mib": (self._free_bytes() // 2**20) if self.device.type == "cuda" else None}
 
     # Serving: which requests the graphed passes take, and one batch of them
 

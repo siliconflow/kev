@@ -63,6 +63,12 @@ USER appuser
 ENV HF_HUB_DISABLE_XET=1
 
 EXPOSE 8000
+# Fragmentation is the default failure mode of a 24 GB card serving variable-size batches
+# (2026-09-25 production: 6.04 GiB reserved-but-unallocated while graph captures failed for want
+# of contiguous VRAM). expandable_segments lets the allocator grow/shrink segments instead of
+# stranding slack in fixed blocks. Override at runtime with -e PYTORCH_CUDA_ALLOC_CONF=... if a
+# workload prefers the stock allocator.
+ENV PYTORCH_CUDA_ALLOC_CONF="expandable_segments:True"
 # The SF cloud-function yaml overrides `command` for serve flags
 # (see deploy/kev-4b-4090.yaml in os_jev_exp).
 CMD ["python", "-m", "kev.serve", "--run", "jaredpalmer/kev-4b", "--port", "8000"]

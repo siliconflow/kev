@@ -1,4 +1,4 @@
-"""transfer-v9 (the plan draft called it transfer-v5; v5-v8 are taken by decision-data versions): transfer-v4 byte-for-byte, plus three eval-only additions (PLAN_Qwen35.md, Phase 0).
+"""transfer-v9 (the plan draft called it transfer-v5; v5-v8 are taken by decision-data versions): transfer-v4 byte-for-byte, plus three eval-only additions (PLAN.md, "Qwen3.5 port" Phase 0).
 
     uv run python -m kev.transfer_v9 --out evals/v9/transfer-v9
 
@@ -25,24 +25,15 @@ from pathlib import Path
 from huggingface_hub import HfApi
 
 from . import contrastive
-from .suite import digest, record_digest, write_json
+from .data import materialize
+from .model import fits, load_tokenizer
+from .suite import ENCODING, digest, read_jsonl, read_manifest, record_digest, write_json, write_jsonl
 
 PARENT = Path("evals/v4/transfer-v4")
 MMLU_PRO = "TIGER-Lab/MMLU-Pro"
 BURIED_SOURCES = ("paws", "qnli", "tweet_offensive", "emotion")
 QWEN35 = {"Qwen/Qwen3.5-4B-Base": "1001bb4d826a52d1f399e183466143f4da7b741b", "Qwen/Qwen3.5-9B-Base": "68c46c4b3498877f3ef123c856ecfde50c39f404",
           "Qwen/Qwen3.5-0.8B-Base": "dc7cdfe2ee4154fa7e30f5b51ca41bfa40174e68"}
-
-
-def fits(record, tokenizers):
-    from .data import materialize
-    from .model import encode
-    try:
-        for tok in tokenizers:
-            if len(encode(tok, materialize(record), strict=True)["ids"]) > 2048: return False
-        return True
-    except ValueError:
-        return False
 
 
 def mmlu_pro(n, seed, revision, tokenizers, exclude_ids=()):
@@ -61,7 +52,7 @@ def mmlu_pro(n, seed, revision, tokenizers, exclude_ids=()):
                     "_meta": {"row": ex["question_id"], "text_sha256": hashlib.sha256(text.encode()).hexdigest(), "source": "mmlu_pro", "repo": MMLU_PRO,
                               "revision": revision, "split": "test", "id": f"mmlu_pro/test/{ex['question_id']}", "group_id": f"mmlu_pro/test/{ex['question_id']}", "variant": "clean"}})
         out[-1]["_meta"]["row_sha256"] = record_digest({k: v for k, v in out[-1].items() if k != "_meta"})
-        if not fits(out[-1], tokenizers): out.pop(); continue          # same context rule as every frozen suite
+        if not fits(materialize(out[-1]), *tokenizers): out.pop(); continue          # same context rule as every frozen suite
         if len(out) == n: break
     if len(out) < n: raise ValueError(f"mmlu_pro: only {len(out)}/{n} usable")
     return out
@@ -130,26 +121,25 @@ def main():
     a = ap.parse_args()
     out, parent = Path(a.out), Path(a.parent)
     if out.exists(): raise FileExistsError(out)
-    pm = json.loads((parent / "manifest.json").read_text())
+    pm = read_manifest(parent)
     revision = HfApi().dataset_info(MMLU_PRO).sha
-    from .model import load_tokenizer
     tokenizers = [load_tokenizer("Qwen/Qwen3-4B-Base", revision=pm["base_revisions"].get("Qwen/Qwen3-4B-Base")), load_tokenizer("Qwen/Qwen3.5-4B-Base", revision=QWEN35["Qwen/Qwen3.5-4B-Base"])]
     files, counts = {}, {}
     out.mkdir(parents=True)
     used = set()
     for split, seed in (("development", "v5-dev-20260920"), ("test", "v5-test-20260920")):
-        base = [json.loads(l) for l in (parent / f"{split}.jsonl").read_text().splitlines()]
+        base = read_jsonl(parent / f"{split}.jsonl")
         assert digest(parent / f"{split}.jsonl") == pm["files"][f"{split}.jsonl"]["sha256"]
         mp = mmlu_pro(a.mmlu_pro, seed, revision, tokenizers, exclude_ids=used); used |= {r["_meta"]["id"] for r in mp}
         records = base + mp + buried(base, a.buried, seed) + unknowable(a.unknowable_pairs, seed)
         ids = [r["_meta"]["id"] for r in records]
         if len(ids) != len(set(ids)): raise ValueError("duplicate ids")
         path = out / f"{split}.jsonl"
-        path.write_text("".join(json.dumps(r, ensure_ascii=False) + "\n" for r in records))
+        write_jsonl(path, records)
         files[path.name] = {"sha256": digest(path), "records": len(records)}
         counts[split] = {s: sum(r["_meta"]["source"] == s for r in records) for s in sorted({r["_meta"]["source"] for r in records})}
     for name in ("train.jsonl", "calibration.jsonl"):
-        (out / name).write_text(""); files[name] = {"sha256": digest(out / name), "records": 0}
+        (out / name).write_text("", encoding=ENCODING); files[name] = {"sha256": digest(out / name), "records": 0}
     manifest = {"version": 5, "parent": str(parent), "parent_files": pm["files"], "base_revisions": {**pm["base_revisions"], **QWEN35},
                 "dataset_revisions": {**pm.get("dataset_revisions", {}), MMLU_PRO: revision}, "holdout_sources": pm["holdout_sources"], "trainable_sources": [],
                 "eval_only_sources": pm["eval_only_sources"] + ["mmlu_pro", "buried", "unknowable", "unknowable_control"], "context": pm["context"],

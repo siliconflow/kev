@@ -2,7 +2,8 @@
 import json, sys
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from kev.benchmark import paired_bootstrap
+from kev.metrics import paired_bootstrap
+from kev.suite import read_json
 ROOT = Path(__file__).resolve().parents[1]
 REF = {"9b": ("Kev-9B", "q35-9b/01-trial-1"), "4b": ("Kev-4B", "q35-4b-s23/00-trial-0")}
 NAMES = ["dates", "unknowable", "assertion", "all"]
@@ -10,9 +11,9 @@ NAMES = ["dates", "unknowable", "assertion", "all"]
 def read(path):
     p = ROOT / "runs" / path
     if not (p / "result.json").exists(): return None
-    r = json.loads((p / "result.json").read_text()); t = r["transfer"]; c = t["clean"]
+    r = read_json(p / "result.json"); t = r["transfer"]; c = t["clean"]
     return {"dev": r["clean"]["acc"], "acc": c["acc"], "brier": c["brier"], "cerr": c["confident_error_rate"], "cov5": c["coverage_at_5pct_error"], "pairs": t["paired_flip"]["both_correct_rate"],
-            "deadline": t["tasks"]["contrastive_deadline"]["acc"], "mmlu": t["tasks"]["mmlu"]["acc"], "paws": t["tasks"]["paws"]["acc"], "emotion": t["tasks"]["emotion"]["acc"], "rows": json.loads((p / "transfer/rows.json").read_text())}
+            "deadline": t["tasks"]["contrastive_deadline"]["acc"], "mmlu": t["tasks"]["mmlu"]["acc"], "paws": t["tasks"]["paws"]["acc"], "emotion": t["tasks"]["emotion"]["acc"], "rows": read_json(p / "transfer/rows.json")}
 
 for size, (name, ref_path) in REF.items():
     ref = read(ref_path)

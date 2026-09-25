@@ -4,17 +4,18 @@
 
 Prints, per trial: transfer accuracy with the record-clustered paired bootstrap against the matched released checkpoint,
 the deadline family, held-out pairs, MMLU/PAWS retention, Brier, confident errors, dev accuracy; then the decision
-criteria from PLAN_Qwen35.md section 7 evaluated mechanically.
+criteria from PLAN.md ("Qwen3.5 port", section 7) evaluated mechanically.
 """
 import json
 from pathlib import Path
 
-from kev.benchmark import paired_bootstrap
+from kev.metrics import paired_bootstrap
+from kev.suite import read_json
 
 ROOT = Path(__file__).resolve().parents[1]
 RELEASED = {"4b": ("Kev-4B", "v7-rc3/01-trial-1"), "9b": ("Kev-8B", "v7-final/00-trial-0")}
 STUDIES = {"4b": ["q35-4b/00-trial-0", "q35-4b/01-trial-1", "q35-4b-s23/00-trial-0", "q35-4b-s23/01-trial-1"], "9b": ["q35-9b/00-trial-0", "q35-9b/01-trial-1"]}
-JEV = json.loads((ROOT / "runs/jev-transfer-v4/report.json").read_text())
+JEV = read_json(ROOT / "runs/jev-transfer-v4/report.json")
 
 
 def read(path):
@@ -22,7 +23,7 @@ def read(path):
     if not (p / "result.json").exists(): return None
     if (p / "transfer" / "rows.json").exists(): rows = p / "transfer" / "rows.json"
     else: rows = next(p.glob("transfer*/rows.json"), None)
-    r = json.loads((p / "result.json").read_text()); t = r["transfer"]
+    r = read_json(p / "result.json"); t = r["transfer"]
     return {"dev": r["clean"]["acc"], "acc": t["clean"]["acc"], "brier": t["clean"]["brier"], "cerr": t["clean"]["confident_error_rate"], "pairs": t["paired_flip"]["both_correct_rate"],
             "deadline": t["tasks"]["contrastive_deadline"]["acc"], "mmlu": t["tasks"]["mmlu"]["acc"], "paws": t["tasks"]["paws"]["acc"], "emotion": t["tasks"]["emotion"]["acc"],
             "cov5": t["clean"].get("coverage_at_5pct_error"), "rows": rows, "seed": r["provenance"]["config"].get("seed"), "wall": r.get("wall_seconds")}
@@ -38,7 +39,7 @@ def main():
         for t in trials:
             r = read(t)
             if r is None: print(f"   {t:26} (not finished)"); continue
-            b = paired_bootstrap(json.loads(r["rows"].read_text()), json.loads(ref["rows"].read_text()), metric="acc")
+            b = paired_bootstrap(read_json(r["rows"]), read_json(ref["rows"]), metric="acc")
             ci = f"{b['macro_acc_delta']:+.3f} [{b['ci95'][0]:+.3f}, {b['ci95'][1]:+.3f}]"
             print(f"   {t:26} {str(r['seed']):>4} {r['dev']:6.3f} {r['acc']:8.3f} {ci:>24} {r['deadline']:8.2f} {r['pairs']:6.2f} {r['mmlu']:5.2f} {r['paws']:5.2f} {r['emotion']:5.2f} {r['brier']:6.3f} {r['cerr']:5.3f}")
             verdicts.append({"trial": t, "beats_ref_ci": b["ci95"][0] > 0, "acc_ge_ref": r["acc"] >= ref["acc"], "deadline_ge_0_75": r["deadline"] >= 0.75,

@@ -15,6 +15,8 @@ from pathlib import Path
 import torch
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
+from kev.api import question_keys
+from kev.device import default_device
 from kev.suite import load_split, write_json
 
 LETTERS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
@@ -22,15 +24,16 @@ LETTERS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
 
 def question_prompt(state, q):
     text = state if isinstance(state, str) else " ".join(f"{k}: {v}" for k, v in state.items()) if isinstance(state, dict) else json.dumps(state)
-    if q["type"] == "noul": keys, texts = ["false", "true"], ["No", "Yes"]
-    elif q["type"] == "score": keys, texts = [str(i) for i in range(len(q["criteria"]))], list(q["criteria"])
-    else: keys, texts = list(q["criteria"]), [v if v is not None else k for k, v in q["criteria"].items()]
+    keys = question_keys(q["type"], q.get("criteria"))
+    if q["type"] == "noul": texts = ["No", "Yes"]
+    elif q["type"] == "score": texts = list(q["criteria"])
+    else: texts = [v if v is not None else k for k, v in q["criteria"].items()]
     prompt = f"{text}\n{q['instructions']}\n" + "\n".join(f"{LETTERS[i]}. {t}" for i, t in enumerate(texts)) + "\nAnswer:"
     return prompt, keys
 
 
 def build(base, suite, out, split="train", device=None, revision=None, max_options=26, batch=16):
-    device = device or ("cuda" if torch.cuda.is_available() else "mps" if torch.backends.mps.is_available() else "cpu")
+    device = device or default_device()
     tok = AutoTokenizer.from_pretrained(base, revision=revision); tok.padding_side = "left"
     if tok.pad_token is None: tok.pad_token = tok.eos_token
     model = AutoModelForCausalLM.from_pretrained(base, revision=revision, dtype=torch.bfloat16 if device != "cpu" else torch.float32).to(device).eval()

@@ -1,7 +1,7 @@
 """Opt-in image channel for the decision model (KEV_VISION=1). Channel open, untrained readout.
 
 Qwen3.5-Base checkpoints ship the full vision tower in the same safetensors (4B-Base: 297
-`model.visual.*` tensors; 0.8B-Base: 153), but kev.evaluate.load's path (AutoModelForCausalLM
+`model.visual.*` tensors; 0.8B-Base: 153), but the load path (AutoModelForCausalLM
 -> Qwen3_5ForCausalLM -> .model = Qwen3_5TextModel) drops them: the tower is never
 instantiated. That is exactly the state the LoRA and pointer head were trained in (training
 data is text-only, every generation), so re-attaching the untrained tower opens the image
@@ -131,10 +131,10 @@ def _resolve_snapshot(base, revision):
 
     if os.path.isdir(base):
         return base
-    # evaluate.load swaps the HF id for a local ModelScope snapshot under
+    # Checkpoint.base_dir swaps the HF id for a local ModelScope snapshot under
     # KEV_BASE_HUB=modelscope; the MS mirror carries the same weights - reuse that copy.
     if os.environ.get("KEV_BASE_HUB") == "modelscope":
-        from .evaluate import _ms_snapshot
+        from .checkpoint import _ms_snapshot
 
         return _ms_snapshot(base)
     root = os.path.expanduser("~/.cache/huggingface/hub")

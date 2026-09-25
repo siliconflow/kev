@@ -1,21 +1,43 @@
 import argparse
 import copy
+import fcntl
 import hashlib
 import json
+import os
 import random
+import shutil
 from collections import Counter
+from contextlib import contextmanager
 from pathlib import Path
 
+from kev.composition import DEV_SHAPES, HELD_OUT_KEYS, TEST_SHAPES, TRAIN_SHAPES
+from kev.contrastive import FAMILIES, generate
 from kev.data import ALL_REPOS, ALL_SOURCES, EVAL_ONLY, REPOS, SOURCES, TRAINABLE, TRANSFER_REPOS, TRANSFER_SOURCES, build, dataset_ref, materialize, source_seed
-from kev.model import encode, load_tokenizer
+from kev.model import MAX_BRANCH, SERVE_MAX_BRANCH, SERVE_MAX_PACKED, SERVE_MAX_STATE, fits, load_tokenizer, training_context
 
 SPLITS = ("train", "calibration", "development", "test")
 BASES = ("Qwen/Qwen2.5-0.5B", "Qwen/Qwen3-0.6B-Base")
+# the encoder limits every frozen record satisfies, as written into manifests ("context")
+CONTEXT = {**training_context(), "truncate": False}
+# what a manifest records for an eval-only suite frozen as published rather than admitted to the training context
+SERVING_CONTEXT = {"max_state": SERVE_MAX_STATE, "max_branch": SERVE_MAX_BRANCH, "max_packed": SERVE_MAX_PACKED, "truncate": False}
+# Clean records are admitted with this many branch tokens to spare, so the variants that add an option (contrast_cases'
+# none-of-these, training-time none/distractor augmentation) still encode under MAX_BRANCH.
+ADMISSION_BRANCH_HEADROOM = 64
 # Frozen suites are mirrored on the Hub. Manifests (with the sha256 of every partition) and the development/test
 # partitions live in git; large training partitions are fetched from this dataset on first use and verified against
-# the manifest, so the suite hash and every provenance record stay unchanged.
+# the manifest, so the suite hash and every provenance record stay unchanged. A suite whose partitions must never be
+# public (a held-out test set) names its own mirror in the manifest, {"mirror": {"dataset": ..., "revision": ...}},
+# usually the private PRIVATE_DATASET; only its manifest is in git, which publishes the hashes but not the text.
 SUITES_DATASET = "jaredpalmer/kev-suites"
-SUITES_REVISION = "a957287d1c502a4e2e3b9d9d1325c2c6f27f181c"
+PRIVATE_DATASET = "jaredpalmer/kev-private-evals"
+SUITES_REVISION = "a88f56db5341397299137cb68775c2ea6e3f68cb"
+# partitions larger than this stay out of git (gitignored; the manifest's sha256 still pins them)
+GIT_LIMIT = 10 * 1024 * 1024
+# the pinned tokenizer suites built for the Qwen3.5 family are admitted and length-counted under (hard-v1, devtools-v1, long states)
+ADMISSION_TOKENIZER = ("Qwen/Qwen3.5-4B-Base", "1001bb4d826a52d1f399e183466143f4da7b741b")
+# programmatic policy sources (kev.study_v3 / kev.contrastive); the trainer's mix ablations treat them as one group
+SYNTHETIC_SOURCES = ("legacy_policy", "compositional", "contrastive")
 
 
 def digest(path):
@@ -30,8 +52,85 @@ def record_digest(record):
     return hashlib.sha256(json.dumps(record, ensure_ascii=False, separators=(",", ":")).encode()).hexdigest()
 
 
-def write_json(path, value):
-    Path(path).write_text(json.dumps(value, indent=2, ensure_ascii=False, allow_nan=False) + "\n")
+def normalise_text(text):
+    """Casefolded, whitespace runs collapsed to one space: the text two states are compared on for exact deduplication."""
+    return " ".join(text.casefold().split())
+
+
+def text_digest(text):
+    """sha256 of normalise_text(text): the `text_sha256` of suite builders (kev.data computes the same inline; it cannot
+    import this module). scripts/screen_overlap.py tokenises differently on purpose (words only, for n-gram overlap)."""
+    return hashlib.sha256(normalise_text(text).encode()).hexdigest()
+
+
+# Every JSON/JSONL file this repo writes is UTF-8 with LF line endings, whatever the platform's locale says (issue #12:
+# frozen partitions are sha256-checked byte for byte, and they contain non-ASCII text). Read them the same way.
+ENCODING = "utf-8"
+
+
+def read_json(path):
+    return json.loads(Path(path).read_text(encoding=ENCODING))
+
+
+def write_json(path, value, atomic=False):
+    """atomic: write a sibling temp file and os.replace it over `path`, so a reader (or a restart after a crash mid-write)
+    sees the old file or the new one, never a torn one. For state files rewritten in place (kev.rounds' watcher)."""
+    text = json.dumps(value, indent=2, ensure_ascii=False, allow_nan=False) + "\n"
+    if not atomic:
+        Path(path).write_text(text, encoding=ENCODING); return
+    tmp = Path(path).with_name(f".{Path(path).name}.tmp")
+    tmp.write_text(text, encoding=ENCODING)
+    os.replace(tmp, path)
+
+
+@contextmanager
+def file_lock(path):
+    """Hold an exclusive advisory lock on `path` (created if absent) for the block; a second holder waits. Local
+    orchestration only: one pull of a study (modal_app.pull_lock), one launch of an arm's reads (kev.rounds)."""
+    Path(path).parent.mkdir(parents=True, exist_ok=True)
+    with Path(path).open("a", encoding=ENCODING) as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        yield
+
+
+def read_jsonl(path):
+    # split on "\n" only: str.splitlines() also breaks on U+2028, U+2029 and U+0085, which write_jsonl leaves unescaped
+    return [json.loads(line) for line in Path(path).read_text(encoding=ENCODING).split("\n") if line.strip()]
+
+
+def write_jsonl(path, records):
+    Path(path).write_text("".join(json.dumps(r, ensure_ascii=False) + "\n" for r in records), encoding=ENCODING)
+
+
+def semantic_hash(r):
+    """State hash that ignores sentence order for policy/case records (contrastive, compositional), so the same case
+    told in a different order counts as the same state; record_digest of the state otherwise."""
+    state = r["state"]
+    if isinstance(state, dict) and "policy" in state and "case" in state:
+        state = {"policy": state["policy"], "sentences": sorted(s.rstrip(".") for s in state["case"].split(". "))}
+    return record_digest(state)
+
+
+def validate_training(records, manifest):
+    """Every training record must come from a source the manifest declares trainable, never from an eval-only or held-out
+    one, and compositional records must not use a held-out rule structure."""
+    allowed = set(manifest.get("trainable_sources", []))
+    forbidden = set(EVAL_ONLY) | set(manifest.get("eval_only_sources", [])) | set(manifest.get("holdout_sources", []))
+    for r in records:
+        m = r["_meta"]
+        if m["source"] in forbidden or (allowed and m["source"] not in allowed):
+            raise ValueError(f"eval-only or undeclared training source: {m['source']}")
+        if m["source"] == "compositional":
+            held_shape = m["family"] in DEV_SHAPES + TEST_SHAPES
+            held_structure = m.get("structure") in HELD_OUT_KEYS
+            if held_shape or held_structure or (m["family"] not in TRAIN_SHAPES and not m["family"].startswith("rand:")):
+                raise ValueError("held-out compositional structure in training")
+    if not records:
+        raise ValueError("empty training partition")
+
+
+def read_manifest(directory):
+    return read_json(Path(directory) / "manifest.json")
 
 
 def load_split(directory, split, allow_test=False):
@@ -40,30 +139,37 @@ def load_split(directory, split, allow_test=False):
     if split == "test" and not allow_test:
         raise ValueError("locked test requires explicit --allow-test; never use it for search")
     directory = Path(directory)
-    manifest = json.loads((directory / "manifest.json").read_text())
+    manifest = read_manifest(directory)
     path = directory / f"{split}.jsonl"
     if not path.exists():
         fetch_partition(directory, path.name)
     if digest(path) != manifest["files"][path.name]["sha256"]:
         raise ValueError(f"suite checksum mismatch: {path}")
-    records = [json.loads(line) for line in path.read_text().splitlines()]
+    records = read_jsonl(path)
     if len(records) != manifest["files"][path.name]["records"]:
         raise ValueError("suite record count mismatch")
     return records
 
 
 def fetch_partition(directory, filename):
-    """Download one partition of a frozen suite from the Hub mirror into place. The caller verifies the sha256."""
-    import shutil
+    """Download one partition of a frozen suite from its Hub mirror into place: the manifest's own "mirror" if it names
+    one, else SUITES_DATASET@SUITES_REVISION. The caller verifies the sha256."""
     from huggingface_hub import hf_hub_download
+    from huggingface_hub.errors import GatedRepoError, RepositoryNotFoundError
     directory = Path(directory).resolve()
     evals_root = next((p for p in directory.parents if p.name == "evals"), None)
     if evals_root is None:
         raise FileNotFoundError(f"{directory / filename} is missing and is not under an evals/ tree")
     relative = directory.relative_to(evals_root) / filename
-    cached = hf_hub_download(SUITES_DATASET, str(relative), repo_type="dataset", revision=SUITES_REVISION)
+    mirror = read_manifest(directory).get("mirror")
+    repo, revision = (mirror["dataset"], mirror["revision"]) if mirror else (SUITES_DATASET, SUITES_REVISION)   # a named mirror pins its own revision
+    try:
+        cached = hf_hub_download(repo, str(relative), repo_type="dataset", revision=revision)
+    except (RepositoryNotFoundError, GatedRepoError) as e:   # a private mirror answers "not found" to anyone without access
+        raise PermissionError(f"{relative} is only in {repo}, which is missing or private to this account; `hf auth login` "
+                              "(or HF_TOKEN) with access to it, or ask for it") from e
     shutil.copyfile(cached, directory / filename)
-    print(f"fetched {relative} from {SUITES_DATASET}@{SUITES_REVISION[:10]}", flush=True)
+    print(f"fetched {relative} from {repo}@{revision[:10]}", flush=True)
 
 
 def case_copy(record, variant):
@@ -116,13 +222,8 @@ def select_unique(records, count, seen, tokenizers, report):
         if key in seen:
             report["duplicate_state"] += 1
             continue
-        try:
-            rec = materialize(record)
-            for tokenizer in tokenizers:
-                enc = encode(tokenizer, rec, max_branch=960, strict=True)
-                if len(enc["ids"]) > 2048:
-                    raise ValueError("packed request exceeds 2048 tokens")
-        except ValueError:
+        rec = materialize(record)   # a record that fails request validation is a converter bug: let it abort the freeze
+        if not fits(rec, *tokenizers, max_branch=MAX_BRANCH - ADMISSION_BRANCH_HEADROOM):
             report["context_rejected"] += 1
             continue
         record["_meta"].update(group_id=record["_meta"]["id"], variant="clean")
@@ -165,7 +266,7 @@ def freeze(directory, train=300, calibration=40, development=80, test=80, seed=2
         "trainable_sources": trainable_here, "eval_only_sources": [x for x in sources if x in holdout],
         "policy": {"trainable": list(TRAINABLE), "eval_only": list(EVAL_ONLY)},
         "dataset_revisions": revisions, "base_revisions": base_revisions,
-        "context": {"max_state": 384, "max_branch": 1024, "max_packed": 2048, "truncate": False},
+        "context": {**CONTEXT, "admission_branch_headroom": ADMISSION_BRANCH_HEADROOM},
         "selection": "Normalized exact-state deduplication across partitions; common tokenizer context admission; no fuzzy decontamination or pretraining-contamination claim.",
         "legacy_checkpoints": "Training/calibration overlap for pre-manifest checkpoints is unknown; exploratory only.",
         "objective": "Negative macro-average clean development NLL, equal weight per task; raw probabilities.",
@@ -189,7 +290,6 @@ def freeze(directory, train=300, calibration=40, development=80, test=80, seed=2
         manifest["admission"][source] = dict(report)
         print(f"froze {source}: {dict(report)}", flush=True)
     if contrastive_pairs:
-        from kev.contrastive import FAMILIES, generate
         families = list(FAMILIES)
         held = list(contrastive_holdout_families)
         unknown = set(held) - set(families)
@@ -225,15 +325,15 @@ def freeze(directory, train=300, calibration=40, development=80, test=80, seed=2
             if per_source[source] < 12:
                 variants = contrast_cases(record, seed)
                 for variant in variants:
-                    for tok in tokenizers:
-                        encode(tok, materialize(variant), strict=True)
+                    if not fits(materialize(variant), *tokenizers):
+                        raise ValueError(f"variant of {record['_meta']['id']} exceeds the training context")
                 extras.extend(variants)
                 per_source[source] += bool(variants)
         partitions[split].extend(extras)
     directory.mkdir(parents=True)
     for split, records in partitions.items():
         path = directory / f"{split}.jsonl"
-        path.write_text("".join(json.dumps(r, ensure_ascii=False) + "\n" for r in records))
+        write_jsonl(path, records)
         manifest["files"][path.name] = {"sha256": digest(path), "records": len(records),
                                         "questions": sum(len(r["questions"]) for r in records)}
     manifest["code_hashes"] = {name: digest(Path(__file__).parent / name) for name in ("data.py", "api.py", "model.py", "suite.py")}

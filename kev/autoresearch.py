@@ -1,268 +1,145 @@
-"""Bounded self-improvement loop for kev.
+"""Unattended research sessions on the round harness, plus the study leaderboard.
 
-    uv run python -m kev.autoresearch leaderboard                  # rebuild runs/leaderboard.{jsonl,md} from every study
-    uv run python -m kev.autoresearch propose --base Qwen/Qwen3-0.6B-Base --n 8 --out experiments/auto/r1.json
-    uv run python -m kev.autoresearch round --base Qwen/Qwen3-0.6B-Base --n 8 --name auto-r1 [--seeds 0,1]
-    uv run python -m kev.autoresearch loop --base Qwen/Qwen3-0.6B-Base --rounds 4 --n 8 --spend-cap 120
+    uv run python -m kev.autoresearch session experiments/rounds/r19.json [...] --spend-start 1377 --spend-cap 300
+    uv run python -m kev.autoresearch leaderboard                 # runs/leaderboard.{jsonl,md} from every trial's result.json
+    uv run python -m kev.autoresearch release-check --study X     # every seed of a config must pass its gates
+    uv run python -m kev.autoresearch compare --studies a,b --reference runs/<study>/<trial>
 
-What it may change: the allowlisted trial parameters in kev.experiment (optimizer, LoRA rank, epochs, effective batch,
-augmentation rates, loss weights, architecture switches). What it may never change: the evaluator, the frozen suites,
-the gates, or the locked test. Every trial still goes through kev.experiment.execute_trial with full provenance.
+A session runs registered rounds in order through kev.rounds (validate, launch the studies, watch: pull and read each
+finished trial, then the read-out). What it may run is what the specs register: config-only trials through
+kev.experiment.execute_trial with full provenance, and the reads the rule names. It never changes the evaluator, the
+frozen suites or the gates, and it never confirms: test partitions and the locked read are read once, by a deliberate
+`python -m kev.rounds confirm` after a read-out names a candidate (the session prints those commands).
 
-Score: transfer development macro accuracy (out-of-domain), among trials that pass the correctness gates and do not
-regress in-distribution accuracy by more than 2 pp against the incumbent; ties broken by transfer Brier, then dev NLL.
-Selection happens on development partitions only. A round's winner becomes the incumbent for the next round's
-mutations; a config is never re-run with the same seed.
-
-Budget: before each round, `modal billing summary` is read; the loop stops when metered spend since `--spend-start`
-exceeds `--spend-cap`. Per-round admission bounds still apply in modal_app.launch.
+Budget: before each round, `modal billing summary` is read; the session stops when metered spend since --spend-start
+plus the round's study budgets (each at least its admission bound, checked by kev.rounds.validate) would pass
+--spend-cap. Each round appends a line to runs/autoresearch-sessions.jsonl.
 """
 import argparse
+import hashlib
 import json
-import random
 import subprocess
 import sys
-import time
 from collections import defaultdict
 from datetime import datetime, timezone
 from pathlib import Path
 
-from kev.experiment import CHOICES, DEFAULTS, RANGES, validated_trial
-from kev.suite import write_json
-
-
-def record_digest(value):
-    """Canonical (key-sorted) digest for config identity; kev.suite.record_digest keeps insertion order for provenance."""
-    import hashlib
-    return hashlib.sha256(json.dumps(value, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+from kev import rounds
+from kev.experiment import CHOICE_DEFAULTS, DEFAULTS
+from kev.metrics import paired_bootstrap
+from kev.suite import ENCODING, read_json, write_jsonl
 
 ROOT = Path(__file__).resolve().parents[1]
-SUITE, TRANSFER = "evals/v4/decision-v4", "evals/v4/transfer-v4"
 H100_RATE = 3.95
+INFRA_KEYS = ("base", "seed", "base_revision", "dtype", "checkpointing", "batch", "accum", "perm_frac", "shared_prefix")   # execution shape, not recipe
+ALL_DEFAULTS = {**DEFAULTS, **CHOICE_DEFAULTS}   # what kev.train does when a knob is not given
 
-# Mutation space: each entry is (knob, candidate values). One knob changes per proposal, plus a few two-knob combos.
-SPACE = {
-    "lr": [2e-5, 3e-5, 5e-5, 1e-4, 2e-4], "lora": [4, 8, 16, 32], "epochs": [1, 2, 3],
-    "accum": [1, 2],                                  # with batch 8 -> effective 8 or 16
-    "p_none_pair": [0.0, 0.25, 0.5], "p_none": [0.05, 0.1, 0.2], "p_none_distract": [0.06, 0.12, 0.25], "p_distract": [0.0, 0.15, 0.3],
-    "perm_kl": [0.0, 0.2, 0.5], "ord_w": [0.0, 0.25, 0.5],
-    "option_isolation": [0, 1], "special_embeddings": [0, 1], "head_dim": [128, 256, 512, 1024],
-    "synthetic_repeat": [1, 2], "public_frac": [0.33, 0.5, 1.0], "lora_targets": ["all", "attn", "qv"],
-    "head_lr": [0.0, 5e-4, 2e-3], "weight_decay": [0.0, 0.01, 0.1],
-}
-BASE_DEFAULTS = {  # per-backbone memory-safe batch shape; effective batch stays 8 unless accum is mutated
-    "Qwen/Qwen3-0.6B-Base": {"batch": 8, "accum": 1, "dtype": "bf16"},
-    "Qwen/Qwen3-4B-Base": {"batch": 4, "accum": 2, "dtype": "bf16", "checkpointing": 1},
-    "Qwen/Qwen3-8B-Base": {"batch": 2, "accum": 4, "dtype": "bf16", "checkpointing": 1, "base_revision": "49e3418fbbbca6ecbdf9608b4d22e5a407081db4"},
-}
-TRIAL_MINUTES = {"Qwen/Qwen3-0.6B-Base": 14, "Qwen/Qwen3-4B-Base": 50, "Qwen/Qwen3-8B-Base": 80}
 
+def config_digest(value):
+    """Canonical (key-sorted) digest for config identity; kev.suite.record_digest keeps insertion order for provenance."""
+    return hashlib.sha256(json.dumps(value, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+
+
+def knobs(cfg):
+    """The recipe a config expresses: every non-default, non-infrastructure parameter."""
+    return {k: v for k, v in sorted(cfg.items()) if k not in INFRA_KEYS and v != ALL_DEFAULTS.get(k)}
+
+
+def recipe(row):
+    """A trial's recipe identity: its config without the seed (config_sha256 hashes the seed too)."""
+    return config_digest({k: v for k, v in row["config"].items() if k != "seed"})
+
+
+# --- sessions --------------------------------------------------------------------------------------------------------
 
 def metered_spend():
     out = subprocess.run([sys.executable, "-m", "modal", "billing", "summary", "--json"], capture_output=True, text=True, cwd=ROOT)
     return float(json.loads(out.stdout)["metered_cost"]) if out.returncode == 0 else None
 
 
+def session(paths, spend_start, spend_cap, spend=metered_spend, log=print):
+    """Run each registered round to its read-out while the spend cap allows; returns the ledger entries written."""
+    entries = []
+    for path in paths:
+        spec = rounds.load(path)
+        problems = rounds.launchable(spec)
+        if problems: log(f"{path}: does not validate, session stops:\n" + "\n".join(problems)); break
+        spent, bound = spend(), sum(s["budget"] for s in spec["studies"].values())
+        if spent is None: log("cannot read `modal billing summary`; session stops"); break
+        if spent - spend_start + bound > spend_cap:
+            log(f"round {spec['round']}: spent ${spent - spend_start:.2f} + budgets ${bound:.2f} > cap ${spend_cap:.2f}; session stops"); break
+        rounds.launch_studies(spec)
+        report = rounds.watch(spec)
+        entry = {"round": spec["round"], "spec": str(path), "spend_before": round(spent - spend_start, 2), "budgets": bound, "candidates": report["candidates"],
+                 "at": datetime.now(timezone.utc).isoformat(timespec="minutes")}
+        with (ROOT / "runs/autoresearch-sessions.jsonl").open("a", encoding=ENCODING) as f: f.write(json.dumps(entry) + "\n")
+        entries.append(entry)
+        for arm in filter(None, report["candidates"].values()):
+            for stage in spec.get("confirm", {}):
+                log(f"candidate {arm}: uv run python -m kev.rounds launch-reads {path} --stage {stage} --arm {arm}  then  confirm {path} --stage {stage} --arm {arm}")
+    return entries
+
+
+# --- leaderboard -----------------------------------------------------------------------------------------------------
+
 def collect():
     """Every completed trial in runs/*/ with its provenance, as flat leaderboard rows."""
     rows = []
     for result in sorted(ROOT.glob("runs/*/*/result.json")):
-        r = json.loads(result.read_text())
+        r = read_json(result)
         prov = r.get("provenance", {}); cfg = prov.get("config") or {}
         tr = r.get("transfer") or {}
-        row = {"study": result.parent.parent.name, "trial": result.parent.name, "legacy": prov.get("legacy_checkpoint", False),
-               "base": cfg.get("base"), "seed": cfg.get("seed"), "config": cfg, "config_sha256": prov.get("config_sha256"),
-               "suite_sha256": prov.get("suite_sha256"), "transfer_suite_sha256": tr.get("suite_sha256"), "git": prov.get("git_commit", "")[:8],
-               "dev_acc": r["clean"]["acc"], "dev_nll": r["clean"]["nll"], "dev_ece": r["clean"]["ece"],
-               "transfer_acc": tr.get("clean", {}).get("acc"), "transfer_brier": tr.get("clean", {}).get("brier"),
-               "transfer_conf_err": tr.get("clean", {}).get("confident_error_rate"),
-               "heldout_pairs": (tr.get("paired_flip") or {}).get("both_correct_rate"),
-               "none_present": r["variants"].get("none_present", {}).get("acc"), "perm_flip": r["permutation"]["flip_rate"],
-               "gates": r["gates"]["checks"], "gates_passed": r["gates"]["passed"],
-               "train_s": (r.get("training_resources") or {}).get("wall_seconds"), "wall_s": r.get("wall_seconds"),
-               "est_usd": round(H100_RATE * r.get("wall_seconds", 0) / 3600, 2) if prov.get("device") == "cuda" else None}
-        rows.append(row)
+        rows.append({"study": result.parent.parent.name, "trial": result.parent.name, "legacy": prov.get("legacy_checkpoint", False),
+                     "base": cfg.get("base"), "seed": cfg.get("seed"), "config": cfg, "config_sha256": prov.get("config_sha256"),
+                     "suite_sha256": prov.get("suite_sha256"), "transfer_suite_sha256": tr.get("suite_sha256"), "git": prov.get("git_commit", "")[:8],
+                     "dev_acc": r["clean"]["acc"], "dev_nll": r["clean"]["nll"], "dev_ece": r["clean"]["ece"],
+                     "transfer_acc": tr.get("clean", {}).get("acc"), "transfer_brier": tr.get("clean", {}).get("brier"),
+                     "transfer_conf_err": tr.get("clean", {}).get("confident_error_rate"),
+                     "heldout_pairs": (tr.get("paired_flip") or {}).get("both_correct_rate"),
+                     "none_present": r["variants"].get("none_present", {}).get("acc"), "perm_flip": r["permutation"]["flip_rate"],
+                     "gates": r["gates"]["checks"], "gates_passed": r["gates"]["passed"],
+                     "train_s": (r.get("training_resources") or {}).get("wall_seconds"), "wall_s": r.get("wall_seconds"),
+                     "est_usd": round(H100_RATE * r.get("wall_seconds", 0) / 3600, 2) if prov.get("device") == "cuda" else None})
     return rows
 
 
-def dev_partition_hashes():
-    """manifest sha -> development.jsonl sha, for every frozen suite. Suites that differ only in training data (v4/v5/v6)
-    share development bytes and are comparable."""
-    from kev.suite import digest
-    out = {}
-    for m in ROOT.glob("evals/**/manifest.json"):
-        try: out[digest(m)] = json.loads(m.read_text())["files"]["development.jsonl"]["sha256"]
-        except (KeyError, ValueError): pass
-    return out
-
-
-DEV_HASHES = dev_partition_hashes()
-
-
-def eligible(row, suite_hash=None, transfer_hash=None):
-    """Comparable and correct: same development bytes, same transfer suite, complete coverage, isolation, transfer scored."""
-    g = row["gates"]
-    ok = g.get("complete_coverage") and g.get("isolation_and_packing") and g.get("transfer_complete", True) and row["transfer_acc"] is not None
-    if suite_hash and DEV_HASHES.get(row["suite_sha256"]) != DEV_HASHES.get(suite_hash): return False
-    if transfer_hash and DEV_HASHES.get(row["transfer_suite_sha256"]) != DEV_HASHES.get(transfer_hash): return False
-    return bool(ok) and not row["legacy"]
-
-
-def score(row):
-    return (row["transfer_acc"], -(row["transfer_brier"] or 1), -(row["dev_nll"] or 9))
-
-
-def incumbent(rows, base, suite_hash, transfer_hash):
-    """Best eligible trial for a backbone. Prefer configs with >=2 seeds by mean score; otherwise the best single seed."""
-    by_cfg = defaultdict(list)
-    for r in rows:
-        if r["base"] == base and eligible(r, suite_hash, transfer_hash): by_cfg[r["config_sha256"]].append(r)
-    if not by_cfg: return None
-    def agg(group):
-        n = len(group)
-        return (len({r["seed"] for r in group}) >= 2, sum(r["transfer_acc"] for r in group) / n, -sum(r["transfer_brier"] for r in group) / n)
-    best = max(by_cfg.values(), key=agg)
-    return {"config": best[0]["config"], "config_sha256": best[0]["config_sha256"], "seeds": sorted({r["seed"] for r in best}), "suite": best[0]["study"],
-            "transfer_acc": sum(r["transfer_acc"] for r in best) / len(best), "dev_acc": sum(r["dev_acc"] for r in best) / len(best),
-            "trials": [f"{r['study']}/{r['trial']}" for r in best]}
-
-
-def strip_seed(cfg):
-    return {k: v for k, v in cfg.items() if k != "seed"}
-
-
-def propose(rows, base, n, seed, suite_manifest, incumbent_cfg=None, rng_seed=0):
-    """n one-knob mutations of the incumbent (plus a few two-knob combos), deduplicated against every tried config."""
-    rng = random.Random(rng_seed)
-    parent = dict(incumbent_cfg or {**DEFAULTS, **BASE_DEFAULTS[base], "base": base, "epochs": 2})
-    parent.pop("seed", None); parent.pop("train_sources", None)
-    tried = {record_digest(validated_trial({**strip_seed(r["config"]), "seed": seed}, suite_manifest)) for r in rows if r["config"] and r["base"] == base}
-    candidates, seen = [], set()
-    knobs = list(SPACE)
-    for _ in range(400):
-        if len(candidates) >= n: break
-        k = rng.sample(knobs, rng.choice([1, 1, 1, 2]))
-        cfg = dict(parent)
-        for knob in k:
-            current = parent.get(knob, DEFAULTS.get(knob, 0 if knob in ("option_isolation", "special_embeddings") else 256 if knob == "head_dim" else "all" if knob == "lora_targets" else None))
-            choices = [v for v in SPACE[knob] if v != current]
-            if not choices: continue
-            cfg[knob] = rng.choice(choices)
-        if cfg.get("accum", 1) > 1 and base == "Qwen/Qwen3-0.6B-Base": cfg["batch"] = 8      # effective batch 16 via accum
-        cfg["seed"] = seed
-        try: full = validated_trial(cfg, suite_manifest)
-        except ValueError: continue
-        h = record_digest(full)
-        if h in tried or h in seen: continue
-        seen.add(h); candidates.append(cfg)
-    # always include the incumbent itself at this seed if it has not been run at this seed (replication)
-    inc = {**parent, "seed": seed}
-    if record_digest(validated_trial(inc, suite_manifest)) not in tried and len(candidates) < n + 1:
-        candidates.insert(0, inc)
-    return candidates[: n + 1]
-
-
-def leaderboard_md(rows, incumbents):
+def leaderboard_md(rows):
     lines = ["# Leaderboard", "", f"Generated {datetime.now(timezone.utc).isoformat(timespec='minutes')} from runs/*/result.json. "
-             "Selection on development partitions only; the locked test is never read here.", ""]
-    for base, inc in incumbents.items():
-        if inc: lines.append(f"- **{base}** incumbent: transfer {inc['transfer_acc']:.3f}, dev {inc['dev_acc']:.3f}, seeds {inc['seeds']} ({', '.join(inc['trials'])})")
-    lines += ["", "| study/trial | base | seed | dev acc | transfer acc | Brier | conf-err | held-out pairs | none_present | perm flip | gates | $ | knobs |", "|---|---|---|---|---|---|---|---|---|---|---|---|---|"]
-    def knobs(cfg):
-        return ", ".join(f"{k}={v}" for k, v in sorted(cfg.items()) if k not in ("base", "seed", "base_revision", "dtype", "checkpointing", "batch") and v != DEFAULTS.get(k) and not (k == "accum" and v in (1, 2))) or "defaults"
+             "Selection on development partitions only; the locked test is never read here. Rounds are decided by their "
+             "registered rules (`python -m kev.rounds readout`), not by this table.", "",
+             "| study/trial | base | seed | dev acc | transfer acc | Brier | conf-err | held-out pairs | none_present | perm flip | gates | $ | knobs |", "|---|---|---|---|---|---|---|---|---|---|---|---|---|"]
     for r in sorted(rows, key=lambda r: (r["transfer_acc"] is None, -(r["transfer_acc"] or 0))):
         b = (r["base"] or "legacy").split("/")[-1]
         f = lambda x, p=3: "" if x is None else f"{x:.{p}f}"
-        lines.append(f"| {r['study']}/{r['trial']} | {b} | {r['seed'] if r['seed'] is not None else ''} | {f(r['dev_acc'])} | {f(r['transfer_acc'])} | {f(r['transfer_brier'])} | {f(r['transfer_conf_err'])} | {f(r['heldout_pairs'],2)} | {f(r['none_present'],2)} | {f(r['perm_flip'],2)} | {'pass' if r['gates_passed'] else 'fail'} | {r['est_usd'] or ''} | {knobs(r['config'])} |")
+        lines.append(f"| {r['study']}/{r['trial']} | {b} | {r['seed'] if r['seed'] is not None else ''} | {f(r['dev_acc'])} | {f(r['transfer_acc'])} | {f(r['transfer_brier'])} | {f(r['transfer_conf_err'])} | {f(r['heldout_pairs'],2)} | {f(r['none_present'],2)} | {f(r['perm_flip'],2)} | {'pass' if r['gates_passed'] else 'fail'} | {r['est_usd'] or ''} | {', '.join(f'{k}={v}' for k, v in knobs(r['config']).items()) or 'defaults'} |")
     return "\n".join(lines) + "\n"
 
 
 def refresh_leaderboard():
     rows = collect()
-    suite_hash = json.loads((ROOT / SUITE / "manifest.json").read_text())
-    dv4 = __import__("kev.suite", fromlist=["digest"]).digest(ROOT / SUITE / "manifest.json")
-    tv4 = __import__("kev.suite", fromlist=["digest"]).digest(ROOT / TRANSFER / "manifest.json")
-    incumbents = {b: incumbent(rows, b, dv4, tv4) for b in BASE_DEFAULTS}
-    (ROOT / "runs/leaderboard.jsonl").write_text("".join(json.dumps(r) + "\n" for r in rows))
-    (ROOT / "runs/leaderboard.md").write_text(leaderboard_md(rows, incumbents))
-    return rows, incumbents, dv4, tv4
-
-
-def update_plan(section_text):
-    """Rewrite the '## Autoresearch log' section of PLAN.md (created if absent)."""
-    plan = ROOT / "PLAN.md"; text = plan.read_text()
-    marker = "## Autoresearch log"
-    head = text.split(marker)[0].rstrip() + "\n\n"
-    plan.write_text(head + marker + "\n\n" + section_text.strip() + "\n")
-
-
-def run_round(base, n, name, seeds, spend_start, spend_cap, timeout=None):
-    rows, incumbents, dv4, tv4 = refresh_leaderboard()
-    manifest = json.loads((ROOT / SUITE / "manifest.json").read_text())
-    inc = incumbents.get(base)
-    plan = []
-    for seed in seeds:
-        plan += propose(rows, base, n, seed, manifest, inc and inc["config"], rng_seed=hash((name, seed)) & 0xFFFF)
-    plan = plan[:8]
-    if not plan: raise SystemExit("nothing new to try in the space at these seeds")
-    plan_path = ROOT / "experiments/auto" / f"{name}.json"; plan_path.parent.mkdir(exist_ok=True)
-    write_json(plan_path, plan)
-    minutes = TRIAL_MINUTES[base]; timeout = timeout or min(7200, int(minutes * 60 * 2.2))
-    bound = len(plan) * timeout / 3600 * (H100_RATE + 0.5)
-    spent = metered_spend()
-    if spent is not None and spent - spend_start + bound > spend_cap:
-        raise SystemExit(f"round would exceed spend cap: spent ${spent - spend_start:.2f} + bound ${bound:.2f} > ${spend_cap}")
-    print(f"[{name}] {len(plan)} trials on {base}; incumbent {inc and inc['transfer_acc']}; bound ${bound:.2f}; spent so far ${0 if spent is None else spent - spend_start:.2f}", flush=True)
-    cmd = [sys.executable, "-m", "modal", "run", "modal_app.py::study", "--suite", SUITE, "--plan", str(plan_path.relative_to(ROOT)),
-           "--name", name, "--transfer", TRANSFER, "--budget", f"{bound + 1:.2f}", "--timeout", str(timeout)]
-    log = ROOT / "runs" / f"{name}.log"
-    with log.open("w") as f:
-        rc = subprocess.run(cmd, stdout=f, stderr=subprocess.STDOUT, cwd=ROOT).returncode
-    rows, incumbents, _, _ = refresh_leaderboard()
-    new = [r for r in rows if r["study"] == name]
-    best = max((r for r in new if eligible(r, dv4, tv4)), key=score, default=None)
-    summary = {"round": name, "base": base, "trials": len(plan), "completed": len(new), "rc": rc,
-               "best": best and {"trial": best["trial"], "transfer_acc": best["transfer_acc"], "dev_acc": best["dev_acc"], "knobs": strip_seed(best["config"])},
-               "incumbent_after": incumbents.get(base) and {k: incumbents[base][k] for k in ("transfer_acc", "dev_acc", "seeds", "trials")},
-               "spend_since_start": None if (s := metered_spend()) is None else round(s - spend_start, 2), "at": datetime.now(timezone.utc).isoformat(timespec="minutes")}
-    (ROOT / "runs/autoresearch.jsonl").open("a").write(json.dumps(summary) + "\n")
-    print(json.dumps(summary, indent=1), flush=True)
-    return summary
-
-
-def plan_section():
-    rows, incumbents, dv4, tv4 = refresh_leaderboard()
-    log = [json.loads(l) for l in (ROOT / "runs/autoresearch.jsonl").read_text().splitlines()] if (ROOT / "runs/autoresearch.jsonl").exists() else []
-    lines = ["Maintained by `kev.autoresearch`; full table in [`runs/leaderboard.md`](runs/leaderboard.md). Selection uses development partitions only.", ""]
-    for b, inc in incumbents.items():
-        lines.append(f"- **{b.split('/')[-1]}** incumbent (v4 suites): transfer {inc['transfer_acc']:.3f}, dev {inc['dev_acc']:.3f}, seeds {inc['seeds']}, knobs `{json.dumps({k: v for k, v in strip_seed(inc['config']).items() if v != DEFAULTS.get(k) and k not in ('base', 'dtype', 'batch', 'accum', 'checkpointing', 'base_revision')})}`" if inc else f"- **{b.split('/')[-1]}**: no eligible trial yet")
-    lines += ["", "| round | base | trials | best transfer | best knobs | incumbent after | spend |", "|---|---|---|---|---|---|---|"]
-    for e in log:
-        b = e["best"] or {}; ia = e["incumbent_after"] or {}
-        lines.append(f"| {e['round']} | {e['base'].split('/')[-1]} | {e['completed']}/{e['trials']} | {b.get('transfer_acc', float('nan')):.3f} | `{json.dumps({k: v for k, v in (b.get('knobs') or {}).items() if v != DEFAULTS.get(k) and k not in ('base','dtype','batch','checkpointing','base_revision')})}` | {ia.get('transfer_acc', float('nan')):.3f} | ${e['spend_since_start']} |")
-    return "\n".join(lines)
+    write_jsonl(ROOT / "runs/leaderboard.jsonl", rows)
+    (ROOT / "runs/leaderboard.md").write_text(leaderboard_md(rows), encoding=ENCODING)
+    return rows
 
 
 def compare(studies, reference, tasks=("mmlu", "paws", "qnli", "emotion", "tweet_offensive", "contrastive_deadline")):
     """Print every trial of the given studies with a record-clustered paired bootstrap on transfer accuracy vs `reference`
     (a runs/<study>/<trial> path). Development-set selection only."""
-    from kev.benchmark import paired_bootstrap
-    def rows(p): return json.loads((ROOT / p / "transfer/rows.json").read_text())
+    def rows(p): return read_json(ROOT / p / "transfer/rows.json")
     ref_rows = rows(reference)
     print(f"reference: {reference}")
     print(f"{'trial':34} {'dev':>6} {'trf':>6} {'brier':>6} {'cerr':>6} {'pairs':>6} {'d trf':>7} {'ci95':>18}  knobs / tasks")
     for study in studies:
         for d in sorted((ROOT / "runs" / study).iterdir()):
             if not (d / "result.json").exists(): continue
-            r = json.loads((d / "result.json").read_text()); tr = r.get("transfer")
+            r = read_json(d / "result.json"); tr = r.get("transfer")
             if not tr: continue
             cfg = r["provenance"]["config"]
-            knobs = {k: v for k, v in cfg.items() if k not in ("base", "dtype", "seed", "batch", "checkpointing", "accum", "base_revision", "perm_frac") and DEFAULTS.get(k) != v and not (k == "epochs" and v == 2) and not (k == "p_none_pair" and v == 0.25)}
             try:
                 b = paired_bootstrap(rows(f"runs/{study}/{d.name}"), ref_rows, metric="acc"); delta, ci = b["macro_acc_delta"], [round(x, 3) for x in b["ci95"]]
             except ValueError:
                 delta, ci = float("nan"), "n/a (different suite)"
-            print(f"{study + '/' + d.name:34} {r['clean']['acc']:6.3f} {tr['clean']['acc']:6.3f} {tr['clean']['brier']:6.3f} {tr['clean']['confident_error_rate']:6.3f} {tr['paired_flip']['both_correct_rate']:6.2f} {delta:+7.3f} {str(ci):>18}  {knobs} {({k: round(tr['tasks'][k]['acc'], 2) for k in tasks if k in tr['tasks']})}")
+            print(f"{study + '/' + d.name:34} {r['clean']['acc']:6.3f} {tr['clean']['acc']:6.3f} {tr['clean']['brier']:6.3f} {tr['clean']['confident_error_rate']:6.3f} {tr['paired_flip']['both_correct_rate']:6.2f} {delta:+7.3f} {str(ci):>18}  {knobs(cfg)} {({k: round(tr['tasks'][k]['acc'], 2) for k in tasks if k in tr['tasks']})}")
 
 
 def release_check(study):
@@ -270,9 +147,9 @@ def release_check(study):
     held-out-pair screen) - a single seed clearing the bar is not enough. Prints the verdict per config."""
     rows = [r for r in collect() if r["study"] == study]
     by_cfg = defaultdict(list)
-    for r in rows: by_cfg[record_digest(strip_seed(r["config"]))].append(r)
+    for r in rows: by_cfg[recipe(r)].append(r)
     verdicts = {}
-    for h, group in by_cfg.items():
+    for group in by_cfg.values():
         seeds = sorted(r["seed"] for r in group)
         passed = all(r["gates_passed"] for r in group)
         pairs = [round(r["heldout_pairs"], 2) for r in group]
@@ -288,34 +165,15 @@ def release_check(study):
 def main():
     ap = argparse.ArgumentParser()
     sub = ap.add_subparsers(dest="cmd", required=True)
+    p = sub.add_parser("session"); p.add_argument("specs", nargs="+"); p.add_argument("--spend-start", type=float, required=True); p.add_argument("--spend-cap", type=float, required=True)
     sub.add_parser("leaderboard")
     p = sub.add_parser("release-check"); p.add_argument("--study", required=True)
-    p = sub.add_parser("compare"); p.add_argument("--studies", required=True); p.add_argument("--reference", default="runs/v4-4b-baseline/01-trial-1")
-    p = sub.add_parser("propose"); p.add_argument("--base", required=True); p.add_argument("--n", type=int, default=8); p.add_argument("--seed", type=int, default=0); p.add_argument("--out", required=True)
-    for cmd in ("round", "loop"):
-        p = sub.add_parser(cmd); p.add_argument("--base", required=True); p.add_argument("--n", type=int, default=7)
-        p.add_argument("--seeds", default="0"); p.add_argument("--spend-start", type=float, required=True); p.add_argument("--spend-cap", type=float, required=True)
-        p.add_argument("--timeout", type=int)
-        if cmd == "round": p.add_argument("--name", required=True)
-        else: p.add_argument("--rounds", type=int, default=3); p.add_argument("--prefix", default="auto")
+    p = sub.add_parser("compare"); p.add_argument("--studies", required=True); p.add_argument("--reference", required=True, help="runs/<study>/<trial>")
     a = ap.parse_args()
-    if a.cmd == "release-check":
-        release_check(a.study); return
-    if a.cmd == "compare":
-        compare(a.studies.split(","), a.reference); return
-    if a.cmd == "leaderboard":
-        rows, inc, _, _ = refresh_leaderboard(); update_plan(plan_section()); print(f"{len(rows)} trials;", {b.split('/')[-1]: (i and round(i['transfer_acc'], 3)) for b, i in inc.items()})
-    elif a.cmd == "propose":
-        rows, inc, dv4, tv4 = refresh_leaderboard(); manifest = json.loads((ROOT / SUITE / "manifest.json").read_text())
-        write_json(a.out, propose(rows, a.base, a.n, a.seed, manifest, inc[a.base] and inc[a.base]["config"])); print(open(a.out).read())
-    else:
-        seeds = [int(x) for x in a.seeds.split(",")]
-        names = [a.name] if a.cmd == "round" else [f"{a.prefix}-{a.base.split('/')[-1].split('-')[1].lower()}-r{i}-{int(time.time()) % 100000}" for i in range(a.rounds)]
-        for name in names:
-            run_round(a.base, a.n, name, seeds, a.spend_start, a.spend_cap, a.timeout)
-            update_plan(plan_section())
-            subprocess.run(["git", "add", "-A"], cwd=ROOT); subprocess.run(["git", "commit", "-qm", f"autoresearch: {name}"], cwd=ROOT)
-            subprocess.run(["git", "push", "-q"], cwd=ROOT)
+    if a.cmd == "session": session(a.specs, a.spend_start, a.spend_cap)
+    elif a.cmd == "leaderboard": print(f"{len(refresh_leaderboard())} trials -> runs/leaderboard.md")
+    elif a.cmd == "release-check": release_check(a.study)
+    else: compare(a.studies.split(","), a.reference)
 
 
 if __name__ == "__main__":

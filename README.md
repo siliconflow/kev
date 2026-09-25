@@ -247,6 +247,11 @@ Objects and arrays are converted to labeled text. Delimiter-like strings in user
 | `POST` | `/v1/systemone/permute` | Run one Choice question with different option orders (`n_perm` 1 to 64, default 6) |
 | `POST` | `/v1/systemone/separate` | Run each question in its own forward pass |
 
+| Method | Path | Purpose |
+|---|---|---|
+| `GET` | `/healthz` | Liveness: process + model thread (cheap, ~0 ms; for liveness probes) |
+| `GET` | `/healthz/ready` | Readiness: one real inference through the same path traffic takes — reflects the instance's serving capability; 503 + reason on any inference-path failure (OOM, a broken kernel, a wedged model thread); point readiness probes here |
+
 A request may carry any number of questions. The server runs them a token budget at a time (one maximal row of 16,384 tokens per forward pass, counting the cached document once per question in that pass), so memory does not grow with the question count and the answers do not depend on the split. Every response carries an `x-typesafe-request-id` header. The server binds to `127.0.0.1` and is open by default; set `KEV_API_KEY` to require `Authorization: Bearer <key>` on `/v1/*`, as the TypeSafe clients always send it.
 
 | Variable | Effect |

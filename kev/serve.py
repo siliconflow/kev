@@ -207,7 +207,7 @@ def server() -> Server:
     return app.state.server
 
 
-METRICS = {"latency_ms": [], "requests": 0}   # process-wide serving counters for /metrics (image path + API gateway view)
+METRICS = {"latency_ms": [], "requests": 0, "errors": 0}   # process-wide serving counters for /metrics (image path + API gateway view); errors counts failed inferences (5xx at the source)
 
 _LAT_BUCKETS = [5, 10, 25, 50, 100, 250, 500, 1000, 2500, 5000, 10000]   # ms; bracket kev's ~30ms-1s prefill range
 
@@ -237,6 +237,51 @@ def _probs_images(rec, refs):
     return [p.tolist() for p in ps], {"tokens": m["tokens"], "state_tokens": m["state_tokens"], "latency_ms": round(dt * 1000, 1), "prefix_cache_hit": False}
 
 
+@app.get("/healthz")
+def healthz():
+    """Liveness: the process is up and the model thread exists. Deep checks live at /healthz/ready.
+
+    A probe on /healthz alone cannot see an inference-path failure: the batched model
+    thread can be erroring every forward pass (OOM, a broken fused kernel) while every
+    GET endpoint stays 200 — exactly the 2026-09-25 production incident, where 4,288
+    /metrics polls returned 200 across a 5% hard-error window on /v1/systemone. The
+    platform's probes must therefore cover both."""
+    s = app.state.server if hasattr(app, "state") and hasattr(app.state, "server") else None
+    if s is None or not getattr(s, "thread", None) or not s.thread.is_alive():
+        return JSONResponse({"ok": False, "why": "model thread not running"}, status_code=503)
+    return {"ok": True, "model_thread_alive": True}
+
+
+@app.get("/healthz/ready")
+def healthz_ready():
+    """Readiness: one real inference through the same path every request takes (encode -> queue ->
+    model thread -> batch). This is the check that "reflects the instance's serving capability": a
+    CUDA OOM, a fused-kernel crash or a wedged model thread surfaces here as 503 + the error,
+    while /metrics and /v1/models stay green.
+
+    The probe record is minimal and fixed (a short state, one two-option score question); it
+    waits in the same queue as traffic, so it also reflects queue backlog. It costs one small
+    forward pass (~20 ms on a 4B) — probing every 10-30 s keeps that well under 1% of capacity."""
+    if not hasattr(app, "state") or not hasattr(app.state, "server"):
+        return JSONResponse({"ok": False, "why": "no server"}, status_code=503)
+    req = SystemOneRequest.model_validate({"state": "Health probe: readiness check.",
+                                           "questions": {"probe": {"type": "score", "instructions": "healthy?",
+                                                                   "criteria": ["no", "yes"]}}})
+    t0 = time.perf_counter()
+    try:
+        s = app.state.server
+        body = s.answer(req)   # one real inference through the same dispatch every request takes
+        answers = body["answers"]["probe"]
+        ok = answers["type"] == "score" and answers["legend"] == {"0": "no", "1": "yes"} \
+             and sum(answers["probabilities"].values()) > 0.99
+        return {"ok": ok, "latency_ms": body["latency_ms"], "probe_ms": round((time.perf_counter() - t0) * 1000, 1),
+                "queued": s.queue.qsize(), "batches": s.batches, "errors": METRICS["errors"]}
+    except Exception as e:
+        METRICS["errors"] += 1
+        return JSONResponse({"ok": False, "why": repr(e)[:300], "queued": getattr(app.state.server, "queue").qsize(),
+                             "errors": METRICS["errors"]}, status_code=503)
+
+
 @app.get("/metrics")
 def metrics():
     """Prometheus text exposition (the platform's prometheusScraper polls this); no client dependency.
@@ -258,6 +303,13 @@ def metrics():
     model_info = {"run": (s.checkpoint.requested if s else "") or "", "base": (s.checkpoint.meta.base if s else "") or "",
                   "device": (s.device if s else "") or "", "backend": (getattr(s, "model", None) and s.model.backend or "") if s else ""}
     lines.append("kev_model_info{" + ", ".join(f'{k}="{v}"' for k, v in model_info.items()) + "} 1")
+    lines.append(f"kev_inference_errors_total {METRICS['errors']}")
+    if s is not None:
+        lines.append(f"kev_queue_depth {s.queue.qsize()}")
+        if s.device == "cuda":
+            a, r = torch.cuda.memory_allocated(), torch.cuda.memory_reserved()
+            lines += [f"kev_gpu_memory_allocated_bytes {a}", f"kev_gpu_memory_reserved_bytes {r}",
+                      f"kev_gpu_memory_free_bytes {torch.cuda.get_device_properties(0).total_memory - r}"]
     return PlainTextResponse("\n".join(lines) + "\n")
 
 
@@ -265,7 +317,17 @@ def metrics():
 async def systemone(req: SystemOneRequest):
     """TypeSafe-compatible endpoint: typed questions in, typed answers out, one prefill pass."""
     METRICS["requests"] += 1
-    return await server().answer_async(req)
+    try:
+        return await server().answer_async(req)
+    except HTTPException:
+        raise
+    except Exception as e:
+        # a failed batch lands each of its requests here (OOM, a broken kernel): count it at the
+        # source so /metrics and /healthz can see an inference-path failure the same moment the
+        # client does. The 500 to the client stays untouched (uvicorn raises it after we return None
+        # only never — re-raise keeps FastAPI's default 500 with our counter incremented first).
+        METRICS["errors"] += 1
+        raise
 
 
 class PermuteSystemOne(BaseModel):

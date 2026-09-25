@@ -5,6 +5,7 @@ Choice -> options 'name' or 'name: desc';      answer = argmax, probabilities by
 Score  -> options = ordered level descriptions; answer = expected level, legend, probabilities by index
 """
 import re
+import copy
 from typing import Any, Literal, Union
 from pydantic import BaseModel, Field, model_validator
 
@@ -112,7 +113,12 @@ def to_record(req: SystemOneRequest):
             meta.append({"id": qid, "type": "choice", "keys": list(q.criteria.keys())})
         else:
             opts = [render(x) for x in q.criteria]
-            meta.append({"id": qid, "type": "score", "legend": {str(i): render(x) for i, x in enumerate(q.criteria)}})
+            # legend echoes the caller's criteria levels verbatim (deep copy, original
+            # JSON types preserved). Upstream zips keys with the *rendered* option text,
+            # which flattens object/array levels into strings (OpenRouter listing blocker,
+            # see TODO-legend.md): the model prompt still uses render(); only the echo
+            # in the response keeps types.
+            meta.append({"id": qid, "type": "score", "legend": {str(i): copy.deepcopy(x) for i, x in enumerate(q.criteria)}})
         qs.append({"instr": instr, "options": opts, "label": 0})
     rec = {"state": render(state), "questions": qs}
     if images is not None:

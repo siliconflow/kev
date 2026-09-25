@@ -32,6 +32,37 @@ def test_to_record_maps_all_three_types():
     assert meta[1]["keys"] == ["calm", "angry"] and meta[2]["legend"] == {"0": "can wait", "1": "today"}
 
 
+def test_score_legend_preserves_json_types():
+    """OpenRouter listing blocker: legend must echo criteria levels with their original
+    JSON types. render() flattening object/array levels into strings broke the contract."""
+    req = SystemOneRequest.model_validate({
+        "state": "resume screening", "model": "m",
+        "questions": {
+            "mixed": {"type": "score", "instructions": "Rate", "criteria": [
+                "no issue",
+                {"what": "cosmetic", "examples": ["typo", "spacing"]},
+                ["cosmetic", "no functional impact"],
+            ]},
+        },
+    })
+    rec, meta = to_record(req)
+    # Model prompt options stay rendered text ...
+    assert rec["questions"][0]["options"] == [
+        "no issue",
+        "what: cosmetic\nexamples:\n  - typo\n  - spacing",
+        "- cosmetic\n- no functional impact",
+    ]
+    # ... but the echo in the answer keeps the caller's JSON types exactly.
+    assert meta[0]["legend"] == {
+        "0": "no issue",
+        "1": {"what": "cosmetic", "examples": ["typo", "spacing"]},
+        "2": ["cosmetic", "no functional impact"],
+    }
+    ans = to_answers([[0.1, 0.2, 0.7]], meta)
+    assert ans["mixed"]["legend"] == meta[0]["legend"]
+    assert isinstance(ans["mixed"]["legend"]["1"], dict) and isinstance(ans["mixed"]["legend"]["2"], list)
+
+
 def test_to_answers_shapes_and_formulas():
     _, meta = to_record(SystemOneRequest.model_validate({"state": "s", "model": "m", "questions": {
         "n": {"type": "noul", "instructions": "i"},

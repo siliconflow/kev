@@ -437,9 +437,8 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--run", default="runs/kev")
     ap.add_argument("--fallback", default="runs/smoke")
-    ap.add_argument("--host", default="127.0.0.1", help="interface to bind; 0.0.0.0 to serve beyond this machine (a container, a VM behind a proxy)")
+    ap.add_argument("--host", default="0.0.0.0", help="interface to bind; 0.0.0.0 (the container/K8s default: probes and the gateway reach the pod IP) or 127.0.0.1 for local use")
     ap.add_argument("--port", type=int, default=8008)
-    ap.add_argument("--host", default="0.0.0.0")   # 0.0.0.0: K8s probes/gateway reach the pod IP; override with 127.0.0.1 for local use
     a = ap.parse_args()
     run = a.run if is_hub_id(a.run) or os.path.exists(f"{a.run}/head.pt") else a.fallback
     if run != a.run: print(f"{a.run} not found, falling back to {run}")

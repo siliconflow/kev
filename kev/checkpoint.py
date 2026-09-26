@@ -334,9 +334,9 @@ class Checkpoint:
         """-> (tokenizer, model) in eval mode with the LoRA applied (or the full backbone loaded) and the pointer head loaded. The model is a
         DecisionModel (torch) or an MLXDecisionModel (backend mlx); both expose the same scoring interface."""
         meta = self.meta
-        base, base_revision = self.base_dir()
+        base, base_revision = self.base_dir()   # KEV_BASE_HUB=modelscope: the tokenizer and the base load from the local MS snapshot, not the HF id
         tok = load_tokenizer(base, revision=base_revision)
-        m = self._load_mlx(tok, opts, base) if self.backend(device, opts) == "mlx" else self._load_torch(tok, device, opts, base, base_revision)
+        m = self._load_mlx(tok, opts) if self.backend(device, opts) == "mlx" else self._load_torch(tok, device, opts)
         m.head.load_state_dict(meta.head); m.eval()
         m.head.temperature = meta.temperature if opts.temperature is None else opts.temperature
         return tok, m
@@ -348,13 +348,13 @@ class Checkpoint:
         if not opts.merge: raise ValueError("the MLX backend always merges the adapter (KEV_MERGE=0 needs backend=torch)")
         if self.meta.option_isolation: raise ValueError("option_isolation needs the packed mask; not available on the MLX backend")
         if not self.hybrid_base(): raise ValueError(f"the MLX backend is for the hybrid (Qwen3.5) bases; {self.meta.base} is attention-only and runs on MPS with backend=torch")
-        base_dir = base if os.path.isdir(str(base)) else resolve_run(f"{base}@{self.meta.base_revision or ''}")   # the base snapshot the torch path already cached
+        base_dir = resolve_run(f"{self.meta.base}@{self.meta.base_revision or ''}")   # the base snapshot the torch path already cached
         m = MLXDecisionModel(base_dir, pad_id(tok), head_dim=self.meta.head_dim)
         merge_lora(m.lm, self.path, opts.lora_scale)
         return m
 
-    def _load_torch(self, tok, device, opts, base, base_revision):
-        m, merged = self._full_torch(tok, device, opts, base) if self.full else self._adapted_torch(tok, device, opts, base, base_revision)
+    def _load_torch(self, tok, device, opts):
+        m, merged = self._full_torch(tok, device, opts) if self.full else self._adapted_torch(tok, device, opts)
         serving = str(device).startswith("cuda") and m.hybrid
         if opts.fused and serving and merged:   # fused projections need plain (merged or full) weights
             from .fused_qwen35 import fuse
@@ -378,10 +378,11 @@ class Checkpoint:
         expected, saved = self.SAVED_DTYPES.get(meta.weights_dtype), cfg.get("dtype") or cfg.get("torch_dtype")
         if expected is None or saved not in (None, expected):
             raise ValueError(f"{self.path}: config.json records the weights as {saved} but head.pt says weights_dtype={meta.weights_dtype!r}")
-        return DecisionModel(meta.base, tok, device, head_dim=meta.head_dim, option_isolation=meta.option_isolation,
+        base, _revision = self.base_dir()   # KEV_BASE_HUB=modelscope: full weights load from the local MS snapshot too
+        return DecisionModel(base, tok, device, head_dim=meta.head_dim, option_isolation=meta.option_isolation,
                              dtype=opts.dtype or getattr(torch, expected), attn=opts.attn, weights=self.path), True
 
-    def _adapted_torch(self, tok, device, opts, base, base_revision):
+    def _adapted_torch(self, tok, device, opts):
         """-> (model, whether the adapter was merged): the base with this checkpoint's LoRA."""
         from peft import PeftModel
         meta = self.meta
@@ -392,6 +393,7 @@ class Checkpoint:
             # (one rounding of W + delta, as for every served Kev; parity in runs/serving-27b-*).
             dtype, merge = torch.bfloat16, merge and bool(opts.fused)
         merge = merge and not self.adapter_config().get("trainable_token_indices")   # token-trained adapters stay unmerged
+        base, base_revision = self.base_dir()   # KEV_BASE_HUB=modelscope: the base weights load from the local MS snapshot
         m = DecisionModel(base, tok, device, lora=None, revision=base_revision, head_dim=meta.head_dim,
                           option_isolation=meta.option_isolation, dtype=dtype, attn=opts.attn)
         m.lm = PeftModel.from_pretrained(m.lm, self.path, torch_device=str(device)).to(device)   # trainable token embeddings, if any, live in the adapter

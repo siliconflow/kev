@@ -1,6 +1,7 @@
 """Registered research rounds as data: one spec per round, one engine for every stage.
 
-A round (PLAN.md, rounds 5-18) always has the same shape. Arms are config-only delta trials from a parent checkpoint;
+A round (PLAN.md, rounds 5-20) always has the same shape. Arms are config-only trials (or checkpoints made from them,
+round 20's interpolations) compared with a parent checkpoint;
 each arm and its parent are read on a list of suites; a rule compares every arm with its parent on paired,
 record-clustered bootstraps (primaries with a lower bound, guards with thresholds, pooled panels); the passing arm with
 the best score is the size's candidate; confirmation stages (test partitions, the locked read) are read once. The spec
@@ -14,9 +15,10 @@ encodes.
     uv run python -m kev.rounds readout       experiments/rounds/r18.json   # -> runs/r18-readout/round18.json + a table
     uv run python -m kev.rounds confirm       experiments/rounds/r18.json --stage tests [--arm a]   # -> runs/r18-verdict/<size>-<stage>.json
 
-Every comparison is served-vs-served: each side's rows are served at the temperature fitted on its own decision-v7
-development rows (`kev.metrics.served`), unknowable records are scored only by `unknowable_report`, and every delta is
-`kev.metrics.paired_bootstrap` (2,000 resamples, seed 0, micro), the registered read since round 5.
+Every comparison is served-vs-served: each side's rows are served at the temperature fitted on its own trial's
+development rows (`kev.metrics.served`), or, for the arms of a round that registers a `temperature` pool, on that pool;
+unknowable records are scored only by `unknowable_report`, and every delta is `kev.metrics.paired_bootstrap` (2,000
+resamples, seed 0, micro), the registered read since round 5.
 
 Spec (paths are relative to the repo root; templates take {round}, {arm}, {size}, {tag}):
     round, registered                 the round number and where its registration lives
@@ -28,18 +30,43 @@ Spec (paths are relative to the repo root; templates take {round}, {arm}, {size}
     read_timeout {size: seconds}      overrides modal_app.READ_TIMEOUTS for one size (a 27B's fp32 reads)
     locked_args  {size: [args]}       extra modal_app.py::locked_test switches for one size (a 27B's GPU memory)
     parents   {name: {trial, checkpoint?, reads: {tag: dir}}}   checkpoint (Hub id[@rev]) only when /<trial>/checkpoint is not on the volume
-    arms      {name: {trial, parent, reads?, select?}}          name = "<size>-<label>"; reads default to arm_reads;
-                                                                select false = reported, never the candidate (attribution arms)
+    arms      {name: {trial?, checkpoint?, parent, reads?, select?, transfer_read?, trained_on?}}   name = "<size>-<label>"; reads
+                                      default to arm_reads; select false = reported, never the candidate (attribution arms); an
+                                      arm without a trial (an interpolated checkpoint) names its /runs/... checkpoint, needs the
+                                      round's `temperature` pool (it has no development rows) and, if the rule reads
+                                      "transfer", a transfer_read; trained_on [suite dirs] names what such a checkpoint was
+                                      trained on (default: covered by the round's trial arms, e.g. the trials it interpolates)
     arm_reads template of an arm's read directory (default "runs/r{round}-{arm}-{tag}")
+    transfer_read  a read tag (round level, or per arm, which wins; null = the trial's own) whose rows are an arm's "transfer"
+                                      rows instead of its trial's in-trial transfer read (a checkpoint without a trial has none)
+    temperature {reads: [tags], sources?: {tag: [source]}, exclude_reads?: [tags]}   every ARM (parents keep their trial's
+                                      development rows) is served at the temperature fitted, as everywhere (kev.metrics.served),
+                                      on the knowable rows of `reads` pooled (a read listed in `sources` gives only those
+                                      sources' rows), minus every record whose id is in the `exclude_reads` rows; the arm's own
+                                      rule-stage reads are used at every stage; no pooled tag may sit in a panel that a
+                                      temperature-dependent criterion reads (see pool_problems), and no pooled read may share
+                                      data with any arm's training data (pool_training_problems: round 19's failure mode)
     drop_ids  record ids dropped on both sides of every comparison (devtools-v1's duplicated ids)
     rule      {panels, unknowable?, criteria, rank}
     confirm   {stage: {candidate_reads, parent_reads?, panels, criteria}}
-A panel is {reads: [tags], metrics: [bootstrapped], report: [value only], source?: filter, versus?: {name: dir}}; the tag
-"transfer" is the trial's own in-trial transfer read. A criterion is {left, op, right, plus?} where left is a path
-("<panel>.<metric>.<candidate|parent|delta|lower|upper>", "unknowable.<candidate|parent>") or a list [a, b] meaning
-a - b, and right is a number or a path (plus is added to it). rank is a list of {by: path | [paths summed], order}.
+A panel is {reads: [tags], metrics: [bootstrapped], report: [value only], source?: filter, versus?: {name: dir}, by_length?};
+the tag "transfer" is the trial's own in-trial transfer read (or the arm's transfer_read). by_length (true, or {edges?:
+[tokens], tokenizer?: [name, revision]}) adds acc / ece / brier / confident_error_rate per state-token bucket
+(kev.metrics.calibration_by_length: "<metric>_<bucket>" entries, e.g. ece_16k_plus, value only) with state tokens counted
+from the reads' suite records. A criterion is {left, op, right, plus?} where left is a path
+("<panel>.<metric>.<candidate|parent|delta|lower|upper>", "<panel>.<metric>_<bucket>.<candidate|parent>",
+"unknowable.<candidate|parent>") or a list [a, b] meaning a - b, and right is a number or a path (plus is added to it).
+rank is a list of {by: path | [paths summed], order}.
+
+Every arm's read-out records where its temperature came from (`temperature_source`: the pool with its reads and question
+count, or its trial's development rows with their suite) and its parent's (`parent_temperature_source`: its trial's
+development rows, plus `shipped`, the head.pt temperature when it is here), and the printed table warns when an arm's rows
+are a training corpus's (in distribution: round 19's failure mode). From round 21 (POOL_REQUIRED_FROM) a rule or
+confirmation with a temperature-dependent criterion must register a `temperature` pool: validate and launch refuse it
+otherwise; earlier rounds get a warning, so their recorded specs keep validating.
 """
 import argparse
+import functools
 import operator
 import os
 import socket
@@ -49,8 +76,9 @@ import time
 from pathlib import Path
 from typing import NamedTuple
 
-from kev.metrics import metrics, paired_bootstrap, raw_row, recorded, served, served_at, tempered_row, unknowable_report
-from kev.suite import file_lock, read_json, write_json
+from kev.metrics import (LENGTH_EDGES, LENGTH_METRICS, calibration_by_length, length_buckets, metrics, paired_bootstrap, raw_row, recorded,
+                         scored_rows, served, served_at, tempered_row, unknowable_report)
+from kev.suite import ADMISSION_TOKENIZER, digest, file_lock, load_split, read_json, read_manifest, write_json
 
 ROOT = Path(__file__).resolve().parents[1]
 SAMPLES = 2000   # the registered resample count since round 5
@@ -71,7 +99,8 @@ def paired(candidate, reference, metric):
 
 
 def temperature(trial, root=ROOT):
-    """The temperature fitted on a trial's own decision-v7 development rows (how every checkpoint here is served)."""
+    """The temperature fitted on a trial's own development rows (decision-v7's, or its suite's; how every checkpoint here is
+    served unless the round registers a `temperature` pool for its arms)."""
     return served(read_json(Path(root) / trial / "development/rows.json"), [])[0]
 
 
@@ -80,12 +109,39 @@ def served_clean(rows, t):
     return [tempered_row(raw_row(recorded(r)), t) for r in rows if r["variant"] == "clean"]
 
 
-class Side:
-    """One checkpoint of a comparison: its trial, where each read tag's rows live and its served temperature."""
+class Pool(NamedTuple):
+    """Where a pooled temperature is fitted (spec `temperature`, resolved to one arm's read directories)."""
+    reads: list     # directories whose rows are pooled
+    sources: dict   # {directory: [source, ...]}: the only sources pooled from that read (absent = every source)
+    exclude: list   # directories whose record ids are removed from the pool
 
-    def __init__(self, trial, dirs, root=ROOT, drop=()):
-        self.trial, self.dirs, self.root, self.drop = trial, dirs, Path(root), set(drop)
-        self._t, self._served = None, {}
+
+def select_rows(reads, exclude=()):
+    """(pooled rows, rows before the exclusion): every rows.json of reads, as (path, sources or None), concatenated with
+    each read limited to its sources, minus every record whose id appears in an exclude rows.json. The one row selection
+    of a pooled temperature, here and in scripts/calibrate_checkpoint.py (which writes it into a checkpoint)."""
+    excluded = {r["id"] for path in exclude for r in read_json(path)}
+    rows = [r for path, sources in reads for r in read_json(path) if sources is None or r["source"] in sources]
+    return [r for r in rows if r["id"] not in excluded], rows
+
+
+def pooled_temperature(pool, root=ROOT):
+    """(temperature, fit report): the temperature() objective (kev.metrics.served: knowable clean rows, TEMPERATURE_FIT)
+    on select_rows of the pool."""
+    kept, rows = select_rows([(Path(root) / d / "rows.json", pool.sources.get(d)) for d in pool.reads], [Path(root) / d / "rows.json" for d in pool.exclude])
+    return served(kept, [])[0], {"reads": pool.reads, **({"sources": pool.sources} if pool.sources else {}), "exclude_reads": pool.exclude,
+                                 "questions": len(scored_rows(kept)), "excluded_questions": len(scored_rows(rows)) - len(scored_rows(kept))}
+
+
+class Side:
+    """One checkpoint of a comparison: its trial, where each read tag's rows live and its served temperature (fitted on
+    the trial's development rows, or on `pool` when the round registers one for its arms)."""
+
+    def __init__(self, trial, dirs, root=ROOT, drop=(), pool=None, checkpoint=None, suite=None, shipped=None):
+        self.trial, self.dirs, self.root, self.drop, self.pool, self.checkpoint = trial, dirs, Path(root), set(drop), pool, checkpoint
+        self.suite = suite       # the suite the trial trained and was scored on (its development rows'), when known
+        self.shipped = shipped   # a parent's: () -> the temperature its checkpoint ships (head.pt), or None when not here
+        self._t, self._served, self.fit = None, {}, None
 
     def rows_path(self, tag):
         return self.root / self.dirs[tag] / "rows.json"
@@ -93,10 +149,26 @@ class Side:
     def has(self, tag):
         return tag in self.dirs and self.rows_path(tag).exists()
 
+    def absent_fit(self):
+        """The rows the temperature needs that are not here (pool directories, or the trial's development rows)."""
+        needed = [*self.pool.reads, *self.pool.exclude] if self.pool else [f"{self.trial}/development"]
+        return [d for d in needed if not (self.root / d / "rows.json").exists()]
+
     @property
     def t(self):
-        if self._t is None: self._t = temperature(self.trial, self.root)
+        if self._t is None:
+            if self.pool: self._t, self.fit = pooled_temperature(self.pool, self.root)
+            else: self._t = temperature(self.trial, self.root)
         return self._t
+
+    def temperature_source(self):
+        """Where the served temperature was fitted (read-out provenance): the pool (its reads and knowable question count),
+        or the trial's development rows, their suite and whether that suite is a training corpus (then the temperature is
+        in distribution: round 19's failure mode)."""
+        if self.pool: return {"kind": "pool", "reads": self.pool.reads, "questions": self.fit["questions"] if self.fit else None}
+        m = suite_manifest(self.suite) if self.suite else None
+        return {"kind": "trial development rows", "rows": f"{self.trial}/development", "suite": self.suite,
+                "training_corpus": bool(trainable_sources(m)) if m is not None else None, **({"shipped": self.shipped()} if self.shipped else {})}
 
     def served(self, tag):
         if tag not in self._served: self._served[tag] = served_at(read_json(self.rows_path(tag)), self.t)
@@ -131,18 +203,34 @@ def locations(where, spec, **values):
     return {tag: d.format(round=spec["round"], tag=tag, **values) for tag, d in where.items()}
 
 
-def arm_side(spec, arm, root=ROOT, stage=None):
+def transfer_read(spec, arm):
+    """The read tag whose rows are the arm's "transfer" rows, or None for its trial's in-trial transfer read."""
     a = spec["arms"][arm]
+    return a["transfer_read"] if "transfer_read" in a else spec.get("transfer_read")
+
+
+def arm_side(spec, arm, root=ROOT, stage=None):
+    """The arm's side. Its "transfer" rows and its temperature pool come from its rule-stage reads at every stage (the
+    development reads it was selected on); a stage's candidate_reads locate the stage's own panels."""
+    a = spec["arms"][arm]
+    development = locations(a.get("reads", spec["arm_reads"]), spec, arm=arm, size=size_of(arm))
     where = spec["confirm"][stage]["candidate_reads"] if stage else a.get("reads", spec["arm_reads"])
-    dirs = {**locations(where, spec, arm=arm, size=size_of(arm)), TRANSFER: f"{a['trial']}/transfer"}
-    return Side(a["trial"], dirs, root, spec.get("drop_ids", ()))
+    tag = transfer_read(spec, arm)
+    transfer = development.get(tag) if tag else f"{a['trial']}/transfer" if a.get("trial") else None
+    dirs = {**locations(where, spec, arm=arm, size=size_of(arm)), **({TRANSFER: transfer} if transfer else {})}
+    pool, registered = None, spec.get("temperature")
+    if registered:
+        fit = {**development, **({TRANSFER: transfer} if transfer else {})}
+        pool = Pool([fit[r] for r in registered["reads"]], {fit[r]: s for r, s in registered.get("sources", {}).items()}, [fit[r] for r in registered.get("exclude_reads", [])])
+    suite = trial_suite(spec, a["trial"], root) if a.get("trial") and not pool else None
+    return Side(a.get("trial"), dirs, root, spec.get("drop_ids", ()), pool, a.get("checkpoint"), suite)
 
 
 def parent_side(spec, arm, root=ROOT, stage=None):
     p = spec["parents"][spec["arms"][arm]["parent"]]
     where = (spec["confirm"][stage].get("parent_reads") if stage else None) or p["reads"]
     dirs = {**locations(where, spec, arm=arm, size=size_of(arm)), TRANSFER: f"{p['trial']}/transfer"}
-    return Side(p["trial"], dirs, root, spec.get("drop_ids", ()))
+    return Side(p["trial"], dirs, root, spec.get("drop_ids", ()), suite=trial_suite(spec, p["trial"], root), shipped=lambda: shipped_temperature(p, root))
 
 
 def rule_tags(rule):
@@ -176,16 +264,30 @@ def validate(spec, root=ROOT, rows=True, plans=True, partitions=False):
         if r.get("entrypoint", "benchmarks") == "benchmarks" and not r.get("suite"): problems.append(f"read {name}: no suite")
         if r.get("entrypoint") == "locked_test" and not r.get("decision"): problems.append(f"read {name}: locked_test needs a decision suite")
         if plans and r.get("suite") and not (root / r["suite"]).exists(): absent(f"read {name}: {r['suite']} not in this checkout")
+    stages = {None: spec["rule"], **spec.get("confirm", {})}
+    reads_transfer = any(TRANSFER in panel["reads"] for rule in stages.values() for panel in rule["panels"].values())
     for name, a in spec["arms"].items():
         if a.get("parent") not in spec["parents"]: problems.append(f"arm {name}: unknown parent {a.get('parent')!r}")
         if "-" not in name: problems.append(f"arm {name}: name must be <size>-<label>")
-    stages = {None: spec["rule"], **spec.get("confirm", {})}
+        tag = transfer_read(spec, name)
+        if tag is not None and (tag not in spec["reads"] or spec["reads"][tag].get("entrypoint", "benchmarks") != "benchmarks"):
+            problems.append(f"arm {name}: transfer_read {tag!r} is not a benchmarks read of this spec")
+        if tag is not None and isinstance(a.get("reads"), dict) and tag not in a["reads"]: problems.append(f"arm {name}: its reads do not locate its transfer_read {tag!r}")
+        if not a.get("trial"):
+            if not str(a.get("checkpoint", "")).startswith("/runs/"): problems.append(f"arm {name}: an arm without a trial needs a checkpoint on the runs volume (/runs/...)")
+            if not spec.get("temperature"): problems.append(f"arm {name}: no trial, so no development rows to fit its temperature on; register a `temperature` pool")
+            if reads_transfer and tag is None: problems.append(f"arm {name}: no trial, so no in-trial transfer read; give it a transfer_read")
+    problems += pool_problems(spec, stages)
+    conflicts, unknown_training = pool_training_problems(spec, root)
+    problems += conflicts + pool_required_problems(spec)
+    for line in unknown_training: absent(line)
     for stage, rule in stages.items():
         where = f"confirm.{stage}" if stage else "rule"
         for pname, panel in rule["panels"].items():
             unknown = set(panel["reads"]) - tags
             if unknown: problems.append(f"{where} panel {pname}: unknown read tags {sorted(unknown)}")
             if not panel.get("metrics") and not panel.get("report"): problems.append(f"{where} panel {pname}: nothing to compute")
+            problems += [f"{where} panel {pname}: {p}" for p in by_length_problems(panel, spec)]
         for cname, c in rule["criteria"].items():
             if c.get("op") not in OPS: problems.append(f"{where} criterion {cname}: op {c.get('op')!r}")
             for path in _paths(c):
@@ -214,7 +316,354 @@ def _known_path(path, rule):
     if parts[0] == "unknowable": return len(parts) == 2 and parts[1] in ("candidate", "parent") and bool(rule.get("unknowable"))
     panel = rule["panels"].get(parts[0])
     if panel is None or len(parts) != 3 or parts[2] not in FIELDS: return False
-    return parts[1] in panel.get("metrics", ()) or (parts[1] in panel.get("report", ()) and parts[2] in ("candidate", "parent"))   # report metrics have no interval
+    value_only = parts[1] in panel.get("report", ()) or parts[1] in by_length_names(panel)   # report and by-length metrics have no interval
+    return parts[1] in panel.get("metrics", ()) or (value_only and parts[2] in ("candidate", "parent"))
+
+
+# --- calibration by state length -------------------------------------------------------------------------------------
+
+def by_length_options(panel):
+    """(edges, tokenizer) of a panel's by_length option: true = kev.metrics.LENGTH_EDGES and kev.suite.ADMISSION_TOKENIZER."""
+    option = panel.get("by_length")
+    option = {} if option is True else option
+    return tuple(option.get("edges", LENGTH_EDGES)), tuple(option.get("tokenizer", ADMISSION_TOKENIZER))
+
+
+def by_length_names(panel):
+    """{"<metric>_<bucket>": metric} for the entries a by_length panel reports (empty for any other panel, or invalid edges)."""
+    if not panel.get("by_length"): return {}
+    try:
+        return {f"{m}_{name}": m for m in LENGTH_METRICS for name, _, _ in length_buckets(by_length_options(panel)[0])}
+    except (ValueError, AttributeError, TypeError):
+        return {}
+
+
+def by_length_problems(panel, spec):
+    option = panel.get("by_length")
+    if not option: return []
+    if option is not True and (not isinstance(option, dict) or set(option) - {"edges", "tokenizer"}):
+        return ["by_length is true or {edges?, tokenizer?}"]
+    problems = []
+    try:
+        edges, tokenizer = by_length_options(panel)   # tuple() of a non-iterable raises: a malformed option is a problem, not a crash
+        length_buckets(edges)
+        if len(tokenizer) != 2 or not all(isinstance(x, str) for x in tokenizer): problems.append("by_length: tokenizer is [name, revision]")
+    except (ValueError, TypeError) as error:
+        problems.append(f"by_length: {error}" if isinstance(error, ValueError) else f"by_length: edges are a list of token counts and tokenizer is [name, revision] ({error})")
+    if TRANSFER in panel["reads"]: problems.append("by_length counts state tokens from a read's suite; 'transfer' names no single suite")
+    problems += [f"by_length: read {tag!r} has no suite" for tag in panel["reads"] if tag in spec["reads"] and not spec["reads"][tag].get("suite")]
+    return problems
+
+
+@functools.cache
+def state_lengths(suite, split, tokenizer=ADMISSION_TOKENIZER):
+    """{record id: state tokens} of a suite partition with the tokenizer (name, revision): the counts a by_length panel
+    buckets both sides by. A state's token count is its encoded state segment, as kev.model.encode builds it: the <state>
+    token plus user_tokens of the materialised state (len + 1, what encode checks against max_state and kev.serve reports
+    as `state_tokens`, seg.count(0)); the one definition behind a row's `state_tokens` (kev.metrics.calibration_by_length)."""
+    from kev.data import materialize
+    from kev.model import load_tokenizer, user_tokens
+    tok = load_tokenizer(*tokenizer)
+    return {r["_meta"]["id"]: 1 + len(user_tokens(tok, materialize(r)["state"])) for r in load_split(ROOT / suite, split, allow_test=split == "test")}
+
+
+def panel_lengths(spec, panel):
+    """{record id: state tokens} over a by_length panel's reads (each read's suite and partition)."""
+    tokenizer, out = by_length_options(panel)[1], {}
+    for tag in panel["reads"]:
+        read = spec["reads"][tag]
+        for rid, n in state_lengths(read["suite"], read_split(read), tokenizer).items():
+            if out.setdefault(rid, n) != n: raise ValueError(f"record {rid!r} has different states in the reads of one by_length panel")
+    return out
+
+
+# --- temperature pools against training data (round 19's failure mode) ------------------------------------------------
+
+ROUND_19 = ("round 19's failure mode: a temperature fitted on held-out items of a checkpoint's own training corpus is in distribution "
+            "(round 19 served its SFT arms at T 0.955 fitted on sft-v1 development rows: breadth-v1 ECE 0.059); fit on a pool of "
+            "held-out datasets instead (round 20: breadth-v1 ECE 0.0085)")
+FIT_SPLITS = ("calibration", "development")   # a training corpus's held-out partitions: never a temperature pool
+
+
+def read_split(read):
+    """The partition a read scores: kev.benchmark's development, `--split X`, or the test under --allow-test / locked_test."""
+    flags = read.get("flags", "").split()
+    if read.get("entrypoint") == "locked_test" or "--allow-test" in flags: return "test"
+    for i, flag in enumerate(flags):
+        if flag.startswith("--split="): return flag.split("=", 1)[1]
+        if flag == "--split" and i + 1 < len(flags): return flags[i + 1]
+    return "development"
+
+
+def suite_dir(path):
+    """'evals/...' for a suite path given relative, absolute or as a container saw it (/root/kev/evals/sft-v1); None if none."""
+    parts = Path(str(path)).parts
+    return str(Path(*parts[parts.index("evals"):])) if "evals" in parts else None
+
+
+@functools.cache
+def _suites():
+    """({manifest sha256: suite dir}, {directory name: [suite dirs]}) of every suite in this checkout."""
+    by_digest, by_name = {}, {}
+    for m in sorted((ROOT / "evals").rglob("manifest.json")):
+        d = str(m.parent.relative_to(ROOT))
+        by_digest[digest(m)] = d
+        by_name.setdefault(m.parent.name, []).append(d)
+    return by_digest, by_name
+
+
+def suite_by_digest(sha256):
+    """The suite dir whose manifest.json hashes to sha256 (what provenance, head.pt and report.json record), or None."""
+    return _suites()[0].get(sha256)
+
+
+def suite_manifest(suite):
+    return read_manifest(ROOT / suite) if (ROOT / suite / "manifest.json").exists() else None
+
+
+def listed_sources(manifest):
+    """Every source a manifest names: trainable, held-out, eval-only and its `sources` table (a dict or a list)."""
+    return {*manifest.get("trainable_sources", []), *manifest.get("holdout_sources", []), *manifest.get("eval_only_sources", []), *manifest.get("sources", [])}
+
+
+def trainable_sources(manifest):
+    """The sources a suite offers for training (`trainable_sources`, or `sources` entries marked trainable): a suite with
+    any is a training corpus, whose calibration and development partitions are held-out items of training sources."""
+    table = manifest.get("sources", {})
+    return {*manifest.get("trainable_sources", []), *(k for k, v in table.items() if isinstance(v, dict) and v.get("trainable"))} if isinstance(table, dict) else set(manifest.get("trainable_sources", []))
+
+
+class Training(NamedTuple):
+    """What a checkpoint was trained on, as far as this checkout can tell."""
+    suites: frozenset     # suite dirs: its training suite, the components that suite names, a plan's `data` directory
+    sources: frozenset    # the sources those suites train
+    unlisted: tuple       # training suites whose sources this checkout cannot list
+
+
+def training_data(suites, data=None):
+    """Training over suite dirs plus a `data` file: each suite's trainable sources (every listed source for a data-only
+    manifest without `trainable_sources`, e.g. round6/b1v2) plus the suites its manifest names as components (sft-v1's
+    `inputs.components`: documents-v1-train -> evals/documents-v1, hard-v1-extra-train -> evals/hard-v1). A `data` file
+    counts through its directory's suite; one outside evals/ (a `kev.train --data` run) cannot be checked, so it is
+    `unlisted` like any training this checkout cannot place, never silently dropped."""
+    data_dir = suite_dir(Path(data).parent) if data else None
+    seen, sources, unlisted, todo = set(), set(), [] if data_dir or not data else [f"data {data} (outside evals/)"], [d for d in (*suites, data_dir) if d]
+    while todo:
+        d = todo.pop(0)
+        if d in seen: continue
+        seen.add(d)
+        m = suite_manifest(d)
+        own = (trainable_sources(m) if "trainable_sources" in m else listed_sources(m)) if m is not None else set()
+        if not own: unlisted.append(d)
+        sources |= own
+        inputs = (m or {}).get("inputs")
+        for component in inputs.get("components", {}) if isinstance(inputs, dict) else ():
+            found = _suites()[1].get(component.removesuffix("-train").removesuffix("-extra"))
+            if found: todo += found
+            else: unlisted.append(f"{d} component {component}")
+    return Training(frozenset(seen), frozenset(sources), tuple(unlisted))
+
+
+def recorded_training(suite_sha256=None, suite=None, data=None):
+    """Training of a checkpoint from what its trainer recorded (provenance.json, head.pt): the suite whose manifest hashes to
+    suite_sha256 (else the suite path it was given) and its `data` file's directory; None when no suite of this checkout matches."""
+    trained = suite_by_digest(suite_sha256)
+    if trained is None and suite and suite_dir(suite) and suite_manifest(suite_dir(suite)) is not None: trained = suite_dir(suite)
+    return training_data([trained], data) if trained else None
+
+
+def _study(spec, trial):
+    return next((s for name, s in spec.get("studies", {}).items() if trial.startswith(f"runs/{name}/")), None)
+
+
+def trial_suite(spec, trial, root=ROOT):
+    """The suite a trial trained on and was scored on (its development rows'): its study's in this spec, else the manifest
+    its provenance.json hashes; None when neither is here."""
+    if study := _study(spec, trial): return suite_dir(study["suite"])
+    provenance = Path(root) / trial / "provenance.json"
+    return suite_by_digest(read_json(provenance).get("suite_sha256")) if provenance.exists() else None
+
+
+def trial_training(spec, trial, root=ROOT):
+    """Training of a trial: its study's suite plus its plan entry's `data` (trial <NN>-<label> is entry NN), else what its
+    provenance.json records; None when neither is here."""
+    study, provenance = _study(spec, trial), Path(root) / trial / "provenance.json"
+    if study:
+        plan = next((p / study["plan"] for p in (Path(root), ROOT) if (p / study["plan"]).exists()), None)
+        entries, index = (read_json(plan) if plan else []), Path(trial).name.split("-")[0]
+        data = entries[int(index)].get("data") if isinstance(entries, list) and index.isdigit() and int(index) < len(entries) else None
+        if plan or not provenance.exists(): return training_data([suite_dir(study["suite"])], data)
+    if not provenance.exists(): return None
+    p = read_json(provenance)
+    return recorded_training(p.get("suite_sha256"), data=p.get("config", {}).get("data"))
+
+
+def pool_conflicts(pooled, training):
+    """[(label, why)] for every way a pooled read shares data with a checkpoint's Training. pooled = [(label, suite, split,
+    sources or None)]: (a) the read's suite is training data of the checkpoint (its training suite, or a component or `data`
+    suite of it); (b) the sources it pools (its allowlist, else every source its manifest lists) are sources the checkpoint
+    trained on; (c) it scores the calibration or development partition of a training corpus (any suite with trainable
+    sources). A read whose suite or sources cannot be established is refused too. The one check, for kev.rounds pools and
+    scripts/calibrate_checkpoint.py alike."""
+    out = []
+    for label, suite, split, sources in pooled:
+        d = suite_dir(suite) if suite else None
+        m = suite_manifest(d) if d else None
+        if m is None:
+            out.append((label, f"its suite ({suite!r}) has no manifest in this checkout, so what it pools cannot be checked")); continue
+        if d in training.suites: out.append((label, f"{d} is training data of the checkpoint"))
+        pooled_sources = set(sources) if sources else listed_sources(m)
+        if not pooled_sources: out.append((label, f"{d} lists no sources; give the read a `sources` allowlist"))
+        if shared := sorted(pooled_sources & training.sources):
+            out.append((label, f"it pools {len(shared)} training source(s) {shared[:8]}" + (" ..." if len(shared) > 8 else "")))
+        if split in FIT_SPLITS and trainable_sources(m): out.append((label, f"it reads the {split} partition of {d}, a training corpus"))
+    return out
+
+
+def pool_training_problems(spec, root=ROOT):
+    """(problems, unknown) of the round's `temperature` pool against every arm's training data (pool_conflicts; message
+    names round 19's failure mode). An arm's training comes from `trained_on`, else from its trial (trial_training); an arm
+    without either (a checkpoint made from the round's trials) is covered by the trial arms. unknown: arms whose training
+    this checkout cannot establish or list (a trial without provenance, a manifest without sources, a `data` file outside
+    evals/): a problem for a new round, reported under archived for a recorded one."""
+    pool = spec.get("temperature")
+    if not pool or not pool.get("reads"): return [], []
+    pooled = [(tag, spec["reads"][tag].get("suite"), read_split(spec["reads"][tag]), pool.get("sources", {}).get(tag)) for tag in pool["reads"] if tag in spec["reads"]]
+    found, problems, unknown = {}, [], []
+    for arm, a in spec["arms"].items():
+        if "trained_on" in a:
+            if not isinstance(a["trained_on"], list) or not a["trained_on"] or not all(isinstance(s, str) for s in a["trained_on"]):
+                problems.append(f"arm {arm}: trained_on is a non-empty list of suite directories"); continue
+            training = training_data([suite_dir(s) or s for s in a["trained_on"]])
+        elif a.get("trial"):
+            training = trial_training(spec, a["trial"], root)
+            if training is None:
+                unknown.append(f"arm {arm}: what {a['trial']} trained on is unknown (no study of this spec, no provenance.json), so the temperature pool cannot be checked against it"); continue
+        else:
+            continue
+        unknown += [f"arm {arm}: cannot list the sources of {d}, part of its training, so the temperature pool cannot be checked against it" for d in training.unlisted]
+        by_tag = {}
+        for tag, why in pool_conflicts(pooled, training): by_tag.setdefault(tag, []).append(why)
+        for tag, whys in by_tag.items(): found.setdefault((tag, "; ".join(whys)), []).append(arm)
+    for (tag, why), arms in found.items():
+        problems.append(f"temperature: pooled read {tag!r} shares data with the training of arm(s) {', '.join(arms)}: {why}. This is {ROUND_19}")
+    if not any("trained_on" in a or a.get("trial") for a in spec["arms"].values()):
+        problems.append("temperature: no arm names its training (a trial or `trained_on`), so the pool cannot be checked against it")
+    return problems, unknown
+
+
+POOL_REQUIRED_FROM = 21   # from this round on, a temperature-dependent criterion without a `temperature` pool is refused
+
+
+def temperature_criteria(spec):
+    """["rule <name>" | "confirm.<stage> <name>"] of every criterion that reads a number the temperature moves."""
+    stages = {None: spec["rule"], **spec.get("confirm", {})}
+    return sorted({f"{'confirm.' + s if s else 'rule'} {name}" for s, rule in stages.items() for name, c in rule["criteria"].items()
+                   if any(_moves_with_temperature(path, rule) for path in _paths(c))})
+
+
+def _listed(names):
+    return f"{len(names)} ({', '.join(names[:3])}{', ...' if len(names) > 3 else ''})"
+
+
+def pool_required_problems(spec):
+    """Round >= POOL_REQUIRED_FROM with a temperature-dependent criterion and no `temperature` pool: refused (its arms would
+    be served at their trials' development rows, round 19's failure mode). Earlier rounds only warn (calibration_warnings),
+    so their recorded specs keep validating."""
+    number, moved = spec.get("round"), temperature_criteria(spec)
+    if spec.get("temperature") or not moved or not isinstance(number, int) or number < POOL_REQUIRED_FROM: return []
+    return [f"temperature: round {number} registers no `temperature` pool, but {_listed(moved)} criteria depend on the temperature, "
+            f"so its arms would be served at their trials' development rows. This is {ROUND_19}; register a pool of held-out datasets (copy r20)"]
+
+
+def shipped_temperature(entry, root=ROOT):
+    """The temperature a parent's checkpoint ships (head.pt), read locally only: <trial>/checkpoint/head.pt, else its Hub
+    checkpoint's head.pt in the local Hugging Face cache (no network); None when neither is here."""
+    path = Path(root) / entry["trial"] / "checkpoint" / "head.pt"
+    if not path.exists() and entry.get("checkpoint") and not str(entry["checkpoint"]).startswith("/"):
+        from huggingface_hub import try_to_load_from_cache
+        repo, _, revision = entry["checkpoint"].partition("@")
+        cached = try_to_load_from_cache(repo, "head.pt", revision=revision or None)
+        path = Path(cached) if isinstance(cached, str) else path
+    if not path.exists(): return None
+    from kev.checkpoint import read_meta
+    return read_meta(path.parent).temperature
+
+
+SHIPPED_TOLERANCE = 0.05   # a parent served this far from its shipped temperature, fitted in distribution, is warned about
+
+
+def calibration_warnings(spec, root=ROOT):
+    """Report-only warnings that `validate` and `launch` print. (1) For a round before POOL_REQUIRED_FROM without a
+    `temperature` pool whose criteria depend on the temperature (from then on it is a problem: pool_required_problems): each
+    trial arm whose development rows are a training corpus's is served in distribution, round 19's failure mode. (2) Every
+    parent served at a temperature fitted on a training corpus's development rows that differs from its shipped head.pt
+    temperature by more than SHIPPED_TOLERANCE (when both are here)."""
+    out, moved = [], temperature_criteria(spec)
+    early = isinstance(spec.get("round"), int) and spec["round"] < POOL_REQUIRED_FROM
+    for arm, a in spec["arms"].items() if moved and early and not spec.get("temperature") else ():
+        suite = trial_suite(spec, a["trial"], root) if a.get("trial") else None
+        if suite and trainable_sources(suite_manifest(suite) or {}):
+            out.append(f"arm {arm} will be served at a temperature fitted on its trial's {suite} development rows, a training corpus, and "
+                       f"{_listed(moved)} criteria depend on it: {ROUND_19}; register a `temperature` pool")
+    for name, p in spec["parents"].items():
+        suite = trial_suite(spec, p["trial"], root)
+        if not (suite and trainable_sources(suite_manifest(suite) or {}) and (Path(root) / p["trial"] / "development/rows.json").exists()): continue
+        shipped = shipped_temperature(p, root)
+        served_t = temperature(p["trial"], root) if shipped is not None else None
+        if shipped is not None and abs(served_t - shipped) > SHIPPED_TOLERANCE:
+            out.append(f"parent {name} is served at T {served_t:.3f} fitted on {p['trial']}/development ({suite}, a training corpus), "
+                       f"{abs(served_t - shipped):.3f} from the T {shipped:.3f} its checkpoint ships: its reads are not what it serves (report only)")
+    return out
+
+
+TEMPERATURE_FREE = ("acc",)   # the one bootstrapped metric a temperature cannot move (the argmax is invariant)
+
+
+def _moves_with_temperature(path, rule):
+    """Whether a criterion path reads a number the temperature moves: any panel metric but accuracy (a by-length bucket's
+    included: acc_16k_plus is accuracy); the unknowable share is scored on records a pool never fits on."""
+    panel, metric = (path.split(".") + [""])[:2]
+    return panel != "unknowable" and by_length_names(rule["panels"].get(panel, {})).get(metric, metric) not in TEMPERATURE_FREE
+
+
+def allowlist_problems(tag, suite, sources):
+    """A pool read's `sources` allowlist against the sources its suite's manifest lists: a name the suite does not contain
+    (a typo) would silently shrink the pool, so it is a problem, as is a suite whose sources cannot be listed."""
+    m = suite_manifest(suite_dir(suite)) if suite and suite_dir(suite) else None
+    listed = listed_sources(m) if m is not None else set()
+    if not listed: return [f"temperature: cannot check the sources allowlist of {tag!r}: {suite!r} lists no sources in this checkout"]
+    return [f"temperature: sources for {tag!r} name {unknown} which {suite} does not contain" for unknown in [sorted(set(sources) - listed)] if unknown]
+
+
+def pool_problems(spec, stages):
+    """What is wrong with the round's `temperature` pool: tags that are not reads of the spec, tags an arm cannot locate,
+    and pooled tags inside a panel that a temperature-dependent criterion reads (any metric but accuracy, at any stage):
+    the temperature would be fitted on the rows it is judged on. The unknowable share is scored on unknowable records,
+    which a pool never fits on (knowable rows only), so the unknowable read may be pooled."""
+    pool = spec.get("temperature")
+    if not pool: return []
+    reads, exclude = pool.get("reads") or [], pool.get("exclude_reads", [])
+    problems = ["temperature: no reads to pool"] if not reads else []
+    problems += [f"temperature: {tag!r} is not a read tag of this spec" for tag in reads if tag not in spec["reads"]]
+    problems += [f"temperature: exclude_reads {tag!r} is not a read tag of this spec" for tag in exclude if tag not in spec["reads"] and tag != TRANSFER]
+    for tag, sources in pool.get("sources", {}).items():
+        if tag not in reads: problems.append(f"temperature: sources for {tag!r}, which is not pooled")
+        if not sources or not isinstance(sources, list) or not all(isinstance(s, str) for s in sources):
+            problems.append(f"temperature: sources for {tag!r} must be a non-empty list of source names"); continue
+        problems += allowlist_problems(tag, spec["reads"].get(tag, {}).get("suite"), sources)
+    for stage, rule in stages.items():
+        for cname, c in rule["criteria"].items():
+            for path in _paths(c):
+                shared = sorted(set(reads) & set(rule["panels"].get(path.split(".")[0], {}).get("reads", [])))
+                if shared and _moves_with_temperature(path, rule):
+                    problems.append(f"temperature: {shared} pooled, but {'confirm.' + stage if stage else 'rule'} criterion {cname} reads {path}, which the temperature moves")
+    for arm, a in spec["arms"].items():
+        where = a.get("reads", spec["arm_reads"])
+        unplaced = [t for t in [*reads, *exclude] if (t == TRANSFER and not a.get("trial") and transfer_read(spec, arm) is None)
+                    or (t != TRANSFER and not isinstance(where, str) and t not in where)]
+        if unplaced: problems.append(f"arm {arm}: its reads do not locate the temperature pool's {unplaced}")
+    return problems
 
 
 def _validate_plan(study, s, root, partitions):
@@ -233,10 +682,19 @@ def _validate_plan(study, s, root, partitions):
 
 # --- rule ------------------------------------------------------------------------------------------------------------
 
-def compare(candidate, parent, rule):
+def compare(candidate, parent, rule, lengths=None):
     """Every panel, the unknowable share and every criterion of one candidate against its parent. Panels whose reads are
-    missing on either side are listed under "missing" and their criteria are None; `passed` needs every criterion."""
-    out = {"trial": candidate.trial, "parent": parent.trial, "temperature": candidate.t, "parent_temperature": parent.t, "panels": {}, "missing": []}
+    missing on either side are listed under "missing" and their criteria are None; `passed` needs every criterion. A
+    candidate served at a pooled temperature records the fit (`temperature_fit`); every candidate records where its
+    temperature came from (`temperature_source`); one whose pool rows are missing is reported incomplete with nothing
+    computed. lengths(panel) -> {record id: state tokens} serves by_length panels whose rows record no state_tokens."""
+    out = {"trial": candidate.trial, "parent": parent.trial, **({"checkpoint": candidate.checkpoint} if candidate.checkpoint else {})}
+    if absent := [f"candidate:{d}" for d in candidate.absent_fit()]:
+        return {**out, "temperature": None, "missing": absent, "complete": False, "passed": None}
+    out.update(temperature=candidate.t, parent_temperature=parent.t, panels={}, missing=[])
+    if candidate.fit: out["temperature_fit"] = candidate.fit
+    out["temperature_source"] = candidate.temperature_source()
+    out["parent_temperature_source"] = parent.temperature_source()   # parents are served at their trial's development rows; `shipped` is head.pt's T
     for name, spec in rule["panels"].items():
         absent = [f"{who}:{side.dirs[t] if t in side.dirs else t}" for who, side in (("candidate", candidate), ("parent", parent)) for t in spec["reads"] if not side.has(t)]
         if absent: out["missing"] += absent; continue
@@ -247,6 +705,8 @@ def compare(candidate, parent, rule):
             panel[m] = {"candidate": mc[m], "parent": mp[m], **paired(c, p, m)}
         for m in spec.get("report", ()):
             panel.setdefault(m, {"candidate": mc[m], "parent": mp[m]})
+        if spec.get("by_length"):
+            panel.update(_by_length(spec, c, p, lengths))
         for ref, d in spec.get("versus", {}).items():
             rows = [r for r in read_json(candidate.root / d / "rows.json") if r["variant"] == "clean"]   # a reference as it served itself
             panel.setdefault("versus", {})[ref] = {m: {"reference": metrics(rows)[m], **paired(c, rows, m)} for m in spec.get("metrics", ())}
@@ -258,6 +718,20 @@ def compare(candidate, parent, rule):
     out["criteria"] = {name: _criterion(out, c) for name, c in rule["criteria"].items()}
     out["complete"] = not out["missing"]
     out["passed"] = (out["complete"] and all(out["criteria"].values())) if out["criteria"] else None
+    return out
+
+
+def _by_length(spec, candidate, parent, lengths):
+    """A by_length panel's entries: "<metric>_<bucket>" -> {candidate, parent, n} (kev.metrics.calibration_by_length of
+    each side's served rows, bucketed by the same counts) and "by_length" -> how the tokens were counted."""
+    edges, tokenizer = by_length_options(spec)
+    counted = all(r.get("state_tokens") is not None for r in (*candidate, *parent))
+    if not counted and lengths is None: raise ValueError("a by_length panel needs state-token counts: rows with state_tokens, or lengths")
+    counts = None if counted else lengths(spec)
+    c, p = calibration_by_length(candidate, counts, edges), calibration_by_length(parent, counts, edges)
+    out = {"by_length": {"edges": list(edges), "tokens": "rows" if counted else {"records": "suite", "tokenizer": list(tokenizer)}}}
+    for bucket in c:
+        for m in LENGTH_METRICS: out[f"{m}_{bucket}"] = {"candidate": c[bucket][m], "parent": p[bucket][m], "n": c[bucket]["n"]}
     return out
 
 
@@ -297,13 +771,14 @@ def rank(arms, keys, selectable):
 
 
 def readout(spec, root=ROOT):
-    """The registered rule applied to every arm that has finished training (development rows present)."""
+    """The registered rule applied to every arm that has finished training (development rows present); an arm without a
+    trial (a checkpoint made from others) is compared once its pool and reads are there (compare lists what is missing)."""
     arms = {}
     for arm, a in spec["arms"].items():
-        if not (Path(root) / a["trial"] / "development/rows.json").exists():
+        if a.get("trial") and not (Path(root) / a["trial"] / "development/rows.json").exists():
             arms[arm] = {"trial": a["trial"], "parent": spec["parents"][a["parent"]]["trial"], "missing": [f"candidate:{a['trial']}/development/rows.json"], "complete": False, "passed": None}
             continue
-        arms[arm] = compare(arm_side(spec, arm, root), parent_side(spec, arm, root), spec["rule"])
+        arms[arm] = compare(arm_side(spec, arm, root), parent_side(spec, arm, root), spec["rule"], lambda panel: panel_lengths(spec, panel))
     ranking = rank(arms, spec["rule"].get("rank", []), {a for a, x in spec["arms"].items() if x.get("select", True)})
     return {"round": spec["round"], "registered": spec["registered"], "drop_ids": sorted(spec.get("drop_ids", [])), "arms": arms,
             "ranking": ranking, "candidates": {size: names[0] if names else None for size, names in ranking.items()}}
@@ -311,7 +786,7 @@ def readout(spec, root=ROOT):
 
 def confirm(spec, stage, arm, root=ROOT):
     """One confirmation stage for the chosen arm against its parent, on the stage's reads."""
-    out = compare(arm_side(spec, arm, root, stage), parent_side(spec, arm, root, stage), spec["confirm"][stage])
+    out = compare(arm_side(spec, arm, root, stage), parent_side(spec, arm, root, stage), spec["confirm"][stage], lambda panel: panel_lengths(spec, panel))
     return {"round": spec["round"], "stage": stage, "arm": arm, **out}
 
 
@@ -326,7 +801,9 @@ def _interval(metric, entry):
 
 
 def table(report):
-    """One line per comparison: every bootstrapped panel metric (rates in pp), the unknowable share, the verdict, what failed."""
+    """One line per comparison: every bootstrapped panel metric (rates in pp), the unknowable share, the verdict, what failed;
+    under it, each by_length panel's buckets, and a warning when the arm is served at a temperature fitted on its trial's
+    development rows of a training corpus (in distribution: round 19's failure mode)."""
     lines = []
     for arm, r in report.get("arms", {report.get("arm"): report}).items():
         cells = [f"{p}.{m} {_interval(m, e)}" for p, panel in r.get("panels", {}).items() for m, e in panel.items() if isinstance(e, dict) and "ci95" in e]
@@ -334,6 +811,15 @@ def table(report):
         failed = [k for k, v in r.get("criteria", {}).items() if v is False]
         verdict = "incomplete" if not r.get("complete") else {True: "PASS", None: "reported", False: "fail: " + ", ".join(failed)}[r["passed"]]
         lines.append(f"{arm:16} {' | '.join(cells)} -> {verdict}" + (f" (missing {len(r['missing'])})" if r.get("missing") else ""))
+        for p, panel in r.get("panels", {}).items():
+            if "by_length" not in panel: continue
+            buckets = [name for name, _, _ in length_buckets(tuple(panel["by_length"]["edges"])) if panel[f"ece_{name}"]["n"]]
+            lines.append(f"{'':16} {p} by state length (candidate/parent): " + " | ".join(
+                f"{b} n={panel[f'ece_{b}']['n']} acc {panel[f'acc_{b}']['candidate']:.3f}/{panel[f'acc_{b}']['parent']:.3f} ece {panel[f'ece_{b}']['candidate']:.4f}/{panel[f'ece_{b}']['parent']:.4f}" for b in buckets))
+        source = r.get("temperature_source") or {}
+        if source.get("kind") == "trial development rows" and source.get("training_corpus"):
+            lines.append(f"{'':16} !!! {arm} is served at T {r['temperature']:.3f} fitted on {source['rows']}, held-out items of its training corpus {source['suite']}: "
+                         f"in distribution, {ROUND_19.split(': ', 1)[0]}; not a temperature to ship (register a held-out-datasets `temperature` pool)")
     if "candidates" in report: lines.append(f"candidates {report['candidates']}")
     return "\n".join(lines)
 
@@ -350,22 +836,34 @@ def bench_job(run, suite, name, flags=""):
 
 def checkpoint_of(entry):
     """Where a read runs from: the trial's checkpoint on the runs volume (runs/X -> /runs/X/checkpoint) unless declared."""
-    return entry.get("checkpoint", f"/{entry['trial']}/checkpoint")
+    return entry["checkpoint"] if "checkpoint" in entry else f"/{entry['trial']}/checkpoint"
+
+
+def side_reads(spec, arm, rule, who, side, stage=None):
+    """[(read tag, directory)] a side needs for a stage, by tag: the rule's reads; "transfer" as the arm's transfer_read (a
+    trial's in-trial transfer read is never launched); and, for an arm at the rule stage, its temperature pool."""
+    tags = rule_tags(rule)
+    if who == "candidate" and stage is None and spec.get("temperature"):
+        tags |= {*spec["temperature"]["reads"], *spec["temperature"].get("exclude_reads", [])}
+    reads = {}
+    for tag in tags:
+        if tag != TRANSFER: reads.setdefault(side.dirs[tag], tag)
+        elif who == "candidate" and transfer_read(spec, arm): reads.setdefault(side.dirs[tag], transfer_read(spec, arm))
+    return sorted((read, d) for d, read in reads.items())
 
 
 def read_commands(spec, arm, stage=None, root=ROOT, sides=("candidate",)):
     """The `modal run` commands for the missing reads of one arm (and, with sides, its parent): one benchmarks call per side
     with every suite batched, plus one locked_test call per locked read. Reads that exist locally are skipped."""
     rule = spec["confirm"][stage] if stage else spec["rule"]
-    tags = sorted(rule_tags(rule) - {TRANSFER})
     size, commands = size_of(arm), []
     for who in sides:
         side = (arm_side if who == "candidate" else parent_side)(spec, arm, root, stage)
         run = checkpoint_of(spec["arms"][arm] if who == "candidate" else spec["parents"][spec["arms"][arm]["parent"]])
         jobs = []
-        for tag in tags:
-            if side.has(tag): continue
-            r, d = spec["reads"][tag], side.dirs[tag]
+        for tag, d in side_reads(spec, arm, rule, who, side, stage):
+            if (root / d / "rows.json").exists(): continue
+            r = spec["reads"][tag]
             if r.get("entrypoint") == "locked_test":
                 if not run.startswith("/runs/"): raise ValueError(f"locked_test reads a trial on the runs volume, not {run}")
                 commands.append(["modal", "run", "modal_app.py::locked_test", "--trial", run.removeprefix("/runs/").removesuffix("/checkpoint"),
@@ -512,7 +1010,7 @@ def watch_studies(studies, on_done, poll=poll_modal, interval=120, max_transient
 
 def arm_of(spec, study, label):
     """The arm a spawned call trained (trial directories are <NN>-<label>)."""
-    return next((a for a, x in spec["arms"].items() if x["trial"].startswith(f"runs/{study}/") and Path(x["trial"]).name.split("-", 1)[1] == label), None)
+    return next((a for a, x in spec["arms"].items() if x.get("trial", "").startswith(f"runs/{study}/") and Path(x["trial"]).name.split("-", 1)[1] == label), None)
 
 
 def watch(spec, interval=120, stagger=STAGGER, reads_timeout=6 * 3600):
@@ -530,8 +1028,8 @@ def watch(spec, interval=120, stagger=STAGGER, reads_timeout=6 * 3600):
         last[0] = time.time()
     unmapped = watch_studies(list(spec.get("studies", {})), on_done, interval=interval)
     deadline = time.time() + reads_timeout
-    finished = [a for a, x in spec["arms"].items() if (ROOT / x["trial"] / "result.json").exists()]
-    while (waiting := [a for a in finished if not all(arm_side(spec, a).has(t) for t in rule_tags(spec["rule"]))]) and time.time() < deadline:
+    finished = [a for a, x in spec["arms"].items() if x.get("trial") and (ROOT / x["trial"] / "result.json").exists()]
+    while (waiting := [a for a in finished if not all((ROOT / d / "rows.json").exists() for _, d in side_reads(spec, a, spec["rule"], "candidate", arm_side(spec, a)))]) and time.time() < deadline:
         if procs and all(p.poll() is not None for p in procs): break
         print(f"waiting for the reads of {waiting}", flush=True); time.sleep(interval)
     report = write_readout(spec)
@@ -579,12 +1077,14 @@ def main(argv=None):
         if name == "validate": p.add_argument("--partitions", action="store_true", help="verify the suites' partitions through load_plan (may fetch from the Hub)")
         if name in ("launch", "launch-reads", "watch"): p.add_argument("--stagger", type=int, default=STAGGER)
         if name in ("launch", "launch-reads"): p.add_argument("--dry-run", action="store_true", help="print the modal commands only")
-        if name == "launch-reads": p.add_argument("--arms", help="comma-separated arms (default: every arm with a pulled result)"); p.add_argument("--parents", action="store_true", help="also the parents' missing reads")
+        if name == "launch-reads": p.add_argument("--arms", help="comma-separated arms (default: every arm with a pulled result, and every arm that is a checkpoint without a trial)"); p.add_argument("--parents", action="store_true", help="also the parents' missing reads")
         if name in ("launch-reads", "confirm"): p.add_argument("--stage", required=name == "confirm"); p.add_argument("--arm", help="the candidate (default: the one the readout names)")
         if name == "watch": p.add_argument("--interval", type=int, default=120)
         if name in ("readout", "confirm"): p.add_argument("--out")
     a = ap.parse_args(argv)
     spec, root = load(a.spec), Path(getattr(a, "root", ROOT))
+    for line in calibration_warnings(spec, root) if a.cmd in ("validate", "launch") else ():
+        print(f"!!! warning: {line}")
     if a.cmd == "validate":
         problems, archived = validate(spec, root, partitions=a.partitions)
         if archived: print(f"archived (on {spec['archive']}, not in this checkout):\n  " + "\n  ".join(archived))
@@ -605,7 +1105,7 @@ def main(argv=None):
         return
     if a.cmd == "watch":
         watch(spec, a.interval, a.stagger); return
-    arms = [a.arm or _candidate(spec, root)] if a.stage else (a.arms.split(",") if a.arms else [x for x, v in spec["arms"].items() if (root / v["trial"] / "result.json").exists()])
+    arms = [a.arm or _candidate(spec, root)] if a.stage else (a.arms.split(",") if a.arms else [x for x, v in spec["arms"].items() if not v.get("trial") or (root / v["trial"] / "result.json").exists()])
     sides = ("candidate", "parent") if a.parents or a.stage else ("candidate",)
     if a.dry_run:
         for arm in arms: print("\n".join(" ".join(c) for c in read_commands(spec, arm, a.stage, root, sides)))

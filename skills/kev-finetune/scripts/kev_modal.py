@@ -13,7 +13,7 @@ The image clones github.com/jaredpalmer/kev at KEV_REF and installs it; every co
 kev.benchmark / kev.serve code the released checkpoints were built and measured with. Trial outputs live on the Modal
 volume `kev-finetune-runs` under /runs/<name> (names are immutable: a new attempt needs a new name); base weights are
 cached on `kev-hf-cache`. Environment (read at launch time): KEV_GPU (training GPU, default H100), KEV_SERVE_GPU (default L4;
-Kev-9B needs A100-80GB or H100), KEV_SERVE_RUN (run name on the volume or a Hub id), KEV_SERVE_SECRET (Modal secret holding
+L40S for the 4B under load, H100 or L40S for the 9B), KEV_SERVE_RUN (run name on the volume or a Hub id), KEV_SERVE_SECRET (Modal secret holding
 KEV_API_KEY for bearer auth, read by kev.serve itself), KEV_HF_SECRET (Modal secret holding HF_TOKEN, needed by publish), KEV_APP_NAME, KEV_REF.
 """
 import json
@@ -29,7 +29,7 @@ import modal
 # Launch-time settings that the container must see identically: they travel in the image env (names only, never secret
 # values). The module is re-evaluated inside the container, and a Secret list or a served run that differs there either
 # fails the container ("Function has N dependencies but got M") or serves the wrong model.
-SETTINGS = {"KEV_APP_NAME": "kev-finetune", "KEV_REF": "32d8b7583f65a5f7fa9f1dda899d3b36013e1f08", "KEV_SERVE_RUN": "jaredpalmer/kev-4b", "KEV_HF_SECRET": "", "KEV_SERVE_SECRET": ""}
+SETTINGS = {"KEV_APP_NAME": "kev-finetune", "KEV_REF": "f2bb629d670f5b746f712fc05550a098526c836b", "KEV_SERVE_RUN": "jaredpalmer/kev-4b", "KEV_HF_SECRET": "", "KEV_SERVE_SECRET": ""}
 SETTINGS = {k: os.environ.get(k, v) for k, v in SETTINGS.items()}
 APP_NAME, KEV_REF, SERVE_RUN = SETTINGS["KEV_APP_NAME"], SETTINGS["KEV_REF"], SETTINGS["KEV_SERVE_RUN"]
 KEV_REPO = "https://github.com/jaredpalmer/kev.git"
@@ -50,8 +50,9 @@ image = (
     .apt_install("git")
     .run_commands(f"git clone {KEV_REPO} {KEV_ROOT} && git -C {KEV_ROOT} checkout --quiet {KEV_REF}")
     .uv_pip_install(f"kev[serve] @ file://{KEV_ROOT}")
-    # Gated DeltaNet kernels for the Qwen3.5 hybrid backbones; torch 2.8 pins triton 3.4, fla needs >= 3.7.1 on Hopper
-    .uv_pip_install("flash-linear-attention", "triton>=3.7.1")
+    # Gated DeltaNet kernels for the Qwen3.5 hybrid backbones; torch 2.8 pins triton 3.4, fla needs >= 3.7.1 on Hopper.
+    # Pinned: the endpoint's fused kernels (kev.fused_qwen35) patch this fla's kernel launches and refuse any other version
+    .uv_pip_install("flash-linear-attention==0.5.2", "triton>=3.7.1")
     .env({"HF_HOME": HF, "HF_HUB_DISABLE_PROGRESS_BARS": "1", "TOKENIZERS_PARALLELISM": "false", "PYTHONUNBUFFERED": "1",
           "TRITON_CACHE_DIR": f"{HF}/triton-cache"})   # compiled DeltaNet kernels persist on the cache volume: saves ~1 min per cold start
     .env(SETTINGS)
@@ -238,8 +239,7 @@ def regression_sample(n_groups, seed):
 def run_validate(name, init_from):
     from kev.checkpoint import Checkpoint
     from kev.model import load_tokenizer
-    runs.reload()
-    ck = Checkpoint(init_from)
+    ck = Checkpoint(resolve_checkpoint(init_from))
     tok = load_tokenizer(ck.meta.base, revision=ck.meta.base_revision)
     return {"base": ck.meta.base, "partitions": check_partitions(Path(RUNS) / name / "data", tok)}
 
@@ -259,7 +259,8 @@ def run_train(name, config, baseline=True, regression=300):
     if (out / "checkpoint").exists() or (out / "result.json").exists():
         raise FileExistsError(f"/runs/{name} already holds a run; choose a new name")
     started = time.time()
-    init = Checkpoint(config["init_from"])
+    init_from = resolve_checkpoint(config["init_from"])   # a run name on the volume -> its checkpoint; a Hub id stays as given
+    init = Checkpoint(init_from)
     meta, args = init.meta, init.meta.extra["args"]   # the init checkpoint's own training args are the recipe: batch/accum/checkpointing fit its size, lr is its delta lr
     cfg = {"lr": min(args["lr"], MAX_DELTA_LR), **{k: args[k] for k in ("batch", "accum", "checkpointing")},
            **{k: config[k] for k in ("lr", "batch", "accum") if config.get(k)},   # 0 = keep the checkpoint's value
@@ -273,7 +274,7 @@ def run_train(name, config, baseline=True, regression=300):
         if c["over_limit"]: print(f"warning: {c['over_limit']} {part} records exceed Kev's training context and will be dropped (state limit {c['state_tokens']['limit']} tokens)", flush=True)
 
     run = str(out / "checkpoint")
-    cmd = [sys.executable, "-m", "kev.train", "--data", str(out / "data/train.jsonl"), "--init_from", config["init_from"], "--out", run, "--device", "cuda", "--dtype", "bf16",
+    cmd = [sys.executable, "-m", "kev.train", "--data", str(out / "data/train.jsonl"), "--init_from", init_from, "--out", run, "--device", "cuda", "--dtype", "bf16",
            "--base", meta.base, "--lora", meta.lora, "--head_dim", meta.head_dim, "--lora_targets", args["lora_targets"],
            "--option_isolation", int(meta.option_isolation), "--special_embeddings", int(meta.special_embeddings), "--weights_dtype", meta.weights_dtype,
            "--epochs", cfg["epochs"], "--lr", cfg["lr"], "--batch", cfg["batch"], "--accum", cfg["accum"], "--checkpointing", cfg["checkpointing"],
@@ -298,7 +299,7 @@ def run_train(name, config, baseline=True, regression=300):
 
     if baseline:
         stage(f"scoring the baseline {config['init_from']} on the same records")
-        b_report, b_rows, b_T = score_checkpoint(config["init_from"], development, out / "baseline", calibration)
+        b_report, b_rows, b_T = score_checkpoint(init_from, development, out / "baseline", calibration)
         result["baseline"] = {"run": config["init_from"], "development": summary_block(b_report, b_rows, b_T)}
         result["bootstrap"] = {metric: paired_bootstrap(tempered(rows, T), tempered(b_rows, b_T), metric=metric, aggregation="micro") for metric in ("acc", "brier", "ece")}
         write_json(out / "result.json", result); runs.commit()
@@ -308,7 +309,7 @@ def run_train(name, config, baseline=True, regression=300):
         _, r_rows, _ = score_checkpoint(run, sample, out / "regression/finetuned")
         result["regression"] = {"n": len(sample), "suite": "evals/v7/decision-v7", "finetuned": metrics([r for r in r_rows if r["variant"] == "clean"])}
         if baseline:
-            _, rb_rows, _ = score_checkpoint(config["init_from"], sample, out / "regression/baseline")
+            _, rb_rows, _ = score_checkpoint(init_from, sample, out / "regression/baseline")
             result["regression"]["baseline"] = metrics([r for r in rb_rows if r["variant"] == "clean"])
     result["wall_seconds"] = round(time.time() - started); result["gpu"] = torch.cuda.get_device_name(0)
     write_json(out / "result.json", result); runs.commit(); hf_cache.commit()
@@ -402,33 +403,49 @@ def run_publish(name, repo, private, message, card):
     return f"https://huggingface.co/{repo}"
 
 
-WARMUP = {"state": "Shoes arrived two weeks late and in the wrong size. Also I see two charges on my card.", "model": "kev-latest",
-          "questions": {"department": {"type": "choice", "instructions": "Which team should handle this?", "criteria": {"returns": "Exchanges, refunds", "shipping": "Delivery, delays", "billing": "Charges, payments"}},
-                        "escalate": {"type": "noul", "instructions": "Does this need urgent human attention?"},
-                        "frustration": {"type": "score", "instructions": "How frustrated is the customer?", "criteria": ["Calm", "Frustrated", "Very angry"]}}}
+# Warm-up at start: compile the kernels and capture CUDA graphs for states of a sentence to a few paragraphs (the state-pass
+# graphs do not depend on the questions); other shapes run eagerly once, then replay graphs captured when idle.
+TICKET = "Shoes arrived two weeks late and in the wrong size. Also I see two charges on my card. "
+WARMUP = [{"state": TICKET * n, "model": "kev-latest",
+           "questions": {"department": {"type": "choice", "instructions": "Which team should handle this?", "criteria": {"returns": "Exchanges, refunds", "shipping": "Delivery, delays", "billing": "Charges, payments"}},
+                         "escalate": {"type": "noul", "instructions": "Does this need urgent human attention?"},
+                         "frustration": {"type": "score", "instructions": "How frustrated is the customer?", "criteria": ["Calm", "Frustrated", "Very angry"]}}} for n in (1, 4, 16)]
+# Serving only: bf16, the LoRA merged, fused Qwen3.5 kernels (skipped for an adapter that cannot merge, e.g. trained token
+# embeddings) and CUDA graphs. Scoring (raw_predictor) stays on the exact fp32 eager path every reported number uses.
+SERVE_OPTIONS = {"cuda_graphs": True, "fused": True}
+
+
+def load_server(run, **options):
+    """A warmed kev.serve Server for `run` on the GPU, its CUDA graphs captured (the endpoint's load path)."""
+    import torch
+    from kev.api import SystemOneRequest
+    from kev.checkpoint import Checkpoint, LoadOptions
+    from kev.serve import Server
+    ck = Checkpoint(resolve_checkpoint(run))
+    tok, model = ck.load("cuda", LoadOptions(dtype=torch.bfloat16, **options))
+    server = Server(ck, tok, model, "cuda")
+    for req in WARMUP: server.answer(SystemOneRequest.model_validate(req))   # compiles the kernels now, not on the first user request (~1 min uncached)
+    server.wait_idle()                                                    # their CUDA graphs captured before any traffic
+    return server
 
 
 @app.cls(image=image, gpu=SERVE_GPU, cpu=2, memory=(16384, 65536), volumes=VOLUMES, secrets=hf_secret + serve_secret,
          min_containers=int(os.environ.get("KEV_SERVE_MIN_CONTAINERS", "0")), scaledown_window=300, timeout=600, startup_timeout=900)
 @modal.concurrent(max_inputs=8)
 class Serve:
-    """TypeSafe System One-compatible endpoint (POST /v1/systemone, GET /v1/models) for KEV_SERVE_RUN, in bf16.
-    Deploy: KEV_SERVE_RUN=<run name | Hub id> modal deploy scripts/kev_modal.py"""
+    """TypeSafe System One-compatible endpoint (POST /v1/systemone, GET /v1/models) for KEV_SERVE_RUN, in bf16 with fused
+    kernels and CUDA graphs. Deploy: KEV_SERVE_RUN=<run name | Hub id> modal deploy scripts/kev_modal.py"""
 
     @modal.enter()
     def load(self):
         import torch
-        from kev.api import SystemOneRequest
-        from kev.checkpoint import Checkpoint, LoadOptions
-        from kev.serve import Server, app as api
-        run = SERVE_RUN   # from the image env, fixed at deploy time
-        ck = Checkpoint(resolve_checkpoint(run))
-        tok, model = ck.load("cuda", LoadOptions(dtype=torch.bfloat16))
-        api.state.server = Server(ck, tok, model, "cuda")
-        started = time.time()
-        api.state.server.answer(SystemOneRequest.model_validate(WARMUP))   # compiles the DeltaNet kernels now, not on the first user request (~1 min uncached)
-        hf_cache.commit()                                                    # keep the compiled kernels for the next cold start
-        print(f"serving {run} ({ck.path}) temperature {model.head.temperature:.2f} on {torch.cuda.get_device_name(0)}; warm-up {time.time() - started:.0f}s", flush=True)
+        from kev.serve import app as api
+        run, started = SERVE_RUN, time.time()   # from the image env, fixed at deploy time
+        server = api.state.server = load_server(run, **SERVE_OPTIONS)
+        hf_cache.commit()                       # keep the compiled kernels for the next cold start
+        graphs = server.model.graphs
+        print(f"serving {run} ({server.checkpoint.path}) temperature {server.model.head.temperature:.2f} on {torch.cuda.get_device_name(0)}; "
+              f"{graphs.stats()['captured'] if graphs else 0} CUDA graphs, ready in {time.time() - started:.0f}s", flush=True)
         self.api = api
 
     @modal.asgi_app(label=f"{APP_NAME}-api")

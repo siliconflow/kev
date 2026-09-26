@@ -7,7 +7,7 @@ through night 3, rounds 4-18) is frozen at the git tag `research-archive-2026-09
 `A:PLAN_27b.md`, the Kev-27B plan). How to run an unattended research session is in
 [`docs/autoresearch.md`](docs/autoresearch.md).
 
-## Where we stand (2026-09-24, evening)
+## Where we stand (2026-09-26)
 
 ### The released family
 
@@ -55,6 +55,15 @@ cards. Previous weights are Hub tags (`kev-4b@r8-documents-release`, `kev-4b@nig
 
 ### Running and pending
 
+- **Round 19** (full-weight SFT of Qwen3.8-27B on `sft-v1`) is read out: **no candidate**; every arm failed scienthoon, the
+  pooled externals and the calibration criteria (see "Round 19 result"). **Round 20** (no training; round 19's checkpoints
+  served at a temperature fitted on held-out datasets, plus WiSE-FT interpolation with the base) is read out: **no
+  candidate**, 0 of 6 interpolations pass. The registered temperature fixed calibration: arm (a) breadth ECE 0.0085 vs
+  Kev-27B 0.0118. Every arm still fails scienthoon and the pooled externals (see "Round 20 result"). A report-only analysis
+  of the scienthoon failure finds that the whole cost is one borderline judgement (calm complaints read as "angry"), and
+  that on this suite Kev-27B is the best of six LoRA checkpoints trained from the base on Kev's data. None of the other
+  five, its own recipe's second seed included, would pass the guard against it (`runs/r20-scienthoon/analysis.md`).
+  **Round 21** (retraining allowed, long context, extended data) is not registered yet (see Next).
 - **Round 17** (27B skills delta from Kev-27B with replay 10,000, study `r17-27b`, spec `experiments/rounds/r17.json`).
   Arm (a), lr 2e-5, is read out (`runs/r17-readout/round17.json` in the research checkout, not yet committed anywhere) and
   is **not a candidate**: primary +12.1 [+10.4, +13.9] (hard-v1 dev 0.733 → 0.895, +16.2 [+13.5, +19.0]; devtools-v1 dev
@@ -66,7 +75,9 @@ cards. Previous weights are Hub tags (`kev-4b@r8-documents-release`, `kev-4b@nig
   would be launched from that checkout.
 - Decisions waiting on Jared: upload the documents-v1 and hard-v1 train partitions to `jaredpalmer/kev-suites` and bump
   `SUITES_REVISION` (see Next); submit Kev-27B (and the new 4B / 0.8B) to the Decision Index.
-- Spend: Modal metered $1,377.01 at 2026-09-24T12:11Z plus round 17's admission bound ($100.24); night 3 used $292 of a
+- Spend: Modal metered $2,488.88 at 2026-09-26T00:02Z (round 20: +$54.87 over its registration baseline of $2,434.01,
+  workspace-wide); $2,434.01 at 2026-09-25T22:53Z was +$834.75 over round 19's registration baseline of $1,599.26 (its
+  training, re-scoring and reads, plus other apps of the workspace); earlier, $1,377.01 at 2026-09-24T12:11Z plus round 17's admission bound ($100.24), and night 3 used $292 of a
   $1,000 authorization. AI Gateway $0.07 (Jev reference reads only). Modal sponsors the project ($5,000 credits, more on request).
 
 ## What we have learned
@@ -99,14 +110,23 @@ Each finding names its evidence. Rates are percentage points, intervals are pair
    took Kev-9B's ECE 0.131 → 0.037 (round 4.1, `runs/kev-*-wanli-v1/calibration.json`). Decision Index ECE: Kev-9B 0.16,
    Kev-4B 0.20, AutoJev 0.023. Training on hard data also moves it (Kev-4B round 10: JevBench hard ECE 0.263 → 0.112). A single
    global T does transfer from decision-v7 to transfer-v4 (night 2, #2a); per-(type, K) temperatures and a logistic
-   reliability head made things worse (night 2 #2a, round 4.10).
+   reliability head made things worse (night 2 #2a, round 4.10). Held-out *items* of the training sources are still in
+   distribution: round 19's SFT arms, served at T 0.955 fitted on `sft-v1` development rows, had breadth-v1 ECE 0.059 / 0.065
+   against Kev-27B's 0.012; one temperature fitted on held-out *datasets* brought arm (a) to 0.017 (exploratory, chosen after
+   seeing breadth-v1; "Round 19 result"). Round 20 registered such a pool (648 questions of eight held-out public sources
+   plus MMLU-Pro, which no rule panel reads). It gave T 1.41 for arm (a): breadth ECE 0.0085 vs Kev-27B 0.0118, Kev-panel
+   ECE 0.0193 vs 0.0216. Every final and every interpolation down to α 0.70 passed both calibration criteria ("Round 20
+   result").
 6. **hard-v1 tracks JevBench's hard tier family by family**, with no shared items (screen counts in
    `evals/hard-v1/overlap.json`): Jev ahead on probability, dates and judging, Kev-27B level or ahead on long policies and
    ambiguity, on both (`A:PLAN.md` "Round 10", baselines paragraph, and "JevBench").
 7. **Full-weight SFT on broad data edges out our LoRA recipe on the same base** (AutoJev table above): ahead or level on
    eight of nine suites, much better calibrated on JevBench's hard tier and on documents, behind on scienthoon. It is not a
    controlled comparison: AutoJev differs in method (full weights) and in data (73k broad synthetic decisions; our replay
-   is decision-v7 only) at once.
+   is decision-v7 only) at once. Round 19 separated them on our own corpus: the broad data carries the gains (full weights
+   on `sft-v1` against full weights on Kev-27B's own data: Kev panel +9.1 [+7.8, +10.5], short states +2.9 [+1.7, +4.3]),
+   while full weights instead of LoRA on the same data cost short states −3.0 [−4.3, −1.9] and scienthoon −3.7 [−6.0, −1.5]
+   and gained nothing ("Round 19 result"); the SFT arms kept that scienthoon cost (−2.9, −3.6).
 8. **Knowledge is set by the base.** MMLU-Pro: untrained Qwen3.5-9B 0.540, Kev-9B 0.545 (0.515 after the night-2 delta),
    Kev on Qwen3.6-35B-A3B 0.550, untrained Qwen3.8-27B 0.635, Kev-27B 0.665, Jev 0.840 (night 2 #7/#8; `A:PLAN.md` "Qwen3.5
    port" Phase 0; A2). Solomon found the same at 27B.
@@ -126,7 +146,10 @@ Each finding names its evidence. Rates are percentage points, intervals are pair
 12. **Guards must be sized to what a suite resolves.** On 656 questions the accuracy interval is about ±1.7 pp, so a −1 pp
     lower bound needs a point estimate near +0.7; TypeSafe's 89 rows swing ±6 pp; the 27B's MMLU-Pro gate on 200 questions
     split two seeds 0.630 / 0.665. Round 5 turned on three WANLI questions and round 6 on 0.05 pp. Seed variance at 9B is
-    about ±1 pp on short states and ±2 pp on long panels; a one-seed lead of a point is noise.
+    about ±1 pp on short states and ±2 pp on long panels; a one-seed lead of a point is noise. On scienthoon, six 27B LoRA
+    checkpoints trained from the base on Kev's data score 0.740-0.796 (sd 2.1 pp), and Kev-27B is the top one. Most of the
+    spread is one borderline Noul ("sounds angry") plus `priority`, whose label is not in the text. None of the other five
+    passes the −2 pp scienthoon guard or the pooled-externals guard against Kev-27B (`runs/r20-scienthoon/analysis.md`).
 13. **Negative results worth remembering** (each tried and recorded; do not repeat without a new reason):
     - calibration losses (label smoothing, CE + Brier, focal) against a matched CE control: no candidate (round 3);
     - question-side LoRA (A1): at 4B / 9B −3.4 to −6.0 pp transfer against the same-seed full-placement trial and no date
@@ -139,6 +162,8 @@ Each finding names its evidence. Rates are percentage points, intervals are pair
       (4.2: pushes TypeSafe documents past the context);
     - folding the night-2 delta data back into later deltas (round 6 `soft-du`), two epochs instead of one at 27B (round 6
       follow-up), more same-generator data on top of a skills delta (round 14);
+    - WiSE-FT interpolation of the full-weight SFT checkpoints with the base at α 0.85 / 0.70 / 0.50 (round 20): the
+      accuracy guards stayed failed, and scienthoon got worse toward the base for arm (a) and better for arm (b);
     - anchoring toward the base's answers, WiSE-FT interpolation, option isolation, special embeddings, `head_dim`,
       `perm_kl`, `ord_w`, more public data at 4B; the from-scratch config space around lr 5e-5 is exhausted
       (overnight-1 and "Toward v0.2", `A:PLAN.md` History);
@@ -164,6 +189,11 @@ These are the methods that held up. `docs/autoresearch.md` turns them into an op
 - **Served against served.** Every side is served at the temperature fitted on its own decision-v7 development rows
   (`kev.metrics.served`); a release writes that T into `head.pt` (`scripts/calibrate_checkpoint.py`) and its reported numbers
   use the shipped T. A hard-set calibration guard (hard-v1 served ECE ≤ parent + 0.01) is part of every skills round since round 10.
+  Since round 20, a temperature that is served for a calibration criterion or shipped is fitted on a pool of held-out
+  *datasets* (the spec's `temperature`), never on a training corpus's own calibration/development rows, which are in
+  distribution (round 19: T 0.955, breadth-v1 ECE 0.059 vs 0.0085 on the held-out pool). `kev.rounds validate` and
+  `scripts/calibrate_checkpoint.py` refuse a fit set that shares data with the checkpoint's training
+  (`kev.rounds.pool_conflicts`); `docs/autoresearch.md` section 3 has the rule and its checks.
 - **One candidate per size**: the passing arm with the best registered rank; attribution arms are reported, never selected;
   say how many arms were tried ("one pass in five").
 - **No Jev output in training, ever.** Jev is a reference read through the AI Gateway, budget-capped.
@@ -217,10 +247,161 @@ Reported alongside (never gating): Jev and AutoJev on the same breadth-v1 develo
 
 **Budget.** Modal: admission bounds $988 + $988 + $371 = $2,347 (expected spend ~$800-950: arms (a)/(b) ~9 h each with p_none_pair, so one automatic resume each; arm (c) ~1.5 h) (one epoch of the full mix measured at ~7.1 h / ~$293 on 8×H200; retries counted in each bound), reads ~$20 per arm; program cap $2,000 including reads and confirmation. AI Gateway: synthetic data $1,666 of the $2,460 key (spent before this registration, not training). Baseline: Modal metered $1599.26 at registration.
 
+### Round 19 result
+
+**No candidate.** All three arms were read in full: neither selectable arm passes the registered rule, and the attribution arm fails too. Read-out `runs/r19-readout/round19.json` (`python -m kev.rounds readout experiments/rounds/r19.json`; reproduced exactly by `tests/test_rounds.py::test_readout_reproduces_round_19`). Every side served at the temperature fitted on its own development rows: the SFT arms at T 0.955 ((a), (b); `sft-v1` development, 6,146 questions) and 1.0 ((c)); Kev-27B at 1.38 (its decision-v7 development rows, the shipped value). Paired record-clustered bootstraps against Kev-27B, 2,000 resamples, micro; accuracy and confident errors in pp, Brier absolute, ECE as served against its bar (Kev-27B's + 0.01).
+
+| criterion (panel, n) | (a) `27b-lr2e6` | (b) `27b-lr5e6` | (c) `27b-olddata` (attribution) |
+|---|---|---|---|
+| 1 breadth-v1 dev acc, lower > 0 (3,075) | +1.5 [+0.4, +2.5] pass | +0.6 [−0.6, +1.7] **fail** | −0.1 [−1.0, +0.7] **fail** |
+| 1 Kev panel acc, lower ≥ −1 (3,731) | +8.7 [+7.3, +10.0] pass | +8.3 [+6.9, +9.7] pass | −0.8 [−1.6, +0.1] **fail** |
+| 2 short acc, lower ≥ −2 (1,806) | −1.0 [−2.16, +0.2] **fail** | −0.1 [−1.3, +1.2] pass | −3.0 [−4.3, −1.9] **fail** |
+| 2 short Brier, upper ≤ +0.01 | +0.014 [+0.002, +0.024] **fail** | +0.005 [−0.007, +0.016] **fail** | +0.037 [+0.026, +0.049] **fail** |
+| 2 short confident errors, upper ≤ +1 | +1.6 [+0.8, +2.4] **fail** | +0.6 [−0.3, +1.3] **fail** | +1.5 [+0.7, +2.2] **fail** |
+| 2 WANLI-v2 acc, lower ≥ −2 (1,002) | +0.0 [−2.10, +2.0] **fail** | −0.1 [−2.30, +2.0] **fail** | +0.8 [−1.2, +2.7] pass |
+| 2 scienthoon acc, lower ≥ −2 (873) | −2.9 [−4.5, −1.4] **fail** | −3.6 [−5.3, −1.7] **fail** | −3.7 [−6.0, −1.5] **fail** |
+| 2 pooled externals acc, lower ≥ −1.5 (2,108) | −1.2 [−2.4, +0.0] **fail** | −1.6 [−2.9, −0.3] **fail** | −1.2 [−2.6, +0.1] **fail** |
+| 2 unknowable share ≤ 0.05 (transfer-v9) | 0.000 pass | 0.000 pass | 0.000 pass |
+| 3 breadth ECE ≤ 0.022 (Kev-27B 0.012) | 0.059 **fail** | 0.065 **fail** | 0.060 **fail** |
+| 3 Kev-panel ECE ≤ 0.032 (Kev-27B 0.022) | 0.038 **fail** | 0.037 **fail** | 0.064 **fail** |
+
+Accuracies (arm / Kev-27B): breadth 0.760 / 0.751 / 0.744 vs 0.745; Kev panel 0.863 / 0.860 / 0.768 vs 0.776; short 0.858 / 0.867 / 0.837 vs 0.868; scienthoon 0.767 / 0.761 / 0.759 vs 0.796. Arm (a) passes both primaries and fails six guards and both calibration criteria; arm (b) fails the breadth primary as well.
+
+**Attribution** (report only; the registered design). (b) vs (c), the data (same full-weight recipe, `sft-v1` vs Kev-27B's own training set; `runs/r19-readout/b-vs-c.json`, (c) served at its own T 1.0): Kev panel +9.1 [+7.8, +10.5], short states +2.9 [+1.7, +4.3] (Brier −0.032 [−0.044, −0.021]), breadth +0.7 [−0.5, +1.8], scienthoon +0.1 [−1.6, +1.8], WANLI-v2 −0.9 [−2.8, +0.9], pooled externals −0.4 [−1.6, +0.8]; Kev-panel ECE −0.027. (c) vs Kev-27B, full weights vs LoRA on the same data (the table's last column): no accuracy gain anywhere (breadth −0.1, Kev panel −0.8), short states −3.0 [−4.3, −1.9], scienthoon −3.7 [−6.0, −1.5], ECE +0.043 to +0.048. So the broad data carries the gains, and the scienthoon and short-state costs come with full weights, not with the data.
+
+**Breadth index** (report only; `scripts/breadth_report.py`, chance-corrected, index 0-100 per area and overall; `runs/r19-breadth-report/report.md`; rows as saved, which does not change accuracy):
+
+| area | Kev-27B | AutoJev | SFT (a) | SFT (b) | (c) | Jev |
+|---|---|---|---|---|---|---|
+| Knowledge & Reasoning | 33.8 | 32.7 | 34.4 | 34.5 | 32.5 | 37.7 |
+| Language Understanding | 75.6 | 77.9 | 76.0 | 74.8 | 72.1 | 77.4 |
+| Retrieval & Classification | 62.9 | 76.1 | 70.9 | 70.8 | 60.5 | 75.4 |
+| Tools & Automation | 64.2 | 62.4 | 64.6 | 62.5 | 66.1 | 63.6 |
+| Arts & Human Taste | 14.7 | 9.3 | 19.3 | 16.0 | 14.7 | 12.7 |
+| **Overall** | **50.2** | **51.7** | **53.0** | **51.7** | **49.2** | **53.3** |
+
+The SFT arms close most of the Retrieval & Classification gap to Jev and AutoJev (CLINC150 0.873 → 0.953 / 0.960, SGD 0.647 → 0.727 / 0.720); (c) does not (60.5).
+
+**Calibration finding.** The registered temperature was fitted on `sft-v1` development rows, which are held-out *items* of the training sources: for this purpose they are in distribution. It came out at T 0.955 (sharpening), and every calibration criterion failed. A temperature fitted on held-out *datasets* instead fixes breadth ECE on the same checkpoint. Two exploratory computations, both made after seeing breadth-v1 development, so neither is a result: Jared's, arm (a) with T fitted on transfer-v4 development + SemIf + scienthoon + WANLI-v2 + TypeSafe rows: T 1.59, breadth ECE 0.017 (Brier 0.311, vs 0.319 at 0.955), Kev-panel ECE 0.028; a reconstruction with SemIf + scienthoon + WANLI-v2 + TypeSafe + transfer-v9 + transfer-r3 test rows: the same T 1.59 and numbers for (a), T 1.45 / breadth ECE 0.018 / Kev-panel ECE 0.018 for (b), T 1.59 / 0.022 / 0.030 for (c). Both pools overlap rule panels (transfer-v4 development or transfer-r3 test, and the externals), so round 20 registers a different pool that no rule panel reads.
+
+**Deviations.**
+- (i) In-trial scoring hit `kev.experiment`'s 384-token default context. All three trials trained to the end and saved their checkpoints ((c) 17:11Z, (a) 17:17Z, (b) 20:57Z), then failed on the first `sft-v1` calibration record (`ContextOverflow: state exceeds 384 tokens: 2641`): `score_trial` built its predictor with `kev.suite.CONTEXT` instead of the suite's context (7,552). Main fixed it in #136 (9648d37). The three checkpoints were re-scored (calibration, development and transfer only; no retraining) with `modal_app.py::resume` from branch `rounds/r19-score`: the registration commit 059d3b1, #136 cherry-picked as e11e770, and 5ea55aa (`run_resume` honours `--timeout` and gets host memory for a full-weight 27B checkpoint; orchestration only). Main could not be used because #135 (f2bb629) changed `kev/model.py`, an evaluator file, after training, and `resume_trial` refuses a changed evaluator. Each trial's `provenance.json` records `resumed_git_commit` 5ea55aa and the changed non-evaluator files (`kev/experiment.py`, `modal_app.py`).
+- (ii) The rule reads of (a) and (c) were launched at 18:28:40Z (by another session, `kev.rounds launch-reads` from the registration checkout), before their re-scores finished (18:52Z and 18:47Z); (b)'s reads were launched at 21:05Z while its re-score ran (finished 22:03Z). They are the registered commands on the final checkpoints (`/runs/<trial>/checkpoint`), which re-scoring does not touch; only the development rows the temperatures are fitted on came from the re-score.
+- (iii) A workspace GPU cap serialised the arms: (b) trained from 11:49Z, (a) continued and (c) started only at 16:04Z. (a) and (b) each used one automatic retry after the 8 h timeout, continuing from their last resume point ((b) from step 1352; its retried losses matched attempt 1 to 0.001 at steps 1360-1420, close but not bit-identical in the logged value).
+
+**Evidence** (committed; 30 MB in all): the read-out and `b-vs-c.json`; every arm read's `report.json` + `rows.json` (`runs/r19-27b-{lr2e6,lr5e6,olddata}-<tag>`); the three trials' `result.json`, `provenance.json`, in-trial transfer rows and `calibration/temperature.json`; Kev-27B's transfer-r3 test read (`runs/r19-P27-r3test`) and locked transfer-v4 rows (`runs/locked/kev-27b-v2-ungated/transfer/rows.json`, the parent side of the locked stage); the breadth report. The trials' development rows carry `sft-v1` record ids and option keys, so under the data policy they are in the private dataset `jaredpalmer/kev-private-train` @ `6cc50f5d` under `runs/r19/`, with sha256s in `runs/r19-readout/private-rows.json` (`scripts/private_rows.py restore` puts them in place for an account with access). Checkpoints (48 GB each) stay on the `kev-runs` volume. Spend: Modal metered $2,432.57 at 22:20Z, +$833.31 over the registration baseline, workspace-wide.
+
+## Round 20 (registered)
+
+### Round 20 - post-hoc remedies on round 19's checkpoints: a held-out-datasets temperature and WiSE-FT interpolation with the base (registered with this commit, written before any round-20 interpolation or read)
+
+**Why.** Round 19's SFT arms failed on two counts. Calibration: the registered temperature, fitted on held-out items of the training sources, is in distribution (T 0.955) and left breadth ECE at 0.059 / 0.065 against a bar of 0.022. Accuracy drift from the base: scienthoon −2.9 / −3.6 pp, and short-state Brier and confident errors. Full weights on the old data show the same drift (arm (c): scienthoon −3.7, short states −3.0), so it comes with full weights, not with the new data. This round tests two post-hoc remedies on the same trained checkpoints, with no training: (1) serving at a temperature fitted on held-out datasets; (2) WiSE-FT, interpolating each final backbone with the base's (Wortsman et al., 2022), which pulls every weight back toward the base while keeping part of what SFT learned. WiSE-FT is on our negative list for LoRA (`lora_scale`, overnight-1 and "Toward v0.2"); the new reason is that full-weight SFT moved every weight, and the gains (Kev panel +8.7, breadth +1.5) may survive a partial step back while the base's lost skills return.
+
+**Candidates** (spec `experiments/rounds/r20.json`; parent Kev-27B, `r6-27b-v2/01-trial-1`, reads as in round 19):
+
+| arm | checkpoint | weight on the SFT backbone | selectable |
+|---|---|---|---|
+| `27b-a` | round 19 arm (a) final, `runs/r19-27b-lr2e6/00-trial-0` | 1 | no (reference) |
+| `27b-b` | round 19 arm (b) final, `runs/r19-27b-lr5e6/00-trial-0` | 1 | no (reference) |
+| `27b-a-w85`, `27b-a-w70`, `27b-a-w50` | `/runs/r20-wise/27b-a-w{85,70,50}/checkpoint` | 0.85 / 0.70 / 0.50 | yes |
+| `27b-b-w85`, `27b-b-w70`, `27b-b-w50` | `/runs/r20-wise/27b-b-w{85,70,50}/checkpoint` | 0.85 / 0.70 / 0.50 | yes |
+
+The finals already fail accuracy guards that no temperature can change (argmax is temperature-invariant): scienthoon, WANLI-v2 and the pooled externals for both, plus short-state accuracy for (a) and breadth for (b). They are read only to show the registered temperature's effect on the calibration criteria and as the α = 1 end of each interpolation path; the six interpolations are the only selectable candidates (`"select": false` on the finals).
+
+**Interpolation.** `scripts/interpolate_checkpoint.py` (`modal_app.py::interpolate`, CPU container, `kev.budget` `INTERPOLATE_*`): text backbone = α · SFT + (1 − α) · base in fp32, rounded once to the checkpoint's bf16; the base `Qwen/Qwen3.8-27B` @ `1d4bf0f2ff6012fd82039f2fa52739d0dd7c60c0` is built by the same `DecisionModel` path training uses, so tensor names match, and any name or shape mismatch is refused before anything is written; SFT pointer head and tokenizer files kept; `head.pt` records `interpolation: {alpha, sft: {path, weights_sha256}, base}`; each checkpoint is written to `.partial` and renamed when complete, with `interpolation.json` beside it. Tests on a random two-layer Qwen3.5: α = 1 and α = 0 reproduce the SFT and the base exactly, 0.5 the fp32 midpoint; the result loads through `kev.checkpoint` as a full-weight checkpoint.
+
+**Temperature (the registered calibration method).** Every candidate is served at the temperature fitted (`kev.metrics.served`, the objective every served temperature uses) on its own rows of a pool of held-out datasets that no round-19 or round-20 rule panel reads: the `transfer-r3` **calibration** partition (read `r3cal`, 580 records of one question; the spec's `sources` allowlist keeps its eight held-out public sources (composition_holdout, emotion, legacy_holdout, mmlu, paws, qnli, sciq, tweet_offensive) and drops its 66 unknowable records and 66 intact controls, which are generated policy items of the kind Kev trains on: 448 questions) plus only the **MMLU-Pro** rows of `transfer-v9` development (200 questions; the spec's `sources` allowlist drops transfer-v9's buried states, which come from the same public sources as transfer-v4 items, and its unknowable records and controls): **648 questions per candidate**. Records whose id is in the candidate's transfer-v4 development rows are removed (`exclude_reads`; none expected: by state hash the pool shares nothing with transfer-v4 development or transfer-r3 development or test). `kev.rounds` refuses a pool read inside any panel a temperature-dependent criterion reads; each candidate's fit (rows, count, T) is written into the read-out. Kev-27B is served at its shipped 1.38, as in round 19. Choosing held-out datasets as the pool follows round 19's exploratory finding, but this pool has not been looked at for any candidate, and the verdict rests on untouched test partitions. A released candidate ships the temperature fitted on the same pool (`scripts/calibrate_checkpoint.py --rows <r3cal rows>:composition_holdout,emotion,legacy_holdout,mmlu,paws,qnli,sciq,tweet_offensive --rows <v9 rows>:mmlu_pro --exclude_rows <transfer4 rows>`).
+
+**Reads.** Per interpolated candidate: round 19's ten rule reads (breadth, hard, devtools, docs, semif, scienthoon, wanli2, typesafe, v9, r3test) + `transfer4` (transfer-v4 development: an interpolation has no in-trial transfer read; it stands in for "transfer" in the Kev and short panels via `transfer_read`) + `r3cal`: 72 reads. The two finals reuse their round-19 reads (same checkpoints, same suites; `runs/r19-27b-{lr2e6,lr5e6}-<tag>` and their in-trial transfer reads); only `r3cal` is new for them: 2 reads. 74 reads, one H200 each, read timeout 3,600 s (round 19's 27B full-weight reads landed about 9 minutes after launch; round 19 registered 14,400 s).
+
+**Rule** (round 19's, unchanged; against Kev-27B, paired record-clustered bootstraps, 2,000 resamples, seed 0, micro):
+1. primaries: breadth-v1 development accuracy lower bound > 0; pooled Kev development panel (transfer-v4 dev, hard-v1, devtools-v1, documents-v1) accuracy lower ≥ −1 pp;
+2. guards: short state (transfer-v4 dev + transfer-r3 test) accuracy lower ≥ −2 pp, Brier upper ≤ +0.01, confident errors upper ≤ +1 pp; WANLI-v2 and scienthoon lower ≥ −2 pp each; pooled externals (SemIf, scienthoon, WANLI-v2, TypeSafe) lower ≥ −1.5 pp; unknowable share on transfer-v9 ≤ 0.05;
+3. calibration: breadth-v1 ECE ≤ Kev-27B's + 0.01 and Kev-panel ECE ≤ Kev-27B's + 0.01;
+4. candidate: the passing selectable arm with the largest breadth + Kev-panel accuracy gain (`drop_ids` as in round 19). The read-out says how many of the six passed.
+
+**Confirmation** (the candidate only, each read once, after the rule): `tests`: breadth-v1 test accuracy lower bound > 0 vs Kev-27B; pooled hard-v1 + devtools-v1 + documents-v1 test accuracy lower ≥ −1 pp; documents-v2 reported; `locked`: locked transfer-v4 accuracy ≥ 0.886 and served Brier ≤ 0.165 (absolute bars; round 19's spec encoded them relative to Kev-27B's served 0.896 / 0.160). Report-only steps outside the spec, as in round 19: Jev and AutoJev read once on the same breadth-v1 test items (`kev.jev`, AutoJev's own server; `scripts/breadth_report.py`), and before any release the bf16 serving check on main's path (`uv run modal run modal_app.py::serving --run <checkpoint> --gpu H200 --name serving-27b-r20 --flags=--isolation`: max |Δp| ≤ 0.03, ≤ 1 flip in 280).
+
+**Run steps** (after this PR is merged): (1) `KEV_APP_NAME=kev-sft uv run modal run --detach modal_app.py::interpolate --sft /runs/r19-27b-lr2e6/00-trial-0/checkpoint --prefix 27b-a`, then the same with `r19-27b-lr5e6` and `--prefix 27b-b`, 60 s apart; (2) `uv run python -m kev.rounds launch-reads experiments/rounds/r20.json` once both have finished, then `readout`; (3) confirmation as `docs/autoresearch.md` says, and before the locked stage `KEV_GPU=H200 KEV_APP_NAME=kev-sft uv run modal deploy modal_app.py` from the merged main, because `run_locked_test` now reads a checkpoint without a trial (as `-ungated`).
+
+**Budget.** Admission bounds: reads 74 × $6.27 (H200 at `kev.budget`'s trial resources × 1 h) = $463.62, interpolation 2 × $4.21 (8 CPU, 128 GiB, 3 h) = $8.41: **$472.04**; expected ~$110 (a read ~15 min at ~$5.66/h, an interpolation ~1 h of CPU). Confirmation, candidate only: tests 10 reads (candidate + parent) $62.65, locked $25.06, serving check $6.27: **~$94**; Jev on breadth-v1 test through the AI Gateway (~$0.07 at the development read's rate, cap $3). Baseline: Modal metered **$2,434.01 at 2026-09-25T22:53Z**.
+
+### Round 20 result
+
+**No candidate.** 0 of the 6 selectable interpolations pass the registered rule, and neither reference final passes. No confirmation read was made. Read-out: `runs/r20-readout/round20.json` (`python -m kev.rounds readout experiments/rounds/r20.json`; reproduced exactly by `tests/test_rounds.py::test_readout_reproduces_round_20`). Every arm was served at the temperature fitted on its own 648 pool questions: transfer-r3 calibration, eight sources, 448 questions, plus transfer-v9 MMLU-Pro, 200 questions; none was excluded as a transfer-v4 duplicate. Kev-27B was served at its shipped 1.38. Deltas are paired record-clustered bootstraps against Kev-27B (2,000 resamples, seed 0, micro): accuracy and confident errors in pp, Brier absolute, ECE as served against its bar.
+
+| criterion (panel, n) | 27b-a (final) | 27b-a-w85 | 27b-a-w70 | 27b-a-w50 | 27b-b (final) | 27b-b-w85 | 27b-b-w70 | 27b-b-w50 |
+|---|---|---|---|---|---|---|---|---|
+| T (pool of 648) | 1.414 | 1.414 | 1.447 | 1.447 | 1.382 | 1.350 | 1.350 | 1.350 |
+| 1 breadth acc, lower > 0 (3,075) | +1.5 [+0.4, +2.5] | +1.4 [+0.4, +2.5] | +1.7 [+0.7, +2.6] | +1.5 [+0.5, +2.5] | +0.6 [−0.6, +1.7] **fail** | +1.1 [−0.1, +2.3] **fail** | +1.4 [+0.3, +2.5] | +1.7 [+0.7, +2.8] |
+| 1 Kev panel acc, lower ≥ −1 (3,731) | +8.7 [+7.3, +10.0] | +8.7 [+7.3, +10.1] | +8.8 [+7.5, +10.1] | +7.4 [+6.2, +8.5] | +8.3 [+6.9, +9.7] | +8.6 [+7.2, +10.0] | +8.8 [+7.4, +10.1] | +8.2 [+7.0, +9.5] |
+| 2 short acc, lower ≥ −2 (1,806) | −1.0 [−2.2, +0.2] **fail** | −0.7 [−1.8, +0.4] | −0.6 [−1.7, +0.5] | −0.6 [−1.7, +0.5] | −0.1 [−1.3, +1.2] | −0.2 [−1.3, +1.0] | −0.3 [−1.4, +0.8] | −0.2 [−1.2, +0.9] |
+| 2 short Brier, upper ≤ +0.01 | +0.005 [−0.006, +0.014] **fail** | +0.004 [−0.007, +0.013] **fail** | +0.000 [−0.010, +0.009] | −0.001 [−0.011, +0.009] | −0.001 [−0.012, +0.009] | −0.002 [−0.013, +0.008] | −0.004 [−0.015, +0.004] | −0.005 [−0.016, +0.004] |
+| 2 short confident errors, upper ≤ +1 | −0.7 [−1.4, −0.1] | −0.7 [−1.4, −0.1] | −0.8 [−1.6, −0.2] | −0.7 [−1.4, −0.1] | −0.6 [−1.4, +0.1] | −0.7 [−1.4, +0.0] | −0.9 [−1.7, −0.2] | −0.8 [−1.6, −0.2] |
+| 2 WANLI-v2, lower ≥ −2 (1,002) | +0.0 [−2.1, +2.0] **fail** | +0.0 [−2.1, +1.9] **fail** | +0.6 [−1.3, +2.4] | +0.0 [−1.9, +2.0] | −0.1 [−2.3, +2.0] **fail** | +0.1 [−2.1, +2.2] **fail** | +0.7 [−1.4, +2.8] | +1.1 [−1.0, +3.1] |
+| 2 scienthoon, lower ≥ −2 (873) | −2.9 [−4.5, −1.4] **fail** | −3.2 [−4.8, −1.7] **fail** | −3.3 [−5.0, −1.7] **fail** | −3.9 [−5.6, −2.3] **fail** | −3.6 [−5.3, −1.7] **fail** | −3.8 [−5.7, −1.9] **fail** | −3.0 [−4.8, −1.3] **fail** | −1.8 [−3.4, −0.2] **fail** |
+| 2 pooled externals, lower ≥ −1.5 (2,108) | −1.2 [−2.4, +0.0] **fail** | −1.3 [−2.6, −0.2] **fail** | −1.2 [−2.4, −0.1] **fail** | −1.9 [−3.1, −0.7] **fail** | −1.6 [−2.9, −0.3] **fail** | −1.7 [−3.0, −0.3] **fail** | −1.1 [−2.4, +0.1] **fail** | −0.5 [−1.7, +0.7] **fail** |
+| 2 unknowable share ≤ 0.05 (transfer-v9) | 0.000 | 0.000 | 0.000 | 0.000 | 0.000 | 0.000 | 0.000 | 0.000 |
+| 3 breadth ECE ≤ 0.0218 (Kev-27B 0.0118) | 0.0085 | 0.0087 | 0.0131 | 0.0237 **fail** | 0.0173 | 0.0171 | 0.0196 | 0.0244 **fail** |
+| 3 Kev-panel ECE ≤ 0.0316 (Kev-27B 0.0216) | 0.0193 | 0.0213 | 0.0146 | 0.0249 | 0.0158 | 0.0148 | 0.0198 | 0.0148 |
+
+Accuracies (arm, with Kev-27B's in brackets). Breadth: 0.760 / 0.759 / 0.762 / 0.760 / 0.751 / 0.756 / 0.759 / 0.762 (0.745). Kev panel: 0.863 / 0.863 / 0.864 / 0.850 / 0.860 / 0.862 / 0.864 / 0.858 (0.776). Scienthoon: 0.767 / 0.764 / 0.763 / 0.757 / 0.761 / 0.758 / 0.766 / 0.778 (0.796). Scienthoon and the pooled externals fail for every arm. `27b-a-w70` and `27b-b-w70` fail only those two. `27b-b-w50` also fails breadth ECE.
+
+**Calibration: the registered method worked.** Fitted on the held-out-datasets pool, the temperatures came out at 1.35-1.45, where round 19 fitted 0.955 on `sft-v1` development rows. Every final and every interpolation down to α 0.70 passes both ECE criteria. Arm (a)'s final: breadth ECE 0.0085 vs Kev-27B 0.0118, Kev-panel 0.0193 vs 0.0216. At round 19's T 0.955 the same rows gave 0.059 / 0.038 (arm (b): 0.065 / 0.037; `runs/r20-readout/served.json`, report only). The short-state Brier guard also passes now for every arm except (a) and (a)-w85: (b)'s upper bound went from +0.016 to +0.009. At α 0.50 breadth ECE rises above the bar for both paths (0.0237, 0.0244).
+
+**Interpolation: moving toward the base did not restore scienthoon.** For arm (a) it made scienthoon worse (−2.9 → −3.2 → −3.3 → −3.9 at α 1 → 0.85 → 0.70 → 0.50). For arm (b) it helped, but not enough: `27b-b-w50` came closest, with scienthoon −1.83 [−3.44, −0.23] (bar −2), pooled externals −0.47 [−1.68, +0.72] (bar −1.5) and breadth ECE 0.0244 > 0.0218. The Kev-panel gain survives the step back (+7.4 to +8.8 pp everywhere), and so does the breadth gain (+1.1 to +1.7). WANLI-v2 moves to +0.6 / +0.7 at α 0.70 and +1.1 for `27b-b-w50`. Short states stay within −0.7 to −0.2 pp for every interpolation.
+
+**Breadth index** (report only; `scripts/breadth_report.py` on each arm's breadth rows served at its pool T, Kev-27B at 1.38; `runs/r20-breadth-report/report.md`): chance-corrected index, with the paired difference from Kev-27B.
+
+| | index [95 %] | vs Kev-27B |
+|---|---|---|
+| 27b-b-w50 | 53.7 [51.0, 56.4] | +3.4 [+0.6, +6.2] |
+| 27b-a-w70 | 53.5 [50.7, 56.4] | +3.3 [+0.7, +5.8] |
+| 27b-a-w50 | 53.4 [50.4, 56.2] | +3.2 [+0.5, +5.7] |
+| Jev | 53.3 [50.7, 56.3] | +3.1 [−0.1, +6.2] |
+| 27b-b-w70 | 53.3 [50.5, 56.2] | +3.0 [−0.0, +6.0] |
+| 27b-b-w85 | 53.1 [50.2, 56.1] | +2.8 [−0.1, +5.8] |
+| 27b-a (final) | 53.0 [50.3, 55.9] | +2.8 [+0.2, +5.3] |
+| 27b-a-w85 | 52.9 [50.0, 55.7] | +2.7 [+0.0, +5.2] |
+| AutoJev | 51.7 [49.2, 54.7] | +1.5 [−1.2, +4.6] |
+| 27b-b (final) | 51.7 [48.9, 54.6] | +1.5 [−1.4, +4.3] |
+| Kev-27B | 50.2 [47.4, 53.3] | - |
+
+Most of the interpolations' extra index is Retrieval & Classification: SGD 0.647 (Kev-27B) → 0.807 (a-w50) / 0.793 (b-w50), against Jev's 0.793.
+
+**Scienthoon analysis** (report only, committed rows, no new reads; `runs/r20-scienthoon/analysis.md`, numbers in `drift.json`, `scripts/scienthoon_drift.py`):
+- **The loss is one question type.** On `angry` ("The customer sounds angry.") the round-19/20 arms lose 5.8-13.1 pp. `queue` gains one question, and `priority` (whose label follows a rule absent from the text) moves −3.1 to +1.7. Without `angry` the arms sit at −1.4 to +1.0 pp.
+- **What goes wrong.** The arms call a calm ticket about a real problem angry. Examples: "The box for order #8223 was crushed and the item inside is broken." and "17일 전에 반품했는데 환불이 안 됐어요." They make 28-54 such false positives; Kev-27B makes 9 and Jev 8. 53 of the 55 flipped questions have calm text and gold "not angry", so the gold labels are sound. The other 15 `angry` labels contradict their text (label noise every model misses), which puts the ceiling at 0.948.
+- **Kev-27B is a favourable draw.** Six LoRA checkpoints were trained from the base on Kev's data: B1 v2 s1 and s2, B1 trials A and B, and the two 2-epoch seeds. They score 0.740-0.796 (mean 0.765, sd 0.021) with 9-59 false positives, and Kev-27B is the top one. Against Kev-27B, **none of the other five passes the scienthoon guard or the pooled-externals guard**. B1 v2 seed 1, Kev-27B's own recipe, is at −2.7 [−4.2, −1.4] / −1.5 [−2.6, −0.5]. The full-weight arms score 0.757-0.778, at or above the family mean.
+- **The pooled externals' loss is the same loss.** Without the scienthoon `angry` questions, the pooled delta is −0.4 [−1.8, +0.8] for (a), 0.0 for (b), +0.7 for (c) and +0.5 [−0.8, +1.8] for b-w50. The short-state loss is a different, diffuse one: (a) is −18 questions spread over qnli, composition, emotion and tweet_offensive.
+- **Not the data, and not full weights as such.** Arm (c), full weights on Kev-27B's own data, is the worst (54 false positives). AutoJev, full weights on other data, makes 0. No scienthoon read of the untrained base exists; the interpolations point both ways.
+- **Recommendation for round 21: (d) plus a cheap (a).** Accept that this is not a regression of the recipe, and register the scienthoon and pooled-externals guards against something other than Kev-27B's single best draw. Two options: gate against the LoRA family (for example, point estimate ≥ its mean, and a lower bound ≥ −2 pp against its median checkpoint, B1 trial A), or score scienthoon without `priority` and report calm-text `angry` false positives as a diagnostic. This is Jared's call, made at registration, not retroactively. Add a small open-weight tone minimal-pair family to the extended data (the same problem written calm or angry, other domains than retail tickets, English and Korean; screened against scienthoon, breadth-v1 and transfer-r3's `emotion` / `tweet_offensive`; never a scienthoon paraphrase). Read snapshots as a report, never selected on scienthoon: (c) is free, since lr 2e-6 made fewer false positives than 5e-6 (28 vs 45). Do not build (b), a KL anchor toward Kev-27B's served answers, now. It is feasible: `--anchor` takes any `{record: {qid: {key: p}}}` file, so it needs a rows → targets converter and one Kev-27B read of the replay pool. But Kev-27B's own seed 1 shows its training data does not fix this boundary, so distilling on that data would not either.
+
+**Deviations.**
+- (i) The two interpolation jobs ran under the Modal app `kev-research`, not the registered `kev-sft`. The code, volume and command were the same, and the outputs are unaffected: each checkpoint's `weights_sha256` and inputs are in `runs/r20-wise/<arm>/interpolation.json`, 850 tensors each, 149-230 s per α.
+- (ii) One read client (`27b-b-w50`) lost DNS at 23:56Z. Its detached Modal app kept running, and its 12 reads were pulled from `/bench` by hand at 23:57Z. They are the registered commands' outputs.
+- Timeline: interpolations finished by 23:39Z, the 72 interpolation reads were launched at 23:39:46Z (the finals' two `r3cal` reads before them), all 74 had landed by 23:59:30Z, and the read-out was made at 00:02Z.
+
+**Evidence** (committed): the read-out; `runs/r20-readout/served.json` (per-panel accuracy / ECE / Brier / NLL at each side's served T, and the finals at round 19's T; report only); every read's `report.json` + `rows.json` (`runs/r20-27b-<arm>-<tag>`, public-suite rows only, no `sft-v1` ids); `runs/r20-wise/*/interpolation.json`; the breadth report; the scienthoon analysis, plus the two scienthoon reads it uses that were not in git (`runs/jev-scienthoon-v1/rows.json`, converted by `scripts/freeze_scienthoon.py`, and round 17 arm (a)'s `runs/r17-27b-r10k-lr2e5-scienthoon`). The finals' development rows stay in the private dataset, as in round 19; the read-out's reproduction test restores them with `scripts/private_rows.py` and skips without access. The six interpolated checkpoints (51 GB each) stay on the `kev-runs` volume at `/runs/r20-wise/<arm>/checkpoint`. Spend: Modal metered $2,488.88 at 2026-09-26T00:02Z, +$54.87 over the registration baseline (workspace-wide), within the expected ~$110 and the $472.04 admission bound.
+
 ## Next
 
 Goals and open questions, not registered rounds; each becomes a spec and a PLAN section before it runs.
 
+0. **Round 21: retrain full weights, with long context and extended data.** Retraining is allowed (rounds 19-20 showed
+   that post-hoc remedies do not move the accuracy guards). What is decided so far:
+   - Context: 64k tokens is the target, 32k the fallback and 16k the last resort (a fit probe decides before registration).
+   - Data: `sft-v1` extended into a new version.
+   - Snapshots: kept (0.25 / 0.5 / 0.75 of the steps, #145), read as a report.
+   - Calibration: round 20's held-out-datasets pool method.
+   - The scienthoon remedy follows the round-20 analysis (`runs/r20-scienthoon/analysis.md`). Re-register the scienthoon
+     and pooled-externals guards against something other than Kev-27B's single best draw (Jared's call, at registration):
+     either against the LoRA family, or scienthoon scored without the text-unknowable `priority`. Add a small open-weight
+     tone minimal-pair family to the data (calm vs angry wording of the same problem, other domains, English and Korean,
+     no scienthoon paraphrase). Report calm-text `angry` false positives. The analysis argues against a KL anchor toward
+     Kev-27B's answers, because its advantage is a seed draw that its training data does not fix.
+   - Optional, about $6: one zero-shot read of the untrained base on scienthoon settles whether the base sits nearer
+     Kev-27B or the arms.
 1. **SFT program for Kev-27B: full-weight SFT on broad data, with calibration done right.** Findings 1, 5 and 7 point
    here. Questions to settle before registering:
    - Data: what broad decision corpus, built under the policy above (sources, sizes, open-weight teachers, contamination
@@ -256,7 +437,7 @@ Goals and open questions, not registered rounds; each becomes a spec and a PLAN 
 ## Record
 
 One line per round or named study. `rN.json` is `experiments/rounds/rN.json` on main (the rule as data; `python -m
-kev.rounds readout` reproduces rounds 5-18, see `tests/test_rounds.py`); `A:` is the archive tag. Verdicts are the registered
+kev.rounds readout` reproduces rounds 5-20, see `tests/test_rounds.py`); `A:` is the archive tag. Verdicts are the registered
 outcomes.
 
 | round / study | date | what | verdict | where |
@@ -285,6 +466,8 @@ outcomes.
 | Round 17 | 09-24 | 27B skills, replay 10,000 | arm (a) lr 2e-5: no candidate (documents, scienthoon); arm (b) lr 1e-5: **pending** | `r17.json`; `A:PLAN.md` "Round 17" |
 | Round 18 | 09-24 | 9B documents + skills, replay 10,000 | no candidate (WANLI-v2, scienthoon) | `r18.json`; `A:runs/r18-readout` |
 | AutoJev head-to-head | 09-24 | AutoJev-27B vs Kev-27B, report only | see "Against Jev" above | `A:runs/autojev-h2h/report.json` |
+| Round 19 | 09-25 | full-weight SFT of Qwen3.8-27B on `sft-v1` (lr 2e-6, 5e-6) + full weights on Kev-27B's own data (attribution) | no candidate: both SFT arms fail scienthoon, WANLI-v2, pooled externals, short-state Brier / confident errors and both ECE criteria ((b) also breadth); the data carries the gains, full weights the costs | `r19.json`; `runs/r19-readout`, `runs/r19-breadth-report`; "Round 19 result" |
+| Round 20 | 09-25/26 | post-hoc on round 19's finals, no training: held-out-datasets temperature + WiSE-FT interpolation (α 0.85 / 0.70 / 0.50) | no candidate (0 of 6): every arm fails scienthoon and the pooled externals; the registered temperature passes both ECE criteria down to α 0.70 (arm (a) breadth ECE 0.0085 vs 0.0118); toward the base scienthoon worsens for (a); the scienthoon analysis traces the cost to calm complaints read as "angry" on a guard whose reference is the best of six LoRA draws | `r20.json`; `runs/r20-readout`, `runs/r20-breadth-report`, `runs/r20-scienthoon`; "Round 20 result" |
 | breadth-v1 | 09-24 | frozen eval-only panel over the Decision Index's five areas (14 held-out datasets, 150 records each, locked test unread); development baselines | report: chance-corrected index Jev 53.3, AutoJev-27B 51.7, Kev-27B 50.2, Kev-4B 40.8 (Kev-27B vs Jev −3.1 [−6.2, +0.1]); Kev-27B trails most on retrieval (SGD, CLINC150) | `evals/breadth-v1/manifest.json`; `runs/breadth-v1-report/report.md` |
 
 Older milestones, all in `A:PLAN.md` (sections named in parentheses):

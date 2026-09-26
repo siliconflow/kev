@@ -84,7 +84,7 @@ Example response from Kev-4B, running in bf16 on an Apple M5:
     "department":  { "type": "choice", "choice": "returns", "confidence": 0.21,
                      "probabilities": { "returns": 0.47, "shipping": 0.28, "billing": 0.25 } },
     "escalate":    { "type": "noul", "noul": 0.93 },
-    "frustration": { "type": "score", "score": 1.44, "confidence": 0.78,
+    "frustration": { "type": "score", "score": 1.44, "confidence": 0.34,
                      "legend": { "0": "Calm", "1": "Frustrated", "2": "Very angry" },
                      "probabilities": { "0": 0.00, "1": 0.56, "2": 0.44 } }
   },
@@ -181,7 +181,7 @@ KEV_API_KEY=$(openssl rand -hex 24) modal deploy kev_serve.py
 
 That serves Kev-4B on an L40S at `https://<your-workspace>--kev-api.modal.run`, with the same API as above behind `Authorization: Bearer <key>`. It scales to zero when idle, so an unused endpoint costs nothing. The first request after idle waits about 35 seconds for a container to start. `KEV_MODEL=jaredpalmer/kev-9b` serves another model on the GPU that suits it; Kev-27B goes to a B200, falling back to an H200 or H100. If you use a coding agent, `npx skills add jaredpalmer/kev@kev-deploy` does the same and wires the URL into your code. [skills/kev-deploy](skills/kev-deploy/) has the GPU and cost table.
 
-A model you fine-tuned with the `kev-finetune` skill deploys the same way from its own Modal app (`KEV_SERVE_SECRET=kev-serve-key KEV_SERVE_RUN=<run> modal deploy scripts/kev_modal.py`; see [its deploy guide](skills/kev-finetune/references/deploy.md)). To host Kev on your own machines instead, run `kev.serve` from [Run It Locally](#run-it-locally) on a GPU box and put it behind your own proxy; [Serving Performance](#serving-performance) says which GPU to pick.
+A model you fine-tuned with the `kev-finetune` skill deploys the same way from its own Modal app (`KEV_SERVE_SECRET=kev-serve-key KEV_SERVE_RUN=<run> modal deploy scripts/kev_modal.py`; see [its deploy guide](skills/kev-finetune/references/deploy.md)). To host Kev on your own machines instead, run `kev.serve` from [Run It Locally](#run-it-locally) on a GPU box with `--host 0.0.0.0` and put it behind your own proxy; [Serving Performance](#serving-performance) says which GPU to pick.
 
 ## What to Expect
 
@@ -193,7 +193,7 @@ A model you fine-tuned with the `kev-finetune` skill deploys the same way from i
 
 **Speed.** Kev-4B answers six questions about a new short text in 18.1 ms of model time on an H100 and 41.5 ms on an L40S, and a container serves around 101 requests per second on an H100. On an Apple M5, Kev-4B takes 721 ms for five questions, or 136 ms when the text repeats and comes from the cache. [Serving Performance](#serving-performance) has every GPU and batch size.
 
-**Length.** Training used states of up to 384 tokens. The server accepts 8,192 tokens for the state and 8,192 for each question. Longer inputs work, but accuracy drops on long documents. Kev-27B holds up much better: on a panel of questions buried in 1k–6k tokens of unrelated text it scores 0.833, against Kev-9B's 0.556.
+**Length.** Training used states of up to 384 tokens. The server accepts states of up to 65,536 tokens, and 8,192 more for each question. Longer inputs work, but accuracy drops on long documents. Kev-27B holds up much better: on a panel of questions buried in 1k–6k tokens of unrelated text it scores 0.833, against Kev-9B's 0.556.
 
 ## Playground
 
@@ -237,7 +237,7 @@ There's a [chess demo](http://localhost:3001/chess), too. The board is the input
 | `choice` | 1–255 option names, each with a description or `null` | `choice`: most likely option; `probabilities` and `confidence` |
 | `score` | 1–255 descriptions, ordered from lowest to highest | `score`: mean level index, starting at 0; `legend`, `probabilities`, and `confidence` |
 
-For Choice with `K > 1` options, confidence is `(p_max − 1/K) / (1 − 1/K)`. A single option has confidence 1. Score confidence measures how close the distribution is to its most likely level. It's an approximation of TypeSafe's formula, which isn't public. Neither field is a measured accuracy rate.
+For Choice with `K > 1` options, confidence is `(p_max − 1/K) / (1 − 1/K)`. A single option has confidence 1. Score confidence is `max(0, 1 − E|level − mode| / D)`: `mode` is the most likely level and `D` is the mean distance of a uniform distribution over the levels from its middle (2/3 for three levels), so all probability on one level gives 1 and a uniform or wider spread gives 0. Both formulas are the ones in TypeSafe's reference adapter ([`system-one-adapter`](https://github.com/typesafe-ai/system-one-adapter-python) 0.2.1). Neither field is a measured accuracy rate.
 
 Objects and arrays are converted to labeled text. Delimiter-like strings in user input are escaped before tokenization. Invalid requests return `422`. `usage.output_tokens` counts tokens in the serialized answers, not generated tokens. In score answers, `legend` echoes the criteria levels verbatim with their original JSON types.
 
@@ -247,12 +247,11 @@ Objects and arrays are converted to labeled text. Delimiter-like strings in user
 | `POST` | `/v1/systemone/permute` | Run one Choice question with different option orders (`n_perm` 1 to 64, default 6) |
 | `POST` | `/v1/systemone/separate` | Run each question in its own forward pass |
 
-| Method | Path | Purpose |
-|---|---|---|
 | `GET` | `/healthz` | Liveness: process + model thread (cheap, ~0 ms; for liveness probes) |
 | `GET` | `/healthz/ready` | Readiness: one real inference through the same path traffic takes — reflects the instance's serving capability; 503 + reason on any inference-path failure (OOM, a broken kernel, a wedged model thread); point readiness probes here |
 
-A request may carry any number of questions. The server runs them a token budget at a time (one maximal row of 16,384 tokens per forward pass, counting the cached document once per question in that pass), so memory does not grow with the question count and the answers do not depend on the split. Every response carries an `x-typesafe-request-id` header. The server binds to `127.0.0.1` and is open by default; set `KEV_API_KEY` to require `Authorization: Bearer <key>` on `/v1/*`, as the TypeSafe clients always send it.
+
+A request may carry any number of questions. The server runs them a token budget at a time (one maximal row of 16,384 tokens per forward pass, counting the cached document once per question in that pass), so memory does not grow with the question count and the answers do not depend on the split. Every response carries an `x-typesafe-request-id` header. The server binds to `127.0.0.1` (`--host 0.0.0.0` to accept other machines) and is open by default; set `KEV_API_KEY` to require `Authorization: Bearer <key>` on `/v1/*`, as the TypeSafe clients always send it.
 
 | Variable | Effect |
 |---|---|
@@ -277,7 +276,7 @@ Each checkpoint is a rank-16 LoRA adapter and a small pointer head on a Qwen bas
 
 The attention mask lets a token read the state and its own question, but not other questions or future tokens. Each question's position IDs restart just after the state. This lets the model process the state once and answer each question independently.
 
-Qwen3.5 and Qwen3.8 mix attention layers with Gated DeltaNet layers, which are recurrent and ignore attention masks. For those models, which is every current Kev, each question runs as its own row: the state followed by that question, with the same positions as above. The rows are independent, so isolation is exact, and the server computes the state once and reuses its cache for every row. On attention-only models the two forms give identical probabilities (`tests/test_model.py`).
+Qwen3.5 and Qwen3.8 mix attention layers with Gated DeltaNet layers, which are recurrent and ignore attention masks. For those models, which is every current Kev, each question runs as its own row: the state followed by that question, with the same positions as above. The rows are independent, so isolation is exact, and the server and `DecisionModel.probs()` compute the state once and reuse its cache for every row. `forward()`, which `kev.benchmark` scores and every published number comes from, keeps the plain rows and runs the state once per question; the two agree to fp32 rounding. On attention-only models the rows and the mask above give identical probabilities (`tests/test_model.py`).
 
 Kev-27B uses the same design on `Qwen/Qwen3.8-27B`, with two differences. Its base is Qwen's post-trained release rather than a `-Base` checkpoint, and we don't know what it was post-trained on. And its frozen weights are held in bf16 (`--weights_dtype bf16`), because fp32 weights don't fit next to the optimizer on one GPU. It therefore serves in bf16 only, with 55 GB of weights (about 66 GB resident with the serving buffers), which is why it needs an 80 GB card and has no Mac path. Serving folds the adapter into those bf16 weights, as for the other Kevs; its served probabilities stay within 0.009 of the evaluation path on an H200 (`runs/fused-27b-h200`).
 
@@ -361,7 +360,7 @@ These commands use development data. Test data requires `--allow-test`. The benc
 | `wanli-v1` | 256 WANLI test pairs: supported, insufficient or contradicted | 0.758 | 0.703 (Kev-9B), 0.695 (Kev-4B at `night2-du-release`) |
 | `typesafe-v1` | The 102 public evals.typesafe.ai questions over 20 cases: agreement / distance on the 89 that fit | 0.891 / 0.125 | 0.809 / 0.226 (Kev-9B), 0.856 / 0.231 (Kev-4B at `night2-du-release`) |
 
-Kev trails Jev on WANLI and TypeSafe's evals. SemIf reports 0.637 balanced accuracy on WANLI for untrained Qwen3.5-4B. TypeSafe's cases are scored the way SemIf scores them (`scripts/compare_typesafe.py`): agreement with the reference answer and total-variation distance to the reference distribution, averaged within each case and then over cases. The published TypeSafe answers score 0.883 / 0.127 on the same rows. The documents are long, and 13 of them exceed the 8,192-token serving context; counting those as wrong, Kev-9B scores 0.728 / 0.304 and Kev-4B 0.770 / 0.308 over all 102. Document length explains part of the gap: Kev-9B answers 0.92 of the 26 documents inside its 384-token training context and 0.75 to 0.79 of the longer ones (Kev-4B 0.88, then 0.81 to 0.88).
+Kev trails Jev on WANLI and TypeSafe's evals. SemIf reports 0.637 balanced accuracy on WANLI for untrained Qwen3.5-4B. TypeSafe's cases are scored the way SemIf scores them (`scripts/compare_typesafe.py`): agreement with the reference answer and total-variation distance to the reference distribution, averaged within each case and then over cases. The published TypeSafe answers score 0.883 / 0.127 on the same rows. The documents are long, and 13 of them exceeded the 8,192-token serving context these were scored under; counting those as wrong, Kev-9B scores 0.728 / 0.304 and Kev-4B 0.770 / 0.308 over all 102. Document length explains part of the gap: Kev-9B answers 0.92 of the 26 documents inside its 384-token training context and 0.75 to 0.79 of the longer ones (Kev-4B 0.88, then 0.81 to 0.88).
 
 ## Serving Performance
 
@@ -397,7 +396,7 @@ The server runs in bf16 on GPUs and Macs. Its probabilities differ from the fp32
 - Knowledge questions are set by the base model. MMLU is 0.74 for Kev-9B against Jev's 0.90, and MMLU-Pro 0.52 against 0.84.
 - Fine-tuning can make the base model worse at individual tasks. Date arithmetic was the clearest case ([issue #8](https://github.com/jaredpalmer/kev/issues/8)); training on stated day counts plus `KEV_DATE_FACTS=1` recovers it.
 - Changing option order can change an answer. Question isolation doesn't prevent this.
-- Training used at most 384 state tokens and 1,024 tokens for the state plus one question. Serving allows 8,192 of each; longer context wasn't covered by training.
+- Training used at most 384 state tokens and 1,024 tokens for the state plus one question. Serving allows a 65,536-token state; longer context wasn't covered by training.
 - On a Mac, answers take hundreds of milliseconds, not tens. Kev-27B needs an 80 GB GPU and has no Mac path.
 - Kev-27B starts from a post-trained model whose training data we don't know.
 
@@ -405,7 +404,7 @@ The server runs in bf16 on GPUs and Macs. Its probabilities differ from the fp32
 
 ```bash
 uv run --extra serve python -m pytest tests/test_unit.py tests/test_research.py tests/test_generators.py tests/test_conventions.py \
-    tests/test_documents_tools.py tests/test_hard_v1.py tests/test_devtools_v1.py tests/test_breadth_v1.py tests/test_rounds.py -q   # no weights, no server; what CI runs
+    tests/test_documents_tools.py tests/test_hard_v1.py tests/test_devtools_v1.py tests/test_breadth_v1.py tests/test_rounds.py tests/test_skill_scripts.py -q   # no weights, no server; what CI runs
 KEV_BASE_URL=http://127.0.0.1:8009 uv run --extra serve python -m pytest tests/test_api.py -q   # against a running server
 cd playground && npm run lint && npx next typegen && npx tsc --noEmit -p .
 ```

@@ -49,11 +49,41 @@ A round is a PLAN.md section plus a spec, committed together before any training
    rule (primary, guards with thresholds sized to each suite, rank), the confirmation stages, and the budget. Use the
    standing rules; do not invent a new statistic for one round.
 2. Write `experiments/rounds/r<N>.json` by copying the closest past spec (r15 for a joint delta, r17 for a 27B, r10 for a
-   skills round). Leave out `"archive"`: that key marks the recorded rounds 5-18. Every plan file the spec names, and every
+   skills round, r20 for post-hoc arms without training: a temperature pool, interpolated checkpoints). Leave out `"archive"`: that key marks the recorded rounds 5-18. Every plan file the spec names, and every
    parent read its rule needs, must exist in this checkout; if a parent lacks a read, `launch-reads <spec> --parents` makes it.
 3. New data is a new directory under `evals/` with a `manifest.json` (sha256 per file, inputs' hashes). Under the SFT data
    policy (PLAN.md) private corpora keep only the manifest in git, with a `"mirror"` entry pointing at the private dataset.
-4. `uv run python -m kev.rounds validate experiments/rounds/r<N>.json` (add `--partitions` to verify the partitions) until it
+4. **MUST: every served or shipped temperature comes from a pool of held-out datasets, never from a partition of the training
+   corpus.** A round that reads calibration (ECE, Brier, confident errors, coverage) registers a `temperature` pool for its
+   arms (copy r20: the transfer-r3 calibration partition's eight held-out public sources + transfer-v9 MMLU-Pro), and a release
+   ships the temperature `scripts/calibrate_checkpoint.py` fits on the same pool. The held-out *items* of the training sources
+   (a training suite's `calibration` / `development` partitions) are in distribution: round 19 served its SFT arms at T 0.955
+   fitted on `sft-v1` development rows and failed every calibration criterion (breadth-v1 ECE 0.059); round 20's held-out-datasets
+   pool gave 0.0085 on the same checkpoint. What enforces it:
+   - From round 21, `kev.rounds validate` and `launch` refuse a round whose rule or confirmation has a criterion the
+     temperature moves (ECE, Brier, NLL, confident errors, coverage; anything but accuracy) and no `temperature` pool.
+     Rounds <= 20 only print a `!!! warning` per arm trained on a training corpus, so their recorded specs still validate.
+   - `kev.rounds validate` refuses a pool read that (a) is an arm's training suite, a component of it (sft-v1's
+     `inputs.components`) or its plan's `data` suite, (b) pools a source any arm trained on, or (c) reads the `calibration` or
+     `development` partition of any training corpus; it also refuses a pool it cannot check (an arm whose training is
+     unknown, a suite without a manifest or listed sources). Checkpoint arms without a trial may name `trained_on`.
+   - The read-out records each arm's `temperature_source`; the table prints `!!!` for an arm served at its trial's
+     development rows of a training corpus (rounds 5-19 all were; from now on such a temperature is screening only).
+   - `scripts/calibrate_checkpoint.py` refuses the same fit sets (checked against head.pt's training suite);
+     `--allow-in-distribution` is for reproducing an old fit only, and it is recorded in `head.pt["temperature_fit"]`.
+   - A trial's in-trial temperature (`result.json` `calibration_fit`) says `role: in-trial screening ... not a served or
+     shipped temperature`.
+   - Parents are served at the temperature fitted on their trial's development rows (for Kev-27B that is its shipped 1.38,
+     fitted on the same rows); the read-out records that and their shipped head.pt T (`parent_temperature_source`), and
+     `validate` warns when the two differ by more than 0.05 on a training corpus's rows.
+   - The disjointness check is by source NAME (nominal, not semantic): two suites carrying the same dataset under different
+     names pass it. So a pool must use sources that are eval-only in Kev by construction, like transfer-r3's eight held-out
+     public sources and transfer-v9's MMLU-Pro. A pool read's `sources` allowlist must name sources its suite lists (a
+     typo is a problem), and training the checker cannot list (a `data` file outside `evals/`, a manifest without
+     sources) is a problem for a new round.
+   - `calibrate_checkpoint.py --temperature T` (a manual value, nothing fitted) needs `--reason`, recorded in
+     `head.pt["temperature_fit"]` (e.g. "copied from the pool fit of runs/r20-readout").
+5. `uv run python -m kev.rounds validate experiments/rounds/r<N>.json` (add `--partitions` to verify the partitions) until it
    prints `ok`. Commit the PLAN section and the spec in one commit, push. That commit time is the registration time.
 
 ## 4. Run it end to end
@@ -97,7 +127,16 @@ May not, without Jared's explicit OK:
   `tests/test_rounds.py`, before any round depends on it;
 - pass `--allow-test` or run `locked_test` outside a registered confirmation stage;
 - put any Jev output, or any closed-model generation, into training data;
-- train locally (a 32 GB Mac cannot hold these models) or run two training processes on one machine.
+- train locally (a 32 GB Mac cannot hold these models) or run two training processes on one machine;
+- delete a checkpoint or a snapshot from the runs volume (`modal volume rm`, `shutil.rmtree` in a container), or turn a
+  full-weight trial's snapshots off (`"snapshot_fractions": "none"`) in a registered spec. Full-weight trials keep
+  snapshots at 0.25, 0.5 and 0.75 of their steps (`kev.experiment.SNAPSHOT_FRACTIONS`) so a read can find the best point
+  of a run after it ends: round 19 could not, because the only mid-run state was a resume point, deleted when the run
+  finished, and AutoJev's best checkpoint was at 0.7 epoch. A 27B's snapshots are ~154 GB of volume per trial; the
+  space is Jared's call, not the session's. Snapshots live on the runs volume (primary); a private Hub mirror
+  (`snapshot_hub_repo` in a plan, or `modal_app.py::mirror_snapshots`) is long-term storage for a checkpoint worth
+  keeping, not a replacement: mirroring 27B checkpoints (~51 GB each, into a private repo such as
+  `jaredpalmer/kev-snapshots`) is also Jared's call, and never to a public repo.
 
 If an arm is blocked (authentication, a spend limit, a deploy that will not work in 30 minutes), write down what happened
 and move to the next arm. Do not wait for a human.
@@ -141,6 +180,10 @@ At the end of the session (and in the state file as it goes):
   from the right, so pinned Hub revisions are safe. Suites and names must not contain `@` or `,`.
 - **One pull per study.** Concurrent pulls of the same study deleted each other's trial directories; `pull_study` now holds
   a per-study lock. A pull while trials still run is safe and refreshes only unfinished trials.
+- **Pulls leave full weights on the volume.** `::pull` (and `watch`) skips full-weight shards (`model*.safetensors`, ~51 GB
+  per 27B checkpoint or snapshot) and resume points; everything else comes down (results, rows, `head.pt`, configs).
+  Read a checkpoint or a snapshot on the volume: `::benchmarks --jobs "/runs/<study>/<trial>/snapshots/step-<N>/checkpoint@<suite>@<name>"`.
+  `::pull --weights` copies the shards when something local really needs them.
 - **Deploy after the data.** The image copies `evals/`; the launcher only checks `kev/*.py` hashes, so a trial whose data
   file was added after the deploy fails inside the container. `--gpu H200` on `study` needs an app deployed with `KEV_GPU=H200`.
 - **27B.** H200 only (bf16 backbone, 55 GB resident); study timeouts up to 28,800 s (a 1-epoch skills delta at lr 2e-5 ran
@@ -158,7 +201,11 @@ At the end of the session (and in the state file as it goes):
   requests it rejects (for example a 422 past its context) as coverage, never drop them silently.
 - **Temperature: shipped vs in-trial.** A trial's `result.json` and its locked summary are scored at the in-trial fit; a
   release ships the T that `scripts/calibrate_checkpoint.py` wrote into `head.pt`. The first AutoJev head-to-head served
-  Kev-27B at the in-trial 1.19 instead of the shipped 1.38 and had to be corrected. Say which T every number uses.
+  Kev-27B at the in-trial 1.19 instead of the shipped 1.38 and had to be corrected. Say which T every number uses, and
+  where it was fitted (section 3, rule 4: held-out datasets, never the training corpus's own partitions).
+- **Long-context calibration.** A panel with `"by_length": true` reports accuracy, ECE, Brier and confident errors per
+  state-token bucket (under 8k to 64k+, and the 8k+/16k+/32k+ tails), and a criterion can gate one
+  (`long.ece_16k_plus.candidate <= 0.05`). Tokens are counted from the reads' suite records, so both sides share buckets.
 - **Workspace capacity.** The workspace has run at most about ten GPU containers at once; pending containers are capacity,
   not a bug, so do not relaunch them.
 - **Small suites.** A guard on 89 or 144 questions cannot resolve a 2-3 pp floor; gate them through a pooled panel.

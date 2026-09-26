@@ -3,6 +3,7 @@
 LocalPredictor scores a checkpoint in-process; RemotePredictor any TypeSafe System One-compatible endpoint; JevPredictor
 Jev itself through the AI SDK worker in playground/scripts (budget-capped).
 """
+import contextlib
 import json
 import math
 import os
@@ -13,16 +14,30 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 import torch
+from torch.nn.attention import SDPBackend, sdpa_kernel
 
 from kev.api import question_keys
 from kev.checkpoint import Checkpoint, LoadOptions
 from kev.data import api_request, materialize
 from kev.device import sync
-from kev.model import ContextOverflow
+from kev.model import ROW_PASS_TOKENS, ContextOverflow, rows_of
 from kev.suite import CONTEXT
 
 
+LONG_ROW_KERNELS = "efficient"   # the label of a prediction (and its benchmark rows) that took the long-row kernels below
+
+
 class LocalPredictor:
+    """Scores a checkpoint in-process. Evaluation is fp32-exact (no TF32, no fused SDPA kernels on CUDA), with one
+    exception: on CUDA with the torch backend, a record whose longest row (state + one question) exceeds
+    kev.model.ROW_PASS_TOKENS runs under SDPA's flash / memory-efficient kernels, because the exact math kernel's L x L
+    score matrix does not fit (~200 GB per layer pass at 64k). Such a prediction carries `"kernels": LONG_ROW_KERNELS`,
+    kev.benchmark copies it onto the record's rows and counts them in report.json's `long_rows`; shorter records carry
+    nothing, so their rows and reports are unchanged. The efficient path is CUDA-only: on CPU / MPS attention stays eager
+    and exact and still materialises L x L. A long record on a hybrid torch backbone also runs its state once, its
+    questions continuing from it (kev.shared_prefix), instead of once per question; the MLX backend's forward already
+    runs the state once."""
+
     def __init__(self, run, device, opts=LoadOptions(), context=CONTEXT):
         """opts.temperature=None scores with the temperature the checkpoint carries; 1.0 scores raw logits. context: the
         max_state / max_branch / max_packed a record must encode within (a suite manifest's `context`; the training
@@ -47,7 +62,13 @@ class LocalPredictor:
             raise ContextOverflow(f"packed request exceeds the {self.context['max_packed']}-token limit")
         sync(self.device)
         start = time.perf_counter()
-        logits = self.model.forward(enc)
+        state, _, rows = rows_of(enc)
+        long = len(state) + max(len(r["ids"]) for r in rows) > ROW_PASS_TOKENS
+        torch_backend = self.model.backend == "torch"
+        efficient = long and torch_backend and self.device == "cuda"
+        with sdpa_kernel([SDPBackend.FLASH_ATTENTION, SDPBackend.EFFICIENT_ATTENTION, SDPBackend.MATH]) if efficient else contextlib.nullcontext():
+            if long and torch_backend and self.model.hybrid: logits = self.model.forward_batch([enc], shared_prefix=True)[0]
+            else: logits = self.model.forward(enc)
         ps = [torch.softmax(z, -1).cpu() for z in logits]
         zs = [z.float().cpu() for z in logits]
         sync(self.device)
@@ -55,7 +76,7 @@ class LocalPredictor:
         return {"probabilities": {qid: dict(zip(keys[qid], p.tolist())) for qid, p in zip(keys, ps)},
                 "logits": {qid: dict(zip(keys[qid], z.tolist())) for qid, z in zip(keys, zs)},
                 "inference_temperature": self.temperature,
-                "latency_ms": 1000 * (time.perf_counter() - start), "input_tokens": len(enc["ids"])}
+                "latency_ms": 1000 * (time.perf_counter() - start), "input_tokens": len(enc["ids"]), **({"kernels": LONG_ROW_KERNELS} if efficient else {})}
 
 
 class RemotePredictor:
@@ -140,11 +161,35 @@ class RotationAveraged:
         return out
 
 
+class JevRefused(ContextOverflow):
+    """Jev declined a request because of the input itself (REFUSAL_STATUSES, or a hosted-side error on an oversize request;
+    see JevPredictor). With count_refusals, kev.benchmark counts such a record as rejected (rejected.json) instead of stopping."""
+
+
+REFUSAL_STATUSES = (400, 413, 422)
+# Jev's context in tokens (documented ~32k). Past it the AI Gateway answers with HTTP 400 *or* a 503 GatewayInternalServerError
+# (evals/longdoc-v1: 212 x 400 and 28 x 503 on the 240 requests of ~57k-61k tokens; every request of <= ~31k tokens answered),
+# so a hosted-side error on a request estimated past OVERSIZE x JEV_CONTEXT_TOKENS is the size, not an outage. The estimate is
+# characters / 4 of the request JSON; the 1.5 margin keeps a ~30k-token legal text (~144k characters) out of it.
+JEV_CONTEXT_TOKENS = 32768
+OVERSIZE = 1.5
+
+
+def oversize(request):
+    """Whether a Jev request is well past Jev's context (estimated tokens = characters / 4)."""
+    return len(json.dumps(request, ensure_ascii=False)) / 4 > OVERSIZE * JEV_CONTEXT_TOKENS
+
+
 class JevPredictor:
-    """Jev through the AI SDK worker (playground/scripts/jev-evaluate.mjs); every call is counted against a token budget."""
-    def __init__(self, key, budget=0.1, max_calls=700):
-        self.budget, self.max_calls = budget, max_calls
+    """Jev through the AI SDK worker (playground/scripts/jev-evaluate.mjs); every call is counted against a token budget.
+    count_refusals: a request answered with a REFUSAL_STATUSES error, or with a hosted-side error (5xx, no status) while
+    oversize(), raises JevRefused at once (counted in accounting()["refusals"], not fatal, not retried); any other client error
+    (401, 403, 429, ...) still stops the read. attempts: tries per request on hosted-side failures of requests that are not
+    oversize, backing off 1, 2, 4, ... seconds up to 30 between them."""
+    def __init__(self, key, budget=0.1, max_calls=700, count_refusals=False, attempts=4):
+        self.budget, self.max_calls, self.count_refusals, self.attempts = budget, max_calls, count_refusals, attempts
         self.calls, self.input_tokens, self.output_tokens, self.retries = 0, 0, 0, 0
+        self.refusals = {}   # HTTP status -> count
         self.started_at = datetime.now(timezone.utc).isoformat()
         worker = Path(__file__).resolve().parents[1] / "playground/scripts/jev-evaluate.mjs"
         self.process = subprocess.Popen(["node", str(worker)], stdin=subprocess.PIPE, stdout=subprocess.PIPE,
@@ -163,7 +208,7 @@ class JevPredictor:
         if self.calls >= self.max_calls or (self.input_tokens + 65536) * PRICE_PER_MILLION / 1e6 > self.budget:
             raise RuntimeError("Jev evaluation reached the request/token cost cap")
         request = api_request(record)
-        for attempt in range(4):
+        for attempt in range(self.attempts):
             self.process.stdin.write(json.dumps(request) + "\n")
             self.process.stdin.flush()
             line = self.process.stdout.readline()
@@ -175,10 +220,15 @@ class JevPredictor:
                 break
             status = result["error"]["status"]
             # bounded retry for hosted-side failures only; client errors (4xx) are real and must surface
-            if attempt == 3 or (status is not None and status < 500):
+            hosted = status is None or status >= 500
+            if self.count_refusals and (status in REFUSAL_STATUSES or hosted and oversize(request)):
+                kind = str(status) if status in REFUSAL_STATUSES else f"{status} (oversize)"
+                self.refusals[kind] = self.refusals.get(kind, 0) + 1
+                raise JevRefused(f"Jev refused the request: {result['error']['name']} (HTTP {kind})")
+            if attempt == self.attempts - 1 or (status is not None and status < 500):
                 raise RuntimeError(f"Jev request failed: {result['error']['name']} (HTTP {status})")
             self.retries += 1
-            time.sleep(2 ** attempt)
+            time.sleep(min(2 ** attempt, 30))
         usage = result["usage"]
         if usage.get("inputTokens") is None:
             raise RuntimeError("Jev returned no input token usage; cannot account for cost")
@@ -197,5 +247,6 @@ class JevPredictor:
         return {"model": "typesafe-ai/jev", "model_revision": "Gateway alias; provider revision not exposed by SDK result",
                 "started_at": self.started_at, "calls": self.calls, "input_tokens": self.input_tokens,
                 "output_tokens": self.output_tokens, "retries_after_5xx": self.retries, "listed_input_usd_per_million": PRICE_PER_MILLION,
+                **({"refusals": dict(sorted(self.refusals.items()))} if self.count_refusals else {}),
                 "estimated_usd": self.input_tokens * PRICE_PER_MILLION / 1e6,
                 "budget_usd": self.budget, "sdk": "ai@7.0.105", "zero_data_retention_requested": True}

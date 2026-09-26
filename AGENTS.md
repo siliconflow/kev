@@ -39,11 +39,26 @@ Title Case sections, API tables, Authors + License); model cards are formal.
     split by question (27B on one H200 needs 8192; not with `--perm_kl` or `--anchor_w`). Needs torch >= 2.8. `--max_steps N` stops early. Resume: `--save_every_minutes M` /
     `--save_every_steps N` write `<out>/resume` (fp32 masters + moments per rank, scheduler, RNG, data position; under
     torchrun from a host copy in a background thread, the interval stretched so blocking stays under 5 %), `--resume 1`
-    continues bit for bit (same arguments and world size), `--stop_after N` exits after a step. `training_metrics.json`
-    has per-epoch gradient norms before clipping (`grad_norm`: mean, max, clipped steps), LoRA runs too. Trials: see Studies.
+    continues bit for bit (same arguments and world size), `--stop_after N` exits after a step. Snapshots:
+    `--snapshot_fractions 0.25,0.5,0.75` (of the optimizer steps) / `--snapshot_every_steps N` write loadable bf16 checkpoints
+    into `<snapshot_dir>/step-<N>/checkpoint` (N zero-padded to 7 digits like resume points, `step-0000389`; `--snapshot_dir`,
+    default `<out>-snapshots`; `kev.full_ft.SnapshotWriter`; at most `kev.budget.MAX_SNAPSHOTS` = 8 per run, the disk they
+    may take next to two resume points, refused at parse time or before the first step): the
+    final checkpoint's files (save_pretrained shards + `head.pt` + tokenizer; `head.pt["snapshot"]` = step, steps, epoch
+    fraction, records seen) plus `snapshot.json`, written last, which marks it complete. Under torchrun the ranks gather
+    into rank 0's host memory (the only blocking part) and rank 0 writes in a background thread; one GPU writes before
+    going on. Snapshots are never deleted; a continued run skips complete ones and rewrites an incomplete one, and a
+    resume point's `latest.json` waits for the snapshot being written, so no committed resume point passes a missing
+    snapshot. `training_metrics.json` has per-epoch gradient norms before clipping (`grad_norm`: mean, max, clipped
+    steps), LoRA runs too; full-weight runs also `backbone_save_seconds` (the final gather + write) and `snapshots`
+    (blocking and write seconds per snapshot of that attempt; each `snapshot.json` has its own). Trials: see Studies.
     27B, 8 H200, `--batch 8 --accum 2 --length_sort 1`, records shaped like the SFT corpus (`scripts/sft_probe.py --mix all`):
     7.6 records/s, one epoch of the corpus (192k records) ≈ 7.1 h / $293, 71 GB peak per GPU (`runs/sft-probe/sft2-*`,
     PR #125); one H200 (row form, PR #122) 0.84 records/s on ~1,000-token records.
+    Long states (`scripts/sft_probe.py --state_tokens 16384,32768,49152,65536 --questions 3`, `--batch 1 --accum 1 --length_sort 1`, 8 H200,
+    `runs/sft-probe/lc-27b-8xh200`): 1.12 / 2.33 / 3.79 / 5.45 s per record (14.8k-12.0k record tokens/s), 78 / 96 / 115 / 134 GiB peak per GPU
+    of 140. A micro-batch whose states are unpadded runs the state through SDPA's causal flash kernel with no mask (`kev.shared_prefix`);
+    with the explicit 64k x 64k mask a 64k step took 150 s instead of 44 and filled the GPU (`runs/sft-probe/lc-27b-8xh200-mask-ab`).
   - Only one training process at a time: two on MPS slow each other ~10x.
 - Smoke: `uv run python -m kev.train --n_per_source 40 --accum 4 --out runs/smoke` (~1 min).
 - Benchmark (the eval path for everything current): `uv run python -m kev.benchmark --run <run dir | Hub id[@rev]>
@@ -61,9 +76,22 @@ Title Case sections, API tables, Authors + License); model cards are formal.
   `--wait-pid` to queue behind a training job). A full-weight trial runs under torchrun on every GPU of its container,
   writes a resume point every `experiment.RESUME_MINUTES` and is retried by Modal after a timeout (`kev.budget`:
   `FULL_FT_RETRIES`, up to 24 h per attempt, $1,000 per study; the bound counts every attempt); each retry continues.
-  The container commits the runs volume after every completed resume point (a timeout skips the final commit); an attempt
+  It also keeps snapshots at `experiment.SNAPSHOT_FRACTIONS` (0.25, 0.5, 0.75 of its optimizer steps) in
+  `<trial>/snapshots/step-<N>/checkpoint` (plan keys `snapshot_fractions` (a string, `"none"` for none) and
+  `snapshot_every_steps`, which needs `max_steps` so `validated_trial` can check `MAX_SNAPSHOTS`; neither changes the
+  config hash of a plan that omits it, nor the recipe). A 27B snapshot is ~51 GB of volume storage and never deleted: do
+  not remove checkpoints or snapshots from the volume without asking. The volume copy is primary; a plan key
+  `snapshot_hub_repo` (off by default) also mirrors each committed snapshot and the final checkpoint to that PRIVATE Hub
+  model repo (`kev.mirror`, `modal_app.run_mirror`: a CPU container spawned after the commit, HF token from the Modal
+  secret `huggingface-secret` or `KEV_HF_SECRET`; refuses a public repo, retries once, never fails training; the commit is
+  recorded in `snapshot.json["hub"]` / `checkpoint/hub.json`, at `<study>/<trial>/<step-N | final>/` in the repo).
+  `modal_app.py::mirror_snapshots --study X [--paths /runs/...checkpoint] [--repo jaredpalmer/kev-snapshots] [--dry-run]`
+  (re)uploads existing ones (a 27B checkpoint is ~51 GB; ask before mirroring those).
+  The container commits the runs volume after every completed resume point and snapshot (a timeout skips the final commit); an attempt
   that fails with an error writes `failed.json` and returns `{"failed": ...}` instead of raising, so it is not retried
-  (`kev.rounds.poll_modal` reports it as a failure).
+  (`kev.rounds.poll_modal` reports it as a failure). `modal_app.py::pull` (and `kev.rounds watch`) leaves full-weight
+  shards (`model*.safetensors` directly in a `checkpoint/` directory: final and snapshots) and resume points on the volume (`--weights` copies them);
+  read a snapshot like any checkpoint: `::benchmarks --jobs "/runs/<study>/<trial>/snapshots/step-<N>/checkpoint@<suite>@<name>"`.
 - Rounds (every registered experiment since round 5): one spec per round, `experiments/rounds/r<N>.json`, committed before any
   training or read: studies (plan, GPU, timeout, budget), arms (`<size>-<label>`: trial + parent), parents (trial + where each
   of its reads lives), read tags -> suites (`--allow-test` for test panels, `locked_test` for the locked read), the rule
@@ -74,12 +102,35 @@ Title Case sections, API tables, Authors + License); model cards are formal.
   launch intent is written first to `runs/r<N>-reads-<arm>.json`, and an arm launched within its reads' timeout is not relaunched; a
   finished call that maps to no arm is logged and makes `watch` exit non-zero),
   60 s apart, then writes `runs/r<N>-readout/round<N>.json`; `confirm <spec> --stage <s>` writes `runs/r<N>-verdict/<size>-<s>.json`.
-  Every side is served at the temperature fitted on its own development rows; deltas are `kev.rounds.paired` (2,000 resamples,
-  seed 0, micro). Rounds 5-18 are recorded specs (`"archive": "research-archive-2026-09-24"`): their plans, reads, data builders
+  Every side is served at the temperature fitted on its own development rows, unless the round registers a `temperature` pool
+  for its arms (reads pooled, per-read `sources` allowlist, `exclude_reads`; refused inside any panel a temperature-dependent
+  criterion reads; round 20). `validate` also refuses a pool that shares data with any arm's training (`kev.rounds.pool_conflicts`):
+  (a) a pooled suite is an arm's training suite, a component its manifest names (sft-v1's `inputs.components`) or a plan's `data`
+  suite; (b) it pools sources the arm trained on; (c) it reads the `calibration` or `development` partition of any training corpus
+  (a suite with trainable sources). The arm's training comes from its study in the spec or its trial's `provenance.json` (manifest
+  hash); a checkpoint arm is covered by the round's trial arms or names `trained_on`; training it cannot establish or list (no provenance,
+  a manifest without sources, a `data` file outside `evals/`) is a problem for a new round, archived for a recorded one. Sources are
+  compared by name, so pools use sources that are eval-only in Kev by construction; a `sources` allowlist must name sources its suite lists.
+  Why: round 19 fitted its SFT arms' temperature on `sft-v1` development rows, held-out *items* of the training sources, so
+  in distribution (T 0.955, breadth-v1 ECE 0.059); round 20's pool of held-out *datasets* gave 0.0085 on the same checkpoint.
+  Each arm's read-out records `temperature_source` (the pool with its reads and question count, or its trial's development rows
+  and their suite; parents in `parent_temperature_source`: their trial's development rows plus `shipped`, head.pt's T when
+  it is local or in the HF cache) and the printed table warns (`!!!`) when an arm is served at a training corpus's rows. From
+  round 21 (`POOL_REQUIRED_FROM`) a rule or confirmation criterion the temperature moves (anything but accuracy) without a
+  `temperature` pool is a problem, so `validate` and `launch` refuse the round; rounds <= 20 only get the warning, so their
+  specs keep validating. `validate`/`launch` also warn (report only) when a parent's served T, fitted on a training corpus's
+  development rows, is more than 0.05 from its shipped head.pt T. A panel with
+  `"by_length": true` (or `{edges, tokenizer}`) adds acc / ECE / Brier / confident errors per state-token bucket
+  (`kev.metrics.calibration_by_length`: under_8k, 8k_16k, 16k_32k, 32k_64k, 64k_plus and the tails 8k_plus/16k_plus/32k_plus;
+  tokens = the encoded state segment, `<state>` included, as `kev.model.encode` builds it and `kev.serve` reports it, counted from the reads' suite records with `kev.suite.ADMISSION_TOKENIZER` unless given), and a criterion may read a
+  bucket (`long.ece_16k_plus.candidate <= 0.05`). An arm may be a checkpoint without a trial (`"checkpoint": "/runs/..."`, its "transfer" rows
+  from a `transfer_read`), e.g. a WiSE-FT interpolation (`scripts/interpolate_checkpoint.py`, `modal_app.py::interpolate`);
+  deltas are `kev.rounds.paired` (2,000 resamples, seed 0, micro). Rounds 5-18 are recorded specs (`"archive": "research-archive-2026-09-24"`): their plans, reads, data builders
   and per-round scripts live on that git tag, not on main; `validate` lists what this checkout lacks instead of failing, and
   `launch`/`watch`/`launch-reads` refuse a recorded round (a new round is a new spec, without `archive`, and must have its plans
   and parents' reads). `tests/test_rounds.py` reproduces the committed read-outs of rounds 5-18 and verdicts of 8/10/11/12/15
-  exactly; offline (CI) it runs round 5's read-out and round 15's locked verdict, whose rows are on main; every other case
+  exactly; offline (CI) it runs round 5's read-out, round 15's locked verdict and round 20's six interpolated arms, whose rows are on main; round 19's read-out
+  (and round 20's whole read-out) runs where the private dataset is readable (its trials' `sft-v1` development rows: `scripts/private_rows.py`); every other case
   skips unless `KEV_ROUNDS_ROOT` points at a checkout with the archived rows and outputs (the research checkout, or a worktree
   of the tag plus its gitignored trial rows). `kev.autoresearch
   session <specs> --spend-start X --spend-cap Y` runs registered rounds to their read-outs under a spend cap and never confirms;
@@ -114,6 +165,13 @@ Title Case sections, API tables, Authors + License); model cards are formal.
   SGD share-alike, Humicroedit / cfcolor unlicensed text must not be public). `scripts/build_breadth_v1.py` rebuilds the partitions byte for byte;
   `scripts/breadth_report.py --suite evals/breadth-v1 --result NAME=DIR ...` scores rows per area with the Index's chance correction; baselines in `runs/breadth-v1-*`.
   These datasets must never enter a training corpus.
+  `evals/longdoc-v1` is a report-only long-document probe (eval-only, private mirror, development + locked test): state-length buckets 4k / 8k / 16k / 32k / 64k
+  under the Qwen3.8-27B tokenizer, CUAD contracts (CC BY 4.0, expert clause labels, a target padded with other contracts) and generated agreement bundles
+  (`scripts/build_longdoc_v1.py` + `longdoc_v1_synthetic.py`, byte for byte). Its manifest records `kev.suite.SERVING_CONTEXT`; `kev.benchmark` scores its
+  4k-16k buckets on the exact path and its 32k / 64k rows through the long-row rule (> `ROW_PASS_TOKENS`: state once, fused kernels, `kernels: efficient`).
+  Read-out `scripts/longdoc_report.py` (`--parity` compares two reads row by row), overlap `scripts/screen_longdoc_v1.py`, serving cost
+  `scripts/longdoc_serving.py` (`modal_app.py::script`); results in `runs/longdoc-v1-report/README.md`. Its synthetic part is at ceiling for every system read.
+  `kev.jev --count-refusals` counts HTTP 400/413/422, and a 5xx on a request past 1.5 x Jev's ~32k-token context (the gateway answers oversize with either), as refused.
   Partitions over ~10 MB are not in git; they are mirrored at the Hub dataset `jaredpalmer/kev-suites` (revision pinned
   in `kev/suite.py: SUITES_REVISION`) and `load_split` fetches + verifies them on first use. After freezing a new suite:
   `hf upload jaredpalmer/kev-suites evals . --type dataset --include "*.jsonl" --include "*.json"`, bump
@@ -125,7 +183,7 @@ Title Case sections, API tables, Authors + License); model cards are formal.
   access (`hf auth login` / `HF_TOKEN`; Modal images already carry a locally fetched copy under `evals/`) and raises a
   PermissionError naming the repo for everyone else; `tests/test_conventions.py` fails if such a suite tracks a partition.
 - Modal (default for anything beyond smoke): `modal_app.py`; `uv run modal run modal_app.py::{smoke,study,pull,resume,
-  locked_test,evaluate,base_probe,benchmarks,smoke_base,anchors,sft_probe,gpu_tests}`; `uv run modal deploy modal_app.py` once so studies
+  locked_test,evaluate,base_probe,benchmarks,smoke_base,anchors,sft_probe,gpu_tests,interpolate}`; `uv run modal deploy modal_app.py` once so studies
   survive a disconnect. Image = `uv_sync` of pyproject/uv.lock (Linux torch wheel is CUDA) + fla, triton>=3.7.1 and the
   causal-conv1d wheel (`--no-deps`, or it reinstalls torch's triton 3.4) + `kev/` + `evals/` + `tests/`; Volumes
   `kev-hf-cache` (HF_HOME) and `kev-runs` (trial outputs, pulled to `runs/<study>` then ranked by
@@ -142,8 +200,14 @@ Title Case sections, API tables, Authors + License); model cards are formal.
 - Current family (2026-09-21, all Qwen3.5 + the dates/unknowable delta): `jaredpalmer/kev-9b` (`night2-9b-du/00-trial-0`), `jaredpalmer/kev-4b` (`r10-skills/00-trial-0` from the round-10 release: the round-8 checkpoint `r8-small/00-trial-0` (the night2 checkpoint + one epoch on `documents-v1` train) + one epoch on `hard-v1` + `devtools-v1` train; round-8 weights at tag `r8-documents-release`, night2 at `night2-du-release`;
   Qwen3 weights at tag `qwen3`), `jaredpalmer/kev-0.8b` (`r15-08b/00-trial-0` from the round-15 release: `night2-08b-du2/00-trial-0` + one epoch on `documents-v1` + `hard-v1` + `devtools-v1` train together, replay 6000; previous at tag `night2-du-release`), `jaredpalmer/kev-27b` (`r6-27b-v2/01-trial-1`, from the release study "B1 v2" in `PLAN_27b.md` at tag `research-archive-2026-09-24`; base `Qwen/Qwen3.8-27B` rev `1d4bf0f2`, post-trained, not `-Base`; bf16 backbone only (55 GB of weights, ~66 GB resident when serving), so B200, H200 or H100 80 GB, no Mac path; the kev-deploy skill defaults it to B200, then H200, then H100; served merged + fused like the others: `LoadOptions.fused` folds the adapter into the bf16 backbone, `runs/fused-27b-*`). Pre-delta v7 checkpoints at tag `v7-base` (`q35-9b/01-trial-1`, `q35-4b-s23/00-trial-0`, `q35-08b/02-trial-2`).
   Calibration is built into each checkpoint: `head.pt["temperature"]` (fitted by `scripts/calibrate_checkpoint.py` on the trial's development rows; 27B 1.38, 9B 2.30, 4B 2.41 (2.96 after the round-8 delta, 2.14 before it),
-  0.8B 2.35 (2.41 before the round-15 delta)) is applied by `PointerHead` in eval mode; `KEV_TEMPERATURE=1.0` overrides to raw. The script also reports an out-of-fold grouped-CV ECE with bootstrap CIs alongside the in-sample fit (4B: 0.075 raw -> 0.020 OOF, separated) and stores it under `head.pt["temperature_fit"]["cross_validation"]`; re-run it after any new checkpoint before publishing. Opt-in: `KEV_DATE_FACTS=1` (day counts). Delta data: evals/night2/ (scripts/build_night2_data.py). Previous generation, kept for Mac latency: `kev-8b`, `kev-0.6b`, `kev-4b@qwen3` (cards `*-qwen3.md`). Qwen3.5 backbones are hybrid (Gated DeltaNet): `DecisionModel.hybrid`
-  routes them through `forward_rows_batch` (one causal row per question, state repeated) and `_branch_rows_from_prefix` for serving; the packed
+  0.8B 2.35 (2.41 before the round-15 delta)) is applied by `PointerHead` in eval mode; `KEV_TEMPERATURE=1.0` overrides to raw.
+  Those were fitted in distribution; the script now refuses rows that share data with the checkpoint's training (its own suite,
+  sources it trained on, a training corpus's calibration/development partition; `kev.rounds.pool_conflicts`, training from
+  head.pt or the trial's provenance, rows' suite from the kev.benchmark `report.json` beside them) unless `--allow-in-distribution`,
+  which warns and is recorded in `head.pt["temperature_fit"]["in_distribution"]`; a manual `--temperature` needs `--reason` (recorded); `temperature_fit["fit_rows"]` records each rows
+  file's suite, partition, sources and question count. Ship a temperature fitted on held-out datasets (round 20's pool). A trial's
+  own `calibration_fit` (`result.json`, `calibration/temperature.json`) is labelled `role: "in-trial screening; ... not a served or shipped temperature"`. The script also reports an out-of-fold grouped-CV ECE with bootstrap CIs alongside the in-sample fit (4B: 0.075 raw -> 0.020 OOF, separated) and stores it under `head.pt["temperature_fit"]["cross_validation"]`; re-run it after any new checkpoint before publishing. Opt-in: `KEV_DATE_FACTS=1` (day counts). Delta data: evals/night2/ (scripts/build_night2_data.py). Previous generation, kept for Mac latency: `kev-8b`, `kev-0.6b`, `kev-4b@qwen3` (cards `*-qwen3.md`). Qwen3.5 backbones are hybrid (Gated DeltaNet): `DecisionModel.hybrid`
+  routes `forward()` (so `kev.benchmark`) through `forward_rows_batch` (one causal row per question, state repeated) and serving and `probs()` through `_branch_rows_from_prefix` (state once, #77); the packed
   block-causal mask is only valid on attention-only bases. Needs transformers>=5.17, peft>=0.21; CUDA wants `flash-linear-attention` + `triton>=3.7.1`
   (in the Modal image). MPS has no fast DeltaNet kernels, so on Apple Silicon `kev.serve` runs these checkpoints through `kev/mlx_model.py` (mlx-lm's Metal kernels; M5, 5 questions on a ~270-token state: Kev-4B 721 ms new state / 136 ms cached state vs 3302 / 847 ms for torch bf16; parity with fp32 torch on the full decision-v7 development partition: 4B max |dp| 0.025, 1 flip in 1,264 questions; 0.8B max 0.054, 4 flips (`runs/r4-mlx-parity-*`)). Plan and results: PLAN.md at tag `research-archive-2026-09-24`, History > "Qwen3.5 port".
 - Delta fine-tuning: `kev.train --init_from <run dir | Hub id[@rev]>` warm-starts LoRA + head (compatibility checked before load; source hashes in
@@ -169,7 +233,7 @@ Title Case sections, API tables, Authors + License); model cards are formal.
   the playground proxies :8009)
   - TypeSafe-compatible: `POST /v1/systemone`, `GET /v1/models` (model cards for `kev-latest` and `jev-latest`, plus device, dtype, temperature and prefix-cache stats), an `x-typesafe-request-id` header on every response, and bearer auth when `KEV_API_KEY` is set (unset = open server).
   - SDK: `TypeSafeClient(api_key="local", base_url="http://127.0.0.1:8009", model="kev-latest")`
-  - CUDA: bf16, fused kernels and CUDA graphs by default (`LoadOptions.fused` / `LoadOptions.cuda_graphs`, `KEV_FUSED=0` / `KEV_CUDA_GRAPHS=0` to decline). A server pass was
+  - CUDA: bf16, fused kernels and CUDA graphs by default (`LoadOptions.fused` / `LoadOptions.cuda_graphs`, `KEV_FUSED=0` / `KEV_CUDA_GRAPHS=0` to decline; fused only when fla 0.5.2 is installed, `checkpoint.fused_available`, not in the serve extra). A server pass was
     kernel-launch bound (~60 ms on an H100 at any length). `kev/fused_qwen35.py` rewrites the merged Qwen3.5 layers with fla Triton kernels
     (it needs fla 0.5.2 exactly, pinned in the images, and refuses others: it patches fla's NB-keyed kernel launches; a pass continuing a
     cached DeltaNet state does not write it back). `kev/cuda_graphs.py` replays bucketed passes (state left-padded, rows right-padded, masked exactly; equal to eager up to bf16
@@ -194,7 +258,7 @@ Title Case sections, API tables, Authors + License); model cards are formal.
   - Next 16 dev only trusts `localhost`; other hostnames need `allowedDevOrigins` or the page SSRs but never hydrates
     (no console errors). `127.0.0.1` is allowed in `next.config.ts`. Verify hydration with `agent-browser` (CDP), not curl.
   - `playground/AGENTS.md` (regenerated by `next dev`) is the Next 16 rules file; read `node_modules/next/dist/docs/` before writing app code.
-- Unit tests (no weights; the CI `python` job): `uv run --extra serve python -m pytest tests/test_unit.py tests/test_research.py tests/test_generators.py tests/test_conventions.py tests/test_documents_tools.py tests/test_hard_v1.py tests/test_devtools_v1.py tests/test_breadth_v1.py tests/test_rounds.py -q`.
+- Unit tests (no weights; the CI `python` job): `uv run --extra serve python -m pytest tests/test_unit.py tests/test_research.py tests/test_generators.py tests/test_conventions.py tests/test_documents_tools.py tests/test_hard_v1.py tests/test_devtools_v1.py tests/test_breadth_v1.py tests/test_rounds.py tests/test_skill_scripts.py -q`.
   `tests/test_skill_scripts.py` covers the kev-finetune stdlib scripts (stdlib only, no network). Weight-backed parity tests
   (`runs/smoke-hl/00-trial-0/checkpoint` + a Qwen2.5-0.5B / Qwen3.5-0.8B-Base download, ~2.5 min, local only): `tests/test_model.py`; `tests/test_mlx.py` (Apple Silicon, ~30 s) for the MLX backend.
   `test_conventions.py` is a table of "one canonical home" rules (head.pt via `kev.checkpoint`, `KEV_*` via `LoadOptions.from_env`,
@@ -235,7 +299,7 @@ runs / the endpoint / the volumes. Tests: `tests/test_skill_scripts.py`.
 - `kev/train.py`     LoRA (or `--full_ft`) fine-tune: `training_requests` (suite / built / --data+--replay, context filter, policy checks, mix ablations),
                      `encode_batch` + `batch_loss` (CE, anchor KL, permutation KL, RPS, smoothing/Brier/focal), `main` orchestration. Grad accumulation over small padded batches.
 - `kev/anchors.py`   frozen-base zero-shot distributions per training question, the target for `--anchor_w`
-- `kev/checkpoint.py` Checkpoint (resolve run dir or Hub id, `head.pt` schema = `Meta`, the LoRA-vs-full loader rule `full`/`shards`/`weights_sha256`, load with `LoadOptions` -> torch `DecisionModel` or, with `backend="mlx"`/`"auto"`, `MLXDecisionModel`; `warm_start` for deltas)
+- `kev/checkpoint.py` Checkpoint (resolve run dir or Hub id, `head.pt` schema = `Meta`, the LoRA-vs-full loader rule `full`/`shards`/`weights_sha256` (a full checkpoint loads in its head.pt `weights_dtype`, which must match config.json's `dtype`), load with `LoadOptions` -> torch `DecisionModel` or, with `backend="mlx"`/`"auto"`, `MLXDecisionModel`; `warm_start` for deltas)
 - `kev/mlx_model.py` Apple Silicon backend: mlx-lm Qwen3.5 backbone, LoRA merged in fp32 on the CPU stream (`merge_lora`), Kev's encoder/rows and the torch PointerHead unchanged; state prefix = mlx-lm prompt cache, branches on a replicated copy
 - `kev/device.py`    default_device / sync / empty_cache / allocated_bytes for cuda, mps, cpu
 - `kev/metrics.py`   pure-numpy scoring of benchmark rows: ECE, Brier, NLL, selective prediction (tie-aware coverage@error, AURC), temperature fit, out-of-fold CV calibration report (`cross_validated_temperature`), paired bootstrap
@@ -254,7 +318,7 @@ runs / the endpoint / the volumes. Tests: `tests/test_skill_scripts.py`.
 - `modal_app.py`     every GPU entrypoint: trials, locked tests, probes, benches, anchors, smoke
 - `scripts/`         one-off builders and read-outs: `calibrate_checkpoint.py`, `build_night2_data.py`, `build_binding_diagnostic.py`,
                      `freeze_{semif,scienthoon,calibration_audit}.py`, `{build,label,freeze}_documents_v*.py`, `calibration_audit.py`, `review_calibration_screen.py`,
-                     `compare_{q35,night2}.py`, `temperature_groups.py`, `base_mmlu_probe.py`, `plot_*.py` + `chartstyle.py`, `publish_space.sh`
+                     `compare_{q35,night2}.py`, `temperature_groups.py`, `base_mmlu_probe.py`, `scienthoon_drift.py` (round 20's scienthoon analysis), `plot_*.py` + `chartstyle.py`, `publish_space.sh`
 - `tests/test_api.py` conformance against the docs' example requests + official SDK
 
 ## Notes
@@ -270,11 +334,11 @@ runs / the endpoint / the volumes. Tests: `tests/test_skill_scripts.py`.
 - Training data is built as TypeSafe-shaped requests and goes through `api.to_record()` (`data.materialize`),
   so train and serve text are identical.
 - Serving path (`kev.checkpoint.Checkpoint.load` + `kev.serve`; `LoadOptions.from_env()` reads the `KEV_*` variables at CLI entry points only): backend `auto` (MLX for hybrid checkpoints on MPS when mlx-lm is installed and fp32 was not asked for; `KEV_BACKEND=torch|mlx` to force; library callers get torch unless they ask; `SCORING_INTERFACE` in kev/model.py names what both implementations expose), LoRA merged in fp32 then cast (`KEV_MERGE=0` to keep unmerged, torch only), bf16 by default on CUDA/MPS (`KEV_DTYPE=fp32` for the exact path; L4 numbers in README "Serving Performance"), `KEV_ATTN=sdpa` default on MPS,
-  `KEV_SHAPE_BUCKET=64` on MPS, state-prefix LRU (`KEV_PREFIX_CACHE=4`; `KEV_PREFIX_MIN_TOKENS` defaults to the model's `prefix_min_tokens`: 384 for attention-only torch models, 0 for hybrid and MLX ones because their miss path would recompute the state per question). Checkpoints trained with
+  `KEV_SHAPE_BUCKET=64` on MPS, state-prefix LRU (`KEV_PREFIX_CACHE=4` states and `KEV_PREFIX_MAX_TOKENS=65536` state tokens in all, a longer state is not cached; `KEV_PREFIX_MIN_TOKENS` defaults to the model's `prefix_min_tokens`: 384 for attention-only torch models, 0 for hybrid and MLX ones because their miss path would recompute the state per question). Checkpoints trained with
   `--weights_dtype bf16` always load bf16 with the adapter unmerged. Any change here must keep the parity
   tests in tests/test_model.py (merged vs unmerged, prefix vs full pass, bucket padding) and tests/test_mlx.py (MLX vs fp32 torch, prefix form vs row form, isolation; Apple Silicon only) passing; report numbers with the fp32 unmerged path.
   `scripts/mlx_parity.py --run <ckpt>` is the fuller read (60 records, latency of every path); MLX's fp32 GPU matmul is a reduced-precision fast path (~1e-3 relative on an M5), which is why the LoRA merge runs on `mx.cpu`.
-- Serving context is 8,192 tokens for the state and 8,192 for a question branch (`kev.model.SERVE_MAX_*`); training used 384 / 1,024, so longer inputs are untested. No limit on questions per request: the row form runs `rows_per_pass` rows per forward pass (a 16,384-token budget counting the cached state per row), and an attention-only model switches from the packed mask to rows above `SERVE_MAX_PACKED` (`DecisionModel.rows_form`). Kev-4B on MLX, 64 questions on a 4.8k-token state: 4.3 s / 9.4 GB peak instead of 18.5 s / 24.7 GB in one pass. `n_perm` on `/permute` is 1..64.
+- Serving context is 65,536 tokens for the state and 73,728 for the state plus one question branch, so a question gets at least 8,192 (`kev.model.SERVE_MAX_*`; 8,192 / 8,192 until the long-context PR, `kev.suite.SERVING_CONTEXT_8K`, which the suites frozen before it record and their builders keep); `kev.train --max_state` goes up to the same 65,536 (`MAX_TRAIN_STATE`). The released checkpoints trained on 384 / 1,024, so longer inputs are untested for accuracy. No limit on questions per request: the row form runs `rows_per_pass` rows per forward pass (`ROW_PASS_TOKENS`, a 16,384-token budget counting the cached state per row), and an attention-only model switches from the packed mask to rows above it (`DecisionModel.rows_form`). Evaluation is fp32-exact except long rows: on CUDA with the torch backend, a record whose longest row exceeds `ROW_PASS_TOKENS` runs under SDPA's flash / memory-efficient kernels (the exact math kernel's L x L scores do not fit) and is labelled: `"kernels": "efficient"` on its prediction and rows, `long_rows: {count, records, kernels, threshold}` in report.json (both absent when no row is long, so other reads are unchanged; `LocalPredictor`). This is CUDA-only: on CPU / MPS attention stays eager and exact and still materialises L x L. A long record on a hybrid torch backbone runs its state once through the shared prefix; the MLX backend's `forward` already does. Kev-4B on MLX, 64 questions on a 4.8k-token state: 4.3 s / 9.4 GB peak instead of 18.5 s / 24.7 GB in one pass. `n_perm` on `/permute` is 1..64.
 
 ## Calibration Research
 

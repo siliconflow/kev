@@ -15,7 +15,8 @@ States of a batch are left-padded (the padded positions are zeroed and stay zero
 the conv window and the residual stream unchanged), branches right-padded.
 Exactness: fp32 with transformers' reference kernels matches the row form to ~1e-5 (logits and every gradient; tiny
 random Qwen3.5 in tests/test_unit.py, Qwen3.5-0.8B-Base in tests/test_model.py). On CUDA fla's Triton kernels round their
-fp32 dots like TF32, and there the difference stays within the row form's own difference between two batchings.
+fp32 dots like TF32 and the shared prefix left-pads states, so it rounds differently from the row form: measured against the
+exact kernels, it is as far from the exact answer as the row form's own batchings are, with no systematic shift.
 """
 import types
 
@@ -104,9 +105,12 @@ def _forward(base, s_ids, s_pos, s_real, b_ids, b_pos, b_real, owner):
     # own branch so far; a padded query keeps its diagonal so no softmax row is empty (its output is zeroed or unused)
     causal = lambda n: torch.ones(n, n, dtype=torch.bool, device=device).tril()
     eye = lambda n: torch.eye(n, dtype=torch.bool, device=device)
-    allow_s = (causal(Ls)[None] & s_real[:, None, :]) | eye(Ls)[None]
+    # States without padding (one per micro-batch, or all of one length) need no state mask under SDPA: None makes it
+    # causal (is_causal), the flash kernel's case. A 64k-token state's explicit mask would be 4 GB, kept for the whole
+    # backward, and would rule the flash kernel out.
+    plain = attn == "sdpa" and bool(s_real.all())
     allow_b = torch.cat([s_real[owner][:, None, :].expand(-1, Lb, -1), (causal(Lb)[None] & b_real[:, None, :]) | eye(Lb)[None]], -1)
-    masks_s = {"full_attention": _masks(allow_s, dtype, attn), "linear_attention": s_real.to(dtype)}
+    masks_s = {"full_attention": None if plain else _masks((causal(Ls)[None] & s_real[:, None, :]) | eye(Ls)[None], dtype, attn), "linear_attention": s_real.to(dtype)}
     masks_b = {"full_attention": _masks(allow_b, dtype, attn), "linear_attention": b_real.to(dtype)}
     rope_s, rope_b = base.rotary_emb(h_s, s_pos[None].expand(3, -1, -1)), base.rotary_emb(h_b, b_pos[None].expand(3, -1, -1))
 

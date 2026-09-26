@@ -29,10 +29,11 @@ import torch
 from kev.benchmark import evaluate_records
 from kev.checkpoint import LoadOptions
 from kev.device import default_device, empty_cache
+from kev.full_ft import snapshot_fractions, too_many_snapshots
 from kev.metrics import fit_temperature, paired_bootstrap
 from kev.model import MAX_STATE, MAX_TRAIN_STATE
 from kev.predictors import LocalPredictor
-from kev.suite import ENCODING, digest, load_split, read_json, read_manifest, record_digest, validate_training, write_json
+from kev.suite import CONTEXT, ENCODING, digest, load_split, read_json, read_manifest, record_digest, validate_training, write_json
 
 ROOT = Path(__file__).resolve().parents[1]
 DEFAULTS = {"epochs": 1, "seed": 0, "lr": 0.0002, "lora": 16, "accum": 8, "batch": 1,
@@ -47,17 +48,31 @@ CHOICES = {"dtype": ("fp32", "bf16"), "checkpointing": (0, 1), "option_isolation
            "lora_targets": ("all", "dense", "attn", "qv"), "weights_dtype": ("fp32", "bf16"), "full_ft": (0, 1), "length_sort": (0, 1), "shared_prefix": (0, 1)}
 CHOICE_DEFAULTS = {"dtype": "fp32", "checkpointing": 0, "option_isolation": 0, "special_embeddings": 0, "head_dim": 256, "lora_targets": "all", "weights_dtype": "fp32", "full_ft": 0, "length_sort": 0, "shared_prefix": None}   # kev.train's defaults for the categorical knobs (shared_prefix: on with full_ft)
 # optional integer knobs, passed to kev.train only when a trial sets them (so existing plans keep their config hashes)
-OPTIONAL_INTS = {"max_state": (MAX_STATE, MAX_TRAIN_STATE), "row_budget": (0, 65536), "max_steps": (0, 100000), "save_every_steps": (0, 100000)}
+OPTIONAL_INTS = {"max_state": (MAX_STATE, MAX_TRAIN_STATE), "row_budget": (0, 65536), "max_steps": (0, 100000), "save_every_steps": (0, 100000),
+                 "snapshot_every_steps": (0, 100000)}
+# full-weight trials write snapshots (kev.full_ft.SnapshotWriter: loadable bf16 checkpoints, kept on the runs volume) into
+# <trial>/snapshots/step-<N>/checkpoint after these fractions of their optimizer steps, unless the trial sets
+# snapshot_fractions ("none" for none). Applied by train_checkpoint like RESUME_MINUTES, so plans keep their config hashes.
+SNAPSHOT_FRACTIONS = "0.25,0.5,0.75"
+# trial keys the container acts on, not kev.train: snapshot_hub_repo (a private Hub model repo) makes modal_app mirror
+# each committed snapshot and the final checkpoint there (modal_app.run_mirror); off unless a trial sets it
+TRIAL_ONLY = ("snapshot_hub_repo",)
 
 
 def validated_trial(value, manifest):
-    if not isinstance(value, dict) or set(value) - (DEFAULTS.keys() | CHOICES.keys() | OPTIONAL_INTS.keys() | {"base", "train_sources", "base_revision", "anchor", "anchor_sources", "init_from", "data", "replay"}):
+    if not isinstance(value, dict) or set(value) - (DEFAULTS.keys() | CHOICES.keys() | OPTIONAL_INTS.keys() | {"base", "train_sources", "base_revision", "anchor", "anchor_sources", "init_from", "data", "replay", "snapshot_fractions", *TRIAL_ONLY}):
         raise ValueError("trial may change only the allowlisted training parameters and base")
     result = {**DEFAULTS, **value}
     if result.get("full_ft") and result.get("weights_dtype") != "bf16":
         raise ValueError("full_ft trains bf16 weights: set weights_dtype bf16")
     if result.get("save_every_steps") and not result.get("full_ft"):
         raise ValueError("save_every_steps writes resume points, which are for full_ft trials")
+    if ("snapshot_fractions" in result or result.get("snapshot_every_steps") or "snapshot_hub_repo" in result) and not result.get("full_ft"):
+        raise ValueError("snapshots (and their Hub mirror) are for full_ft trials")
+    if "snapshot_fractions" in result and not isinstance(result["snapshot_fractions"], str):
+        raise ValueError('snapshot_fractions is a string: "0.25,0.5" or "none"')
+    if "snapshot_hub_repo" in result and not re.fullmatch(r"[\w.-]+/[\w.-]+", str(result["snapshot_hub_repo"])):
+        raise ValueError("snapshot_hub_repo is a Hub model repo id, owner/name (it must be private; the mirror refuses a public one)")
     if "data" in result and not re.fullmatch(r"evals/[\w./-]+\.jsonl", str(result["data"])):
         raise ValueError("data must be a .jsonl under evals/ (shipped with the image, hashed in provenance)")
     if "replay" in result and (not isinstance(result["replay"], int) or not 0 <= result["replay"] <= 20000 or "data" not in result):
@@ -65,6 +80,10 @@ def validated_trial(value, manifest):
     for key, (lo, hi) in OPTIONAL_INTS.items():
         if key in result and (isinstance(result[key], bool) or not isinstance(result[key], int) or not lo <= result[key] <= hi):
             raise ValueError(f"{key} is an int in [{lo}, {hi}] (optional; kev.train's default when absent)")
+    if result.get("full_ft"):   # kev.budget.MAX_SNAPSHOTS, over max_steps (an every-N plan needs it); kev.train checks the real count again
+        fractions = snapshot_fractions(result.get("snapshot_fractions", SNAPSHOT_FRACTIONS))   # raises ValueError on a bad list
+        if problem := too_many_snapshots(fractions, result.get("snapshot_every_steps", 0), result.get("max_steps") or None):
+            raise ValueError(problem)
     if "init_from" in result and not re.fullmatch(r"(/runs/[\w./-]+|[\w-]+/[\w.-]+(@[\w.-]+)?)", str(result["init_from"])):
         raise ValueError("init_from must be a checkpoint path on the runs volume or a Hub id (optionally @revision); the trainer records its weights and head hashes in provenance")
     if result.get("base") not in manifest["base_revisions"]:
@@ -241,29 +260,54 @@ def continue_trial(suite, output, expected_sources, device, transfer_suite=None)
     write_json(output / "provenance.json", provenance)
     started = time.perf_counter()
     finished = (output / "checkpoint" / "head.pt").exists()   # the attempt ran out of time while scoring: score again
+    for part in ("calibration", "development", "transfer"):
+        if (output / part).exists(): shutil.rmtree(output / part)   # that attempt's partial evaluation output (evaluate_records refuses an existing one)
     run = str(output / "checkpoint") if finished else train_checkpoint(provenance["config"], suite, output, device)
     return score_trial(run, suite, output, expected_sources, device, provenance, transfer_suite, started, legacy=False)
+
+
+def train_args(config, suite, output, device, gpus=1):
+    """The kev.train command line of a trial (under torchrun on several GPUs)."""
+    launcher = ["-m", "torch.distributed.run", "--standalone", f"--nproc_per_node={gpus}"] if gpus > 1 else []
+    args = [sys.executable, *launcher, "-m", "kev.train", "--suite", str(suite), "--out", str(Path(output) / "checkpoint"), "--device", device]
+    for key, value in config.items():
+        if key not in TRIAL_ONLY: args += ["--" + key, str(value)]
+    if config.get("full_ft"):
+        args += ["--resume", "1", "--save_every_minutes", str(RESUME_MINUTES), "--snapshot_dir", str(Path(output) / "snapshots")]
+        if "snapshot_fractions" not in config: args += ["--snapshot_fractions", SNAPSHOT_FRACTIONS]
+    return args
 
 
 def train_checkpoint(config, suite, output, device):
     """Run kev.train as a subprocess on the suite's training partition; train.log is the record (appended to when a
     full-weight trial continues), stdout gets progress. A full-weight trial writes a resume point every RESUME_MINUTES and
-    starts with --resume 1, so a second call continues where the first stopped."""
+    starts with --resume 1, so a second call continues where the first stopped. It also writes snapshots (SNAPSHOT_FRACTIONS
+    unless the trial sets its own) into <trial>/snapshots, which a continuation keeps and completes."""
     run = str(Path(output) / "checkpoint")
     # a full-weight trial uses every GPU of its container: FSDP2 ranks under torchrun (kev.full_ft); one GPU runs plainly
     gpus = torch.cuda.device_count() if config.get("full_ft") and device == "cuda" else 1
-    launcher = ["-m", "torch.distributed.run", "--standalone", f"--nproc_per_node={gpus}"] if gpus > 1 else []
-    args = [sys.executable, *launcher, "-m", "kev.train", "--suite", str(suite), "--out", run, "--device", device]
-    for key, value in config.items():
-        args += ["--" + key, str(value)]
-    if config.get("full_ft"): args += ["--resume", "1", "--save_every_minutes", str(RESUME_MINUTES)]
+    args = train_args(config, suite, output, device, gpus)
     with (Path(output) / "train.log").open("a", encoding=ENCODING) as log, subprocess.Popen(args, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, cwd=ROOT) as proc:
         for line in proc.stdout:
             log.write(line); log.flush()
-            if line.startswith(("ep", "saved", "device", "ablation")) or "Error" in line: print(line.rstrip(), flush=True)
+            if line.startswith(("ep", "saved", "device", "ablation", "snapshot", "resumed", "!!!")) or "Error" in line: print(line.rstrip(), flush=True)
     if proc.returncode:
         raise subprocess.CalledProcessError(proc.returncode, args)
     return run
+
+
+# what a trial's own temperature is (calibration/temperature.json, result.json calibration_fit): a screening number fitted on
+# held-out items of the sources it trained on. Round 19 served full-weight SFT arms at an in-distribution temperature and
+# failed every calibration criterion; a served or shipped temperature comes from a held-out-datasets pool (kev.rounds
+# `temperature`, scripts/calibrate_checkpoint.py).
+IN_TRIAL_TEMPERATURE = ("in-trial screening; fitted on the training suite's calibration partition (held-out items of the training "
+                        "sources: in distribution); not a served or shipped temperature")
+
+
+def calibration_fit(temperature, rows, rows_sha256, suite_hash):
+    """The record of a trial's in-trial temperature (calibration/temperature.json, result.json calibration_fit)."""
+    return {"temperature": temperature, "aggregation": "micro", "objective": "raw-logit NLL", "split": "calibration", "role": IN_TRIAL_TEMPERATURE,
+            "rows_sha256": rows_sha256, "suite_sha256": suite_hash, "n": sum(r["variant"] == "clean" for r in rows)}
 
 
 def score_trial(run, suite, output, expected_sources, device, provenance, transfer_suite, started, legacy):
@@ -272,7 +316,9 @@ def score_trial(run, suite, output, expected_sources, device, provenance, transf
     output = Path(output); suite_hash = provenance["suite_sha256"]
     # raw logits: the trial fits its own temperature on the calibration partition below. A backbone trained in bf16 weights
     # (weights_dtype) is loaded in bf16 by the checkpoint itself.
-    predictor = LocalPredictor(run, device, LoadOptions(temperature=1.0))
+    # the suite's own admission context (a long-state suite admits states far past the 384-token default), as kev.benchmark
+    # reads it; the transfer suite's records fit inside any admitted context
+    predictor = LocalPredictor(run, device, LoadOptions(temperature=1.0), context=read_manifest(suite).get("context", CONTEXT))
     provenance["measured_checkpoint"] = {"requested": run, "resolved": str(predictor.run),
                                           "head_sha256": digest(Path(predictor.run) / "head.pt"),
                                           "weights_sha256": predictor.checkpoint.weights_sha256(),
@@ -283,14 +329,12 @@ def score_trial(run, suite, output, expected_sources, device, provenance, transf
         if calibration_records:
             _, calibration_rows = evaluate_records(calibration_records, predictor, output / "calibration")
             temperature = fit_temperature(calibration_rows, aggregation="micro")
-            calibration_fit = {"temperature": temperature, "aggregation": "micro", "objective": "raw-logit NLL",
-                               "split": "calibration", "rows_sha256": digest(output / "calibration/rows.json"),
-                               "suite_sha256": suite_hash, "n": sum(r["variant"] == "clean" for r in calibration_rows)}
-            write_json(output / "calibration/temperature.json", calibration_fit)
+            fit = calibration_fit(temperature, calibration_rows, digest(output / "calibration/rows.json"), suite_hash)
+            write_json(output / "calibration/temperature.json", fit)
         else:
             if not legacy:
                 raise ValueError("training studies require a nonempty calibration partition")
-            temperature, calibration_fit = 1.0, {"temperature": 1.0, "split": None, "n": 0}
+            temperature, fit = 1.0, {"temperature": 1.0, "split": None, "n": 0, "role": IN_TRIAL_TEMPERATURE}
         records = load_split(suite, "development")
         heldout = tuple(read_manifest(suite).get("holdout_sources", []))
         report, rows = evaluate_records(records, predictor, output / "development", temperature, heldout_sources=heldout)
@@ -306,7 +350,7 @@ def score_trial(run, suite, output, expected_sources, device, provenance, transf
     if source_hashes() != expected_sources or digest(Path(suite) / "manifest.json") != suite_hash:
         raise ValueError("source or suite changed during the trial; result cannot be ranked")
     report["transfer"] = transfer
-    report.update(provenance=provenance, mechanism_checks=checks, gates=gate_report(report, checks), calibration_fit=calibration_fit,
+    report.update(provenance=provenance, mechanism_checks=checks, gates=gate_report(report, checks), calibration_fit=fit,
                   wall_seconds=time.perf_counter() - started, promotable=False, test_evaluated=False)
     if not legacy:
         report["training_resources"] = read_json(Path(run) / "training_metrics.json")

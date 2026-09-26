@@ -9,6 +9,7 @@ import os
 import pytest
 
 SMOKE = "runs/smoke-hl/00-trial-0/checkpoint"
+KEV_08B = "jaredpalmer/kev-0.8b@9a45d25eb2ab761841196625383fa1dff0e56c1e"   # pinned (round 15): the bf16 bars below are per checkpoint
 
 
 @pytest.fixture
@@ -28,6 +29,29 @@ def test_merged_load_matches_unmerged_exactly_in_fp32(smoke_run):
         for r in recs:
             pa, pb = torch.cat(a.probs(a.encode(tok, r))), torch.cat(b.probs(b.encode(tok, r)))
             assert (pa - pb).abs().max() < 1e-5
+
+def test_adapter_exported_as_full_weights_scores_like_the_adapter(smoke_run, tmp_path):
+    """The smoke adapter merged in fp32 and saved as a full-weight checkpoint (save_pretrained of the backbone, head.pt
+    marked weights="full", weights_dtype fp32) loads in fp32, as its head.pt and config.json say, and gives the adapter's
+    probabilities; labelled bf16 it is refused rather than rounded."""
+    import torch
+    from kev.checkpoint import Checkpoint, read_meta, write_meta
+    from kev.data import materialize
+    from kev.suite import load_split
+    recs = [materialize(r) for r in load_split("evals/smoke-v1", "development")[:3]]
+    tok, adapter = Checkpoint(smoke_run).load("cpu")
+    adapter.lm.save_pretrained(tmp_path)
+    meta = read_meta(smoke_run); meta.weights, meta.lora = "full", 0; write_meta(tmp_path, meta)
+    ck = Checkpoint(str(tmp_path))
+    _, full = ck.load("cpu")
+    assert ck.full and meta.weights_dtype == "fp32" and full.dtype == "float32"
+    with torch.no_grad():
+        for r in recs:
+            assert (torch.cat(adapter.probs(adapter.encode(tok, r))) - torch.cat(full.probs(full.encode(tok, r)))).abs().max() < 1e-6
+    meta.weights_dtype = "bf16"; write_meta(tmp_path, meta)
+    with pytest.raises(ValueError, match="config.json records the weights as float32"):
+        Checkpoint(str(tmp_path)).load("cpu")
+
 
 def test_bf16_merge_equals_fp32_merge_then_cast(smoke_run):
     """A bf16 load merges the fp32 adapter straight into the bf16 weights (one rounding in fp32 math), which must give the
@@ -123,22 +147,28 @@ def test_row_batching_and_packed_fallback_do_not_change_answers(smoke_run, monke
     enc = m.encode(tok, rec)
     with torch.no_grad():
         packed = torch.cat(m.probs(enc)); prefix_packed = m.prefix(enc)
-        monkeypatch.setattr(M, "SERVE_MAX_PACKED", len(enc["ids"]) - 1)   # now "too long to pack": every path takes the row form
+        monkeypatch.setattr(M, "ROW_PASS_TOKENS", len(enc["ids"]) - 1)   # now "too long to pack": every path takes the row form
         assert m.rows_form([enc])
-        rows_full = torch.cat(m.probs(enc)); rows_miss, prefix_rows = m.probs_and_prefix(enc)
+        full = lambda: torch.cat([torch.softmax(z, -1) for z in m.forward(enc)])   # the row form (probs() would take the prefix path)
+        rows_full = full(); rows_miss, prefix_rows = m.probs_and_prefix(enc)
         rows_hit_from_packed_prefix = torch.cat(m.probs_with_prefix(enc, prefix_packed))   # a prefix made by the packed pass, reused by rows
-        rows_hit = torch.cat(m.probs_with_prefix(enc, prefix_rows))
+        rows_hit = torch.cat(m.probs_with_prefix(enc, prefix_rows)); rows_probs = torch.cat(m.probs(enc))   # probs() on an attention-only record too long to pack
         monkeypatch.setattr(M, "rows_per_pass", lambda rows, prefix_len=0, budget=0: 1)   # one row per pass
-        one_at_a_time = torch.cat(m.probs(enc)); one_at_a_time_hit = torch.cat(m.probs_with_prefix(enc, prefix_rows))
-    for got in (rows_full, torch.cat(rows_miss), rows_hit_from_packed_prefix, rows_hit, one_at_a_time, one_at_a_time_hit):
+        one_at_a_time = full(); one_at_a_time_hit = torch.cat(m.probs_with_prefix(enc, prefix_rows))
+        monkeypatch.setattr(M, "ROW_PASS_TOKENS", len(enc["ids"]))   # packable again: the prefix made by rows, reused packed
+        packed_hit_from_rows_prefix = torch.cat(m.probs_with_prefix(enc, prefix_rows))
+    for got in (rows_full, torch.cat(rows_miss), rows_hit_from_packed_prefix, rows_hit, rows_probs, one_at_a_time, one_at_a_time_hit, packed_hit_from_rows_prefix):
         assert (got - packed).abs().max() < 1e-4
 
 
-def test_hybrid_rows_isolation_and_prefix():
+def test_hybrid_rows_isolation_and_prefix(monkeypatch):
     """Qwen3.5 (Gated DeltaNet + attention): the row form isolates questions exactly, and the serving prefix path
-    (state once, cache replicated per question) reproduces it. Uses the 0.8B base; slow reference kernels on CPU."""
+    (state once, cache replicated per question), which probs() takes (#77), reproduces it. Uses the 0.8B base; slow
+    reference kernels on CPU."""
+    import importlib.util
     import torch
     from kev.model import DecisionModel, load_tokenizer
+    if importlib.util.find_spec("causal_conv1d"): pytest.skip("transformers sends CPU tensors to causal-conv1d's CUDA kernel when it is installed")
     tok = load_tokenizer("Qwen/Qwen3.5-0.8B-Base"); m = DecisionModel("Qwen/Qwen3.5-0.8B-Base", tok, "cpu").eval()
     assert m.hybrid
     rec = {"state": "Order 4411 arrived late and the box was crushed. Two charges appear on the card.",
@@ -146,68 +176,146 @@ def test_hybrid_rows_isolation_and_prefix():
                          {"instr": "Which team should handle this?", "options": ["returns", "shipping", "billing", "other"], "label": 2}]}
     enc = m.encode(tok, rec)
     with torch.no_grad():
-        together = m.probs(enc)
+        rows = [torch.softmax(z, -1) for z in m.forward(enc)]   # the row form (kev.benchmark): the state once per question
+        calls = []
+        with monkeypatch.context() as mp:
+            for name in ("forward_rows_batch", "prefix"):
+                mp.setattr(m, name, lambda *a, f=getattr(m, name), name=name: calls.append(name) or f(*a))
+            together = m.probs(enc)
+        assert calls == ["prefix"]   # one state pass, no row per question
         alone = [m.probs(m.encode(tok, {"state": rec["state"], "questions": [q]}))[0] for q in rec["questions"]]
         cached, prefix = m.probs_and_prefix(enc)
+        assert prefix[2] is None   # rows never read the state's hidden states: no fp32 [Ls, d] copy in the prefix cache
         again = m.probs_with_prefix(enc, prefix); again2 = m.probs_with_prefix(enc, prefix)
         import kev.model as M
         saved, M.rows_per_pass = M.rows_per_pass, lambda rows, prefix_len=0, budget=0: 1   # one row per pass: same answers, bounded memory
         try: chunked = m.probs_with_prefix(enc, prefix)
         finally: M.rows_per_pass = saved
-    for a, b, c, d, e, f in zip(together, alone, cached, again, again2, chunked):
-        assert (a - b).abs().max() < 1e-4 and (a - c).abs().max() < 1e-4 and (a - d).abs().max() < 1e-4 and (a - e).abs().max() < 1e-4 and (a - f).abs().max() < 1e-4
+    for a, *others in zip(rows, together, alone, cached, again, again2, chunked):
+        assert all((a - b).abs().max() < 1e-4 for b in others)
 
 
-@pytest.mark.parametrize("device,dtype", [("cpu", "float32"), ("cuda", "float32"), ("cuda", "bfloat16")])
-def test_shared_prefix_matches_rows(device, dtype):
-    """kev.shared_prefix on Qwen3.5-0.8B-Base, gradient checkpointing on: over records with 1-4 questions and states of
-    unequal length (so states are left-padded), the logits and every parameter's gradient equal the row form's, as closely
-    as the row form agrees with itself when only the batch changes (the same records one at a time). On CUDA (run it on
-    Modal, modal_app.py::gpu_tests) fla's Triton kernels differentiate through the prefix's `initial_state` and their fp32
-    dots round like TF32, so that noise is measured, not assumed; on the CPU transformers' reference kernels are exact to
-    fp32 and the floor applies."""
-    import importlib.util
+def _exact_kernels(mp):
+    """transformers' PyTorch code for the Gated DeltaNet rule and its short convolution in place of fla's Triton kernels and
+    causal-conv1d, TF32 off: fp32-exact on any device (fla rounds its fp32 dots like TF32 on CUDA). Patching the module works
+    because Qwen3_5GatedDeltaNet.forward looks these names up in the module at call time (the recurrent rule only serves
+    one-token steps; patched for completeness)."""
+    import inspect
+    import torch
+    from transformers.models.qwen3_5 import modeling_qwen3_5 as Q
+    for name in ("torch_chunk_gated_delta_rule", "torch_recurrent_gated_delta_rule", "causal_conv1d_fn"):
+        f = inspect.unwrap(getattr(Q, name)); params = inspect.signature(f).parameters   # the undecorated PyTorch function
+        mp.setattr(Q, name, lambda *a, f=f, params=params, **kw: f(*a, **{k: v for k, v in kw.items() if k in params}))
+    mp.setattr(torch.backends.cuda.matmul, "allow_tf32", False); mp.setattr(torch.backends.cudnn, "allow_tf32", False)
+
+
+def _prefix_setup(device, dtype, head=None):
+    """Qwen3.5-0.8B-Base in training mode with gradient checkpointing, a pointer head from seed 0 (or `head`'s weights),
+    and records with 1-4 questions whose states differ in length (so the shared-prefix path left-pads them)."""
     import torch
     from kev.data import materialize
-    from kev.model import DecisionModel, load_tokenizer
+    from kev.model import DecisionModel, PointerHead, load_tokenizer
     from kev.suite import load_split
-    if device == "cuda" and not torch.cuda.is_available(): pytest.skip("needs CUDA")
-    if device == "cpu" and importlib.util.find_spec("causal_conv1d"): pytest.skip("transformers sends CPU tensors to causal-conv1d's CUDA kernel when it is installed")
     tok = load_tokenizer("Qwen/Qwen3.5-0.8B-Base")
     m = DecisionModel("Qwen/Qwen3.5-0.8B-Base", tok, device, dtype=getattr(torch, dtype)).train()
     m.lm.gradient_checkpointing_enable(gradient_checkpointing_kwargs={"use_reentrant": False})
+    if head is None: torch.manual_seed(0); head = PointerHead(m.lm.config.hidden_size, dp=256)   # made on the CPU: the same head on every device
+    m.head.load_state_dict(head.state_dict())
     dev = load_split("evals/v7/decision-v7", "development")
     recs = [materialize(r) for r in dev if len(r["questions"]) > 1][:2] + [materialize(dev[0])]
     long = materialize(dev[5]); long["state"] = " ".join(materialize(r)["state"] for r in dev[:20])
     long["questions"] = [q for r in recs for q in r["questions"]][:4]
-    encs = [m.encode(tok, r) for r in [*recs, long]]
+    return m, [m.encode(tok, r) for r in [*recs, long]]
 
-    def run(shared, batches):
-        m.zero_grad(); logits = []
-        for batch in batches:
-            zs = [z for zz in m.forward_batch(batch, shared) for z in zz]
-            sum(torch.log_softmax(z.float(), -1)[(len(logits) + i) % len(z)] for i, z in enumerate(zs)).backward(); logits += zs
-        return torch.cat(logits).float().detach(), {n: p.grad.float().clone() for n, p in m.named_parameters() if p.grad is not None}
 
-    (rows, g_rows), (alone, g_alone), (prefix, g_prefix) = run(False, [encs]), run(False, [[e] for e in encs]), run(True, [encs])
-    big = [k for k in g_rows if g_rows[k].norm() > 1e-3 * max(g.norm() for g in g_rows.values())]
-    rel = lambda g: max(float((g_rows[k] - g[k]).norm() / g_rows[k].norm()) for k in big)
-    noise, diff = (float((rows - alone).abs().max()), rel(g_alone)), (float((rows - prefix).abs().max()), rel(g_prefix))
-    print(f"{device} {dtype}: max |logit diff| rows vs rows one record at a time {noise[0]:.2e}, rows vs shared prefix {diff[0]:.2e}; "
-          f"worst relative gradient diff {noise[1]:.2e} vs {diff[1]:.2e}")
-    assert g_rows.keys() == g_prefix.keys() and diff[0] <= max(3e-4, 3 * noise[0]) and diff[1] <= max(1e-3, 3 * noise[1])
-    # Magnitudes alone would let a small systematic shift pass as noise. Signed checks: (1) the shared prefix is as close
-    # to the second batching of the row form as to the first; (2) the mean signed logit difference sits within the
-    # batching noise's own mean plus 3 standard errors; (3) the gradient difference along the gradient itself (a
-    # systematic scaling) is no larger than the batching's and well under the whole difference's size.
-    assert float((alone - prefix).abs().max()) <= max(3e-4, 3 * noise[0])
-    d_noise, d_prefix = alone - rows, prefix - rows
-    bias_bound = float(d_noise.mean().abs() + 3 * d_noise.std() / len(d_noise) ** 0.5) + 3e-5   # floor: a tenth of the magnitude floor
-    flat = lambda g: torch.cat([g[k].flatten() for k in big])
-    along = lambda g: float(torch.dot(flat(g) - flat(g_rows), flat(g_rows)) / flat(g_rows).square().sum())
-    print(f"  mean signed logit diff {float(d_prefix.mean()):+.2e} (bound {bias_bound:.2e}); gradient shift along itself {along(g_prefix):+.2e} (batching {along(g_alone):+.2e})")
-    assert float(d_prefix.mean().abs()) <= bias_bound
-    assert abs(along(g_prefix)) <= max(1e-4, 3 * abs(along(g_alone)), 0.3 * noise[1])
+def _prefix_run(m, encs, shared, batches):
+    """Logits (in record order) and parameter gradients of one loss over `encs`, run as `batches` (lists of record
+    indices). A question's target depends only on its place in `encs`, so every batching differentiates the same loss."""
+    import torch
+    first = [sum(len(e["decide_idx"]) for e in encs[:b]) for b in range(len(encs))]
+    m.zero_grad(); logits = {}
+    for batch in batches:
+        zs = {first[b] + k: z for b, zz in zip(batch, m.forward_batch([encs[b] for b in batch], shared)) for k, z in enumerate(zz)}
+        sum(torch.log_softmax(z.float(), -1)[i % len(z)] for i, z in zs.items()).backward(); logits.update(zs)
+    return torch.cat([logits[i] for i in sorted(logits)]).double().detach(), {n: p.grad.float().clone() for n, p in m.named_parameters() if p.grad is not None}
+
+
+def _prefix_errors(z, g, z_ref, g_ref):
+    """How far (z, g) is from the reference: magnitudes (largest logit error, worst relative error of one parameter's
+    gradient, relative error of the whole gradient) and signed, systematic directions (mean logit error, and the error's
+    component along the reference itself, for logits and for the gradient: a scaling), each with the size a signed
+    statistic of random errors has (`sd_*`, the questions taken as the independent units)."""
+    import torch
+    top = max(x.norm() for x in g_ref.values())
+    big = [k for k in g_ref if g_ref[k].norm() > 1e-3 * top]
+    sums = lambda f: sum(float(f(g[k] - g_ref[k], g_ref[k])) for k in big)   # over the whole gradient, without a flat copy
+    dd, dr, rr = sums(lambda d, r: d.square().sum()), sums(lambda d, r: (d * r).sum()), sums(lambda d, r: r.square().sum())
+    d = z - z_ref
+    q = (len(z) / 3) ** 0.5   # ~3 options a question: the logits of one question share its <decide> token
+    rms = float(d.square().mean().sqrt())
+    return {"logit": float(d.abs().max()), "grad": max(float((g[k] - g_ref[k]).norm() / g_ref[k].norm()) for k in big),
+            "gnorm": (dd / rr) ** 0.5, "mean": float(d.mean()), "sd_mean": rms / q,
+            "along": float(d @ z_ref / (z_ref @ z_ref)), "sd_along": rms / float(z_ref.square().mean().sqrt()) / q,
+            "galong": dr / rr, "keys": g.keys() == g_ref.keys()}
+
+
+PREFIX_BATCHINGS = {"together": [[0, 1, 2, 3]], "alone": [[0], [1], [2], [3]], "pairs": [[0, 3], [1, 2]]}
+
+
+def _prefix_checks(exact, kernels=None):
+    """-> the failed checks. `exact`: the shared prefix against the row form, both in fp32 with exact kernels
+    (_exact_kernels). They agree to fp32 rounding (largest of 15 H100 samples, 5 heads x 3 containers, and the CPU: logit
+    4.4e-5, worst parameter 2.1e-5, whole gradient 9.2e-6, mean 5.2e-6, along 1.9e-6, gradient along 3.5e-6), and each
+    floor is about 5x that; a scaling of the branch hidden states by 1 + 1e-5, an offset of 1e-5 of their rms or a
+    scaling of the prefix's DeltaNet state by 1 + 1e-4 fails. `kernels` (CUDA): the shared prefix and the row form under
+    three batchings, each against that exact reference, with the kernels training uses (fla, causal-conv1d; fp32 or
+    bf16): the shared prefix may be no further from the exact answer than the row form's batchings are, by magnitude
+    (measured: at most 1.05x the worst batching in fp32, 1.32x in bf16) and along each signed direction."""
+    failed = [k for k, ok in {"keys": exact["keys"], "logit": exact["logit"] <= 2e-4, "grad": exact["grad"] <= 1e-4, "gnorm": exact["gnorm"] <= 5e-5,
+                             "mean": abs(exact["mean"]) <= 3e-5, "along": abs(exact["along"]) <= 1e-5, "galong": abs(exact["galong"]) <= 2e-5}.items() if not ok]
+    rows = [kernels[b] for b in PREFIX_BATCHINGS] if kernels else []
+    worst = lambda k: max(abs(r[k]) for r in rows)
+    for name in [k for k in (kernels or {}) if k.startswith("prefix")]:   # left-padded states ("prefix"), and each alone (no state mask: SDPA's causal flash kernel)
+        prefix = kernels[name]
+        failed += [f"kernels {name} {k}" for k in ("logit", "grad", "gnorm") if prefix[k] > 2 * worst(k)]
+        failed += [f"kernels {name} {k}" for k in ("mean", "along") if abs(prefix[k]) > 2 * worst(k) + 3 * max(r[f"sd_{k}"] for r in rows)]
+        if abs(prefix["galong"]) > 2 * worst("galong") + 0.5 * worst("gnorm"):   # |galong| <= gnorm always; a scaling puts the error along the gradient, noise almost none of it
+            failed.append(f"kernels {name} galong")
+        if not prefix["keys"]: failed.append(f"kernels {name} keys")
+    return failed
+
+
+@pytest.mark.parametrize("device,dtype", [("cpu", "float32"), ("cuda", "float32"), ("cuda", "bfloat16")])
+def test_shared_prefix_matches_rows(device, dtype, monkeypatch):
+    """kev.shared_prefix on Qwen3.5-0.8B-Base, gradient checkpointing on, over records with 1-4 questions and states of
+    unequal length (so states are left-padded). First, in fp32 with exact kernels (transformers' PyTorch code, the only
+    kind on the CPU), the logits and every parameter's gradient equal the row form's to fp32 rounding. Then, on CUDA (run
+    it on Modal, modal_app.py::gpu_tests), with the kernels training uses in fp32 or bf16: fla's Triton kernels round
+    their fp32 dots like TF32 and differentiate through the prefix's `initial_state`, so neither form is exact there; the
+    shared prefix must be no further from the exact answer than the row form is under three batchings, both with its
+    states left-padded together and with each record alone (no padding, so no state mask: SDPA's causal flash kernel, the
+    path a 64k-token state takes). (Its distance to one row batching is no yardstick: that batching's own error is in it,
+    and the two forms round differently.)"""
+    import importlib.util
+    import torch
+    if device == "cuda" and not torch.cuda.is_available(): pytest.skip("needs CUDA")
+    if device == "cpu" and importlib.util.find_spec("causal_conv1d"): pytest.skip("transformers sends CPU tensors to causal-conv1d's CUDA kernel when it is installed")
+    ref, encs = _prefix_setup(device, "float32")
+    with monkeypatch.context() as mp:
+        _exact_kernels(mp)
+        z_ref, g_ref = _prefix_run(ref, encs, False, PREFIX_BATCHINGS["together"])
+        exact = _prefix_errors(*_prefix_run(ref, encs, True, PREFIX_BATCHINGS["together"]), z_ref, g_ref)
+    kernels = None
+    if device == "cuda":
+        m = ref if dtype == "float32" else _prefix_setup(device, dtype, head=ref.head)[0]
+        kernels = {b: _prefix_errors(*_prefix_run(m, encs, False, batches), z_ref, g_ref) for b, batches in PREFIX_BATCHINGS.items()}
+        kernels["prefix"] = _prefix_errors(*_prefix_run(m, encs, True, PREFIX_BATCHINGS["together"]), z_ref, g_ref)
+        kernels["prefix alone"] = _prefix_errors(*_prefix_run(m, encs, True, PREFIX_BATCHINGS["alone"]), z_ref, g_ref)
+    fmt = lambda e: " ".join(f"{k} {v:+.2e}" for k, v in e.items() if k != "keys")
+    print(f"\n{device} {dtype}: shared prefix vs row form, exact kernels: {fmt(exact)}")
+    for name, e in (kernels or {}).items(): print(f"  {name} vs exact rows, training kernels: {fmt(e)}")
+    failed = _prefix_checks(exact, kernels)
+    assert not failed, failed
 
 
 def test_cuda_graphs_match_eager():
@@ -221,7 +329,7 @@ def test_cuda_graphs_match_eager():
     from kev.checkpoint import Checkpoint, LoadOptions
     from kev import cuda_graphs
     from kev.model import SERVE_MAX_BRANCH, SERVE_MAX_STATE
-    tok, m = Checkpoint("jaredpalmer/kev-0.8b").load("cuda", LoadOptions(dtype=torch.bfloat16, cuda_graphs=True, fused=True))
+    tok, m = Checkpoint(KEV_08B).load("cuda", LoadOptions(dtype=torch.bfloat16, cuda_graphs=True, fused=True))
     q = {"instr": "Which team should handle this?", "options": ["returns", "shipping", "billing", "other"], "label": 0}
     recs = [{"state": "Order 4411 arrived late and the box was crushed. Two charges appear on the card." * k, "questions": [q] * n}
             for k, n in ((1, 1), (1, 3), (4, cuda_graphs.GRAPH_ROWS + 3), (20, 2), (300, 2))]
@@ -241,6 +349,96 @@ def test_cuda_graphs_match_eager():
             assert p is not None and c is p or c is eager_prefix
             assert all((a - b).abs().max() < 0.05 for a, b in zip(ref, ps)) and all((a - b).abs().max() < 0.05 for a, b in zip(ref, hs))
     assert graphs.captures > 0 and not graphs.pending
+
+
+def test_server_recovers_when_a_pass_runs_out_of_memory():
+    """kev.serve.Server._run on CUDA, served as kev.serve serves it (bf16, CUDA graphs, fused kernels): a new state whose
+    pass cannot fit beside a full prefix cache raises a genuine torch.OutOfMemoryError inside the model, the server drops
+    the cache and the retry answers as the unpressured server did (#132, #75). Afterwards a cache hit and a new state still
+    match (the graphs and fused kernels survived the failed pass). Under a cap an empty cache cannot meet either, the error
+    reaches the caller, the cache is left empty and the failed pass's tensors are freed (the model thread used to keep them
+    until its next batch). The pressure is a memory cap (set_per_process_memory_fraction) placed halfway across what
+    dropping the cache frees, so both outcomes have that half as margin (H100: 730 MiB freed, 365 each side; the pass adds 258)."""
+    import torch
+    if not torch.cuda.is_available(): pytest.skip("needs CUDA")
+    from types import MethodType
+    from kev.checkpoint import Checkpoint, LoadOptions
+    from kev import cuda_graphs
+    from kev.device import empty_cache, sync
+    from kev.model import SERVE_MAX_BRANCH, SERVE_MAX_STATE
+    from kev.serve import Server
+    ck = Checkpoint(KEV_08B)
+    tok, m = ck.load("cuda", LoadOptions(dtype=torch.bfloat16, cuda_graphs=True, fused=True))
+    qs = [{"instr": "Which team should handle this?", "options": ["returns", "shipping", "billing", "other"], "label": 0},
+          {"instr": "Is a refund owed?", "options": ["yes", "no"], "label": 0}]
+    # states past the graphed state pass (an eager state pass, the path a long document takes) that still fit a bank
+    # entry (graphed question rows); ~46 MiB of prefix each on Kev-0.8B
+    rec = lambda i: {"state": f"Ticket {i}. " + f"Order {4400 + i} arrived late and the box was crushed. Two charges appear on the card. " * 170, "questions": qs}
+    fills, target, after = [rec(i) for i in range(16)], rec(100), rec(101)
+    enc = lambda r: m.encode(tok, r, max_state=SERVE_MAX_STATE, max_branch=SERVE_MAX_BRANCH)
+    n = enc(target)["seg"].count(0)
+    assert cuda_graphs.GRAPH_STATE < n <= cuda_graphs.BANK_WIDTH, n
+    total = torch.cuda.get_device_properties(torch.cuda.current_device()).total_memory
+    s = Server(ck, tok, m, "cuda")
+    attempts = []   # per probs_batch call: [bytes allocated when it starts, the type of the exception it raised or None]
+    def probs_batch(self, *a):   # keeps only the type: an exception kept would keep its pass's tensors
+        attempts.append([torch.cuda.memory_allocated(), None])
+        try: return type(self).probs_batch(self, *a)
+        except Exception as e: attempts[-1][1] = type(e); raise
+    m.probs_batch = MethodType(probs_batch, m)
+
+    def settle():   # model thread idle, freed blocks returned: -> bytes reserved
+        s.wait_idle()
+        with s.lock: sync("cuda"); empty_cache("cuda"); return torch.cuda.memory_reserved()
+
+    def fill():
+        s.prefix_cache.clear()
+        for r in fills: s.probs(r)
+        assert len(s.prefix_cache.entries) == len(fills)
+        return settle()
+
+    close = lambda a, b: all((x - y).abs().max() < 0.05 for x, y in zip(map(torch.tensor, a), map(torch.tensor, b)))
+    cap = lambda b: torch.cuda.set_per_process_memory_fraction(b / total)
+    key = lambda r: s.prefix_cache.plan([enc(r)])[0][0]
+    try:
+        s.prefix_cache.size = len(fills)
+        refs = {id(r): s.probs(r)[0] for r in fills + [after]}   # the unpressured answers (graphs captured along the way)
+        s.prefix_cache.clear(); empty = settle(); base = torch.cuda.memory_allocated(); torch.cuda.reset_peak_memory_stats()
+        refs[id(target)] = s.probs(target)[0]
+        need = torch.cuda.max_memory_reserved() - empty            # what the target's pass adds with nothing cached
+        full = fill(); freed = full - empty                        # what dropping the cache gives back
+        mib = lambda b: f"{b / 2**20:.0f} MiB"
+        print(f"\nreserved {mib(empty)} with an empty cache ({mib(base)} allocated), {mib(full)} with {len(fills)} states cached; "
+              f"the target's {n}-token pass adds {mib(need)}; cap {mib(full + need - freed // 2)} of {mib(total)}")
+        assert freed > 2**29 and need > 0, (freed, need)            # a quarter of a GiB of margin on each side at least
+        attempts.clear(); cap(full + need - freed // 2)            # the pass cannot fit beside the cache, and fits without it
+        ps, stats = s.probs(target)
+        print(f"attempts (allocated at start, error): {[(mib(b), e and e.__name__) for b, e in attempts]}")
+        assert [e for _, e in attempts] == [torch.OutOfMemoryError, None], attempts   # a genuine OOM, then the retry
+        assert attempts[1][0] - base < 2**24, "the retry started with the cache or the failed pass still resident"
+        assert s.prefix_cache.oom_retries == 1 and list(s.prefix_cache.entries) == [key(target)] and not stats["prefix_cache_hit"]
+        assert close(ps, refs[id(target)])
+        cap(total)
+        done = [s.submit(r) for r in (target, after)]              # after the OOM: a cache hit and a new state
+        for r, (ps, stats), hit in zip((target, after), [d.result() for d in done], (True, False)):
+            assert stats["prefix_cache_hit"] is hit and close(ps, refs[id(r)])
+        assert list(s.prefix_cache.entries) == [key(target), key(after)]
+        s.prefix_cache.clear(); settle(); base = torch.cuda.memory_allocated()
+        full = fill(); attempts.clear(); cap(full - freed + need // 2)   # half the room even with the cache dropped: the error reaches the caller
+        with pytest.raises(torch.OutOfMemoryError): s.probs(target)
+        s.wait_idle(); held = torch.cuda.memory_allocated() - base
+        print(f"failed twice: attempts {[(mib(b), e and e.__name__) for b, e in attempts]}, {mib(held)} still allocated past the empty server")
+        assert [e for _, e in attempts] == [torch.OutOfMemoryError] * 2, attempts
+        assert s.prefix_cache.entries == {} and s.prefix_cache.oom_retries == 2
+        assert held < 2**20, "the failed batch's tensors outlive it"
+        attempts.clear(); cap(total)
+        ps, stats = s.probs(after)                                 # and the server still answers
+        assert close(ps, refs[id(after)]) and list(s.prefix_cache.entries) == [key(after)]
+        assert m.graphs.captures > 0 and not m.graphs.failed, m.graphs.stats()
+    finally:
+        torch.cuda.set_per_process_memory_fraction(1.0)
+        s.close()
+
 
 def test_init_from_warm_start_and_compatibility_checks(tmp_path):
     """PR #9: --init_from loads an existing adapter + pointer head before training and refuses incompatible sources.

@@ -5,12 +5,18 @@ GPU_HOURLY = {"H100": 3.95, "H200": 4.54, "B200": 6.25, "T4": 0.59}   # USD per 
 # Full-weight trials (kev.train --full_ft, kev.full_ft). One GPU keeps the fp32 masters and AdamW moments in host memory:
 # 12 bytes per parameter, ~310 GB for a 27B, plus the staging buffers and the loader; the CPU runs the AdamW step. Several
 # GPUs (FSDP2) keep that state on the GPUs; host memory holds the copy of it a resume point is written from in the
-# background (~307 GB over the ranks) and the gathered checkpoint rank 0 writes (~51 GB). Disk: the runs volume stages
-# what a container writes on its local disk, up to two resume points (the new one is complete before the old one goes)
-# and the checkpoint, beyond Modal's default 512 GiB quota.
+# background (~307 GB over the ranks) and the gathered checkpoint rank 0 writes (~51 GB; a snapshot being written holds
+# the same, one at a time). Disk: the runs volume stages what a container writes on its local disk, up to two resume
+# points (the new one is complete before the old one goes), the final checkpoint and every snapshot (kept, never deleted),
+# beyond Modal's default 512 GiB quota. A run may plan at most MAX_SNAPSHOTS snapshots (kev.train and
+# kev.experiment.validated_trial refuse more): with a 27B, 2 x 307 + (1 + 8) x 51.2 ≈ 1,075 GB inside the 1 TiB
+# (1,099.5 GB), even if the volume keeps committed files staged. A full disk would fail a snapshot, withhold its resume
+# point and fail the trial (failed.json, not retried), so the cap is a hard limit, not a guideline.
 FULL_FT_SINGLE = 24, (368640, 409600)          # 360 / 400 GiB
 FULL_FT_SHARDED = 16, (409600, 471040)         # 400 / 460 GiB
 FULL_FT_DISK = 1048576                         # MiB of ephemeral disk (1 TiB); Modal bills disk as memory at 20:1
+MAX_SNAPSHOTS = 8                              # snapshots one full-weight run may plan (fractions + every-N steps)
+RESUME_POINT_GB, CHECKPOINT_GB = 307, 51.2     # a 27B's resume point (fp32 masters + moments) and bf16 checkpoint, the disk math above
 # A study's limits. Full-weight trials may run to Modal's 24 h cap per attempt and are retried after a timeout (each
 # retry continues from the trial's last resume point, kev.experiment.continue_trial), so their bound counts every attempt
 # and their budget cap covers one 8 x H200 day (a LoRA study keeps the $250 cap).
@@ -18,6 +24,12 @@ MAX_TIMEOUT = {False: 28800, True: 86400}   # a 24 h attempt fits the $1,000 cap
                                              # H200:8 (~$41/h) the cap allows ~8 h attempts, a day with the retries
 MAX_BUDGET = {False: 250, True: 1000}
 FULL_FT_RETRIES = 2
+CPU_HOURLY, MEMORY_GIB_HOURLY = 0.04730, 0.008   # USD per core hour and per GiB hour (memory billed at the limit here)
+# Checkpoint interpolation (scripts/interpolate_checkpoint.py, modal_app.py::interpolate): CPU only. The base backbone stays
+# resident in bf16 (51 GB for Qwen3.8-27B, 25.6B parameters; loading it through transformers also stages the 2.5 GB LM
+# head); the SFT side streams tensor by tensor, one output shard (<= 5 GB) is held until written, and the fp32 arithmetic
+# runs in 16M-element chunks (~200 MB). Peak ~60 GB; the limit leaves room for the loader's transients.
+INTERPOLATE_CPU, INTERPOLATE_MEMORY, INTERPOLATE_TIMEOUT = 8, (81920, 131072), 10800   # cores, 80 / 128 GiB, 3 h
 
 
 def gpu_count(gpu):
@@ -42,7 +54,14 @@ def hourly_rate(gpu, full_ft=False):
     kind = gpu.partition(":")[0]
     if kind not in GPU_HOURLY or gpu_count(gpu) < 1: raise ValueError(f"invalid GPU {gpu!r}")
     cpu, memory = trial_resources(gpu, full_ft)
-    return GPU_HOURLY[kind] * gpu_count(gpu) + cpu * 0.04730 + (memory[1] + (trial_disk(full_ft) or 0) / 20) / 1024 * 0.008
+    return GPU_HOURLY[kind] * gpu_count(gpu) + cpu * CPU_HOURLY + (memory[1] + (trial_disk(full_ft) or 0) / 20) / 1024 * MEMORY_GIB_HOURLY
+
+
+def interpolation_bound(timeout=INTERPOLATE_TIMEOUT, jobs=1):
+    """The most `jobs` interpolation containers (INTERPOLATE_CPU, INTERPOLATE_MEMORY; no GPU, no retries) can cost at
+    `timeout` seconds each."""
+    if timeout <= 0 or jobs < 1: raise ValueError("invalid timeout or job count")
+    return (INTERPOLATE_CPU * CPU_HOURLY + INTERPOLATE_MEMORY[1] / 1024 * MEMORY_GIB_HOURLY) * timeout / 3600 * jobs
 
 
 def compute_bound(gpu, timeout, trials, full_ft=False):

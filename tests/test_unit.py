@@ -185,14 +185,32 @@ def test_metrics_endpoint_shapes():
 
     r = client.get("/metrics")
     assert r.status_code == 200 and "kev_requests_total" in r.text and 'kev_model_info{run=""' in r.text
-    assert 'kev_inference_latency_ms_bucket{le="+Inf"}' not in r.text   # no inferences yet
+    assert 'kev_latency_ms_bucket{le="+Inf"}' not in r.text   # no inferences yet
 
     # fake an inference latency, then the histogram + Inf bucket must appear, monotonically increasing
-    S.METRICS["latency_ms"].append(42.0); S.METRICS["requests"] += 1
+    class _Srv:   # minimal Server stand-in: metrics() reads .latency via LatencyView
+        class _Ck:
+            requested = ""
+            class meta: base = ""
+        checkpoint = _Ck()
+        model = None
+        device = "cpu"
+        class _Mod: backend = ""
+        model = _Mod()
+        queue = __import__("queue").Queue()
+        batches = 0
+        batched_requests = 0
+        prefix_cache = __import__("types").SimpleNamespace(hits=0, misses=0)
+        latency = S.LatencyView()
+    import types
+    S.app.state.server = _Srv()
+    _Srv.latency.observe(42.0); S.METRICS["requests"] += 1
     r = client.get("/metrics")
-    assert 'le="+Inf"} 1' in r.text and "kev_inference_latency_ms_sum 42.0" in r.text
+    assert 'le="+Inf"} 1' in r.text and "kev_latency_ms_sum 42.0" in r.text
+    assert "kev_inferences_total 1" in r.text
     buckets = [float(l.split("} ")[1]) for l in r.text.splitlines() if "latency_ms_bucket" in l and "+Inf" not in l]
     assert buckets == sorted(buckets) and buckets[-1] == 1
+    del S.app.state.server
     S.METRICS["latency_ms"].clear(); S.METRICS["requests"] = 0   # don't leak into other tests' module state
 
 

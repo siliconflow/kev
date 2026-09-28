@@ -1,0 +1,79 @@
+{
+  "diagnostic": "evals/diagnostics/binding-v1.jsonl",
+  "sha256": "0b00da23a732db87bddb3c582a02c8d0de9f76cb26d20f8453f73141bbfdacc8",
+  "models": {
+    "jaredpalmer/kev-4b": {
+      "strata": {
+        "match_true": {
+          "acc": 0.9916666666666667,
+          "n": 120
+        },
+        "mismatch_clean": {
+          "acc": 0.975,
+          "n": 120
+        },
+        "mismatch_decoy_role": {
+          "acc": 0.9166666666666666,
+          "n": 120
+        },
+        "mismatch_decoy_pair": {
+          "acc": 0.9666666666666667,
+          "n": 120
+        },
+        "elapsed_plain": {
+          "acc": 0.65,
+          "n": 40
+        },
+        "elapsed_daycount": {
+          "acc": 1.0,
+          "n": 40
+        }
+      },
+      "elapsed_paired": {
+        "cases": 40,
+        "plain_wrong_daycount_right": 14,
+        "plain_right_daycount_wrong": 0
+      },
+      "rows_sha256": "7e30d8878296dc466eb6133cfa2febf44f47e162baf671819af7f96fcf9622f0"
+    },
+    "jaredpalmer/kev-9b": {
+      "strata": {
+        "match_true": {
+          "acc": 0.9916666666666667,
+          "n": 120
+        },
+        "mismatch_clean": {
+          "acc": 0.9666666666666667,
+          "n": 120
+        },
+        "mismatch_decoy_role": {
+          "acc": 0.9666666666666667,
+          "n": 120
+        },
+        "mismatch_decoy_pair": {
+          "acc": 1.0,
+          "n": 120
+        },
+        "elapsed_plain": {
+          "acc": 0.75,
+          "n": 40
+        },
+        "elapsed_daycount": {
+          "acc": 0.975,
+          "n": 40
+        }
+      },
+      "elapsed_paired": {
+        "cases": 40,
+        "plain_wrong_daycount_right": 9,
+        "plain_right_daycount_wrong": 0
+      },
+      "rows_sha256": "40bb16c513a2e56c24364b349c97f8c3185322dc873b2a30b165ebb2ea639acb"
+    }
+  },
+  "conclusions": [
+    "H1 confirmed: with a stated day count both models decide elapsed-day rules almost perfectly (4B 0.65 -> 1.00, 9B 0.75 -> 0.975; 14 and 9 paired flips to correct, 0 flips to wrong). The models already consume day counts; the compositional training generator never states one, and the serving preprocessor (KEV_DATE_FACTS) supplies them. Training on day-count renderings would not change the plain case, because the missing capability is the subtraction itself.",
+    "H2 not supported at scale: 9B mismatch_decoy_role 0.967 vs mismatch_clean 0.967; decoy_pair 1.000. The 0/6 on transfer-v4 development came from two generated groups. 4B shows a small effect (0.917 vs 0.975, 9 of 10 errors answer accept), worth at most ~1 pp on rule tasks; not a priority for data generation.",
+    "Neither hypothesis motivates a training run under the current budget; the elapsed finding is a serving-default decision, and PAWS-style natural role binding has no permitted programmatic training source (would need human labels)."
+  ]
+}

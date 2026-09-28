@@ -2,7 +2,8 @@
 
 Run: uv run python -m kev.plot --logs runs/train.log:kev-0.5b runs/train_holdout.log:holdout --eval runs/kev/eval.json --out docs/training.png
 """
-import argparse, json, re
+import argparse, re
+from .suite import read_json
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
@@ -15,7 +16,7 @@ LABEL = {"agnews": "AG News\nK=4", "agnews_yn": "AG News\nyes/no", "banking77": 
 
 def read_log(path):
     steps, losses, epoch_ends, prev_ep = [], [], [], 0
-    for m in STEP_RE.finditer(open(path).read()):
+    for m in STEP_RE.finditer(open(path, encoding="utf-8").read()):
         ep, step, loss = int(m[1]), int(m[2]), float(m[4])
         if ep != prev_ep: epoch_ends.append(steps[-1]); prev_ep = ep
         steps.append(step); losses.append(loss)
@@ -39,7 +40,7 @@ def main():
     ax1.set_yscale("log"); ax1.set_xlabel("optimizer step (8 records each)"); ax1.set_ylabel("train loss (cross-entropy, log scale)")
     ax1.set_title("training loss"); ax1.grid(alpha=0.25); ax1.legend(frameon=False)
 
-    e = json.load(open(a.eval))
+    e = read_json(a.eval)
     kev, b0, b1 = e["accuracy_calibration"], e.get("baseline_zero_shot_base", {}), e.get("baseline_zero_shot_instruct", {})
     xs = range(len(ORDER)); w = 0.27
     ax2.bar([x - w for x in xs], [b0.get(s, {}).get("acc", 0) for s in ORDER], w, color="0.78", label="zero-shot base (letter logits)")

@@ -148,11 +148,14 @@ def sys_bin():
 
 
 def test_probes_dispatch_on_images_key():
-    """The image branch of _probs is keyed on rec['images'] alone - a plain
-    (non-list) value under a different key never triggers it."""
-    from kev import serve
-    # contract only: _probs_images must exist and be a separate function from _probs
-    assert callable(serve._probs_images) and serve._probs_images is not serve._probs
+    """The image branch is keyed on rec['images'] alone (set by api.to_record; every
+    text record goes through Server.submit); a plain (non-list) value under a
+    different key never triggers it. Contract only: Server.probs_images must exist
+    as a method separate from Server.submit/probs, so a text request can never land
+    in the image path."""
+    from kev.serve import Server
+    assert callable(getattr(Server, "probs_images", None))
+    assert Server.probs_images is not Server.probs and Server.probs_images is not Server.submit
 
 
 # --- tier 3: 0.8B full chain --------------------------------------------------------

@@ -19,7 +19,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 from kev import contrastive                              # noqa: E402
-from kev.api import date_facts, render                   # noqa: E402
+from kev.api import date_facts, question_keys, render    # noqa: E402
 from kev.suite import digest, load_split, write_json     # noqa: E402
 from kev.transfer_v9 import unknowable                   # noqa: E402
 
@@ -78,7 +78,7 @@ def unknowable_file(pairs_per_family):
     for r in recs:
         if r["_meta"]["source"] == "unknowable":
             for q in r["questions"].values():
-                keys = list(q["criteria"]) if q["type"] == "choice" else ["false", "true"] if q["type"] == "noul" else [str(i) for i in range(len(q["criteria"]))]
+                keys = question_keys(q["type"], q.get("criteria"))
                 q["target"] = {k: 1.0 / len(keys) for k in keys}
             r["_meta"]["source"] = "night2_unknowable"
         else:
@@ -116,8 +116,8 @@ def main():
     manifest = {"seed": SEED, "files": {}}
     for name, recs in files.items():
         before = len(recs); recs = [r for r in recs if r["_meta"].get("text_sha256") not in dev]   # never train on an evaluation state
-        body = "".join(json.dumps(r, ensure_ascii=False, default=str) + "\n" for r in recs)
-        (OUT / name).write_text(body)
+        body = "".join(json.dumps(r, ensure_ascii=False, default=str) + "\n" for r in recs)   # default=str for date objects: not write_jsonl
+        (OUT / name).write_text(body, encoding="utf-8")
         manifest["files"][name] = {"records": len(recs), "dropped_eval_overlap": before - len(recs), "sha256": digest(OUT / name),
                                    "sources": sorted({r["_meta"]["source"] for r in recs})}
         print(name, manifest["files"][name])

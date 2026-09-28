@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { api, PRESETS, type PermuteResponse, type Question, type SystemOneRequest, type SystemOneResponse } from "@/lib/kev";
 import { AnswerCard } from "@/components/answer-card";
@@ -26,7 +26,7 @@ export function Playground() {
   const [stateText, setStateText] = useState(() => typeof PRESETS[0].state === "string" ? PRESETS[0].state : pretty(PRESETS[0].state));
   const [questionsText, setQuestionsText] = useState(() => pretty(PRESETS[0].questions));
   const [result, setResult] = useState<SystemOneResponse | null>(null);
-  const [separate, setSeparate] = useState<(SystemOneResponse & { latency_ms: number }) | null>(null);
+  const [separate, setSeparate] = useState<SystemOneResponse | null>(null);
   const [permute, setPermute] = useState<{ question: string; data: PermuteResponse } | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -67,13 +67,15 @@ export function Playground() {
   const onSeparate = () => run("separate", async () => ({ packed: await api.systemOne(parsed.req!), sep: await api.separate(parsed.req!) }), ({ packed, sep }) => { setResult(packed); setSeparate(sep); setTab("answers"); });
   const onPermute = (qid: string) => run("permute", () => api.permute(parsed.req!, qid, 6), (d) => { setPermute({ question: qid, data: d }); setTab("permute"); });
 
+  const onRunRef = useRef(onRun);
+  useEffect(() => { onRunRef.current = onRun; });   // latest handler for the global shortcut, without re-subscribing
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) { e.preventDefault(); onRun(); }
+      if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) { e.preventDefault(); onRunRef.current(); }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  });
+  }, []);
 
   const maxDiff = useMemo(() => {
     if (!result || !separate) return null;
@@ -141,7 +143,7 @@ export function Playground() {
               </TabsList>
               {result && (
                 <p className="text-[13px] tabular-nums text-muted-foreground">
-                  {result.latency_ms?.toFixed(0)} ms · {result.usage.input_tokens} input tokens · {nQ} {nQ === 1 ? "question" : "questions"}
+                  {result.latency_ms.toFixed(0)} ms · {result.usage.input_tokens} input tokens · {nQ} {nQ === 1 ? "question" : "questions"}
                 </p>
               )}
             </div>
@@ -152,7 +154,7 @@ export function Playground() {
               )}
               {result && separate && (
                 <p className="mb-3 rounded-md border border-border bg-muted/40 px-4 py-2.5 text-[13px] leading-5">
-                  One request with {nQ} questions: <span className="tabular-nums">{result.latency_ms?.toFixed(0)} ms</span>, {result.usage.input_tokens} tokens.{" "}
+                  One request with {nQ} questions: <span className="tabular-nums">{result.latency_ms.toFixed(0)} ms</span>, {result.usage.input_tokens} tokens.{" "}
                   {nQ} separate requests: <span className="tabular-nums">{separate.latency_ms.toFixed(0)} ms</span>, {separate.usage.input_tokens} tokens.
                   Largest probability difference between the two: <span className="font-medium tabular-nums">{maxDiff?.toFixed(4)}</span>.
                   {maxDiff !== null && maxDiff < 0.011 ? " Sibling questions did not change any answer." : " This exceeds rounding; check the request."}

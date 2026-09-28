@@ -1,6 +1,6 @@
 # Leaderboard
 
-Generated 2026-09-20T23:48+00:00 from runs/*/result.json. Selection on development partitions only; the locked test is never read here.
+Generated 2026-09-21T11:34+00:00 from runs/*/result.json. Selection on development partitions only; the locked test is never read here.
 
 - **Qwen/Qwen3-0.6B-Base** incumbent: transfer 0.620, dev 0.801, seeds [2] (v7-06b/02-trial-2)
 - **Qwen/Qwen3-4B-Base** incumbent: transfer 0.775, dev 0.858, seeds [0] (v7-rc3/00-trial-0, v8-4b/00-trial-0)
@@ -8,13 +8,26 @@ Generated 2026-09-20T23:48+00:00 from runs/*/result.json. Selection on developme
 
 | study/trial | base | seed | dev acc | transfer acc | Brier | conf-err | held-out pairs | none_present | perm flip | gates | $ | knobs |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|
+| night2-36b6/00-trial-0 | Qwen3.6-35B-A3B | 0 | 0.869 | 0.823 | 0.278 | 0.088 | 0.84 | 0.90 | 0.02 | pass | 10.42 | accum=4, epochs=2, lr=5e-05, p_none_pair=0.25, weights_dtype=bf16 |
+| night2-9b-du/00-trial-0 | Qwen3.5-9B-Base | 1 | 0.872 | 0.822 | 0.286 | 0.087 | 0.83 | 0.90 | 0.00 | pass | 1.4 | accum=4, data=evals/night2/dates_unknowable.jsonl, init_from=jaredpalmer/kev-9b, lr=2e-05, p_none_pair=0.25, replay=2000 |
+| night2-36b6/01-trial-1 | Qwen3.6-35B-A3B | 0 | 0.869 | 0.819 | 0.289 | 0.091 | 0.88 | 0.85 | 0.08 | pass | 9.38 | accum=4, epochs=2, lr=2e-05, p_none_pair=0.25, weights_dtype=bf16 |
+| night2-9b/00-trial-0 | Qwen3.5-9B-Base | 1 | 0.873 | 0.819 | 0.295 | 0.090 | 0.80 | 0.92 | 0.00 | pass | 1.1 | accum=4, data=evals/night2/dates.jsonl, init_from=jaredpalmer/kev-9b, lr=2e-05, p_none_pair=0.25, replay=2000 |
+| night2-9b/03-trial-3 | Qwen3.5-9B-Base | 1 | 0.875 | 0.819 | 0.291 | 0.082 | 0.81 | 0.92 | 0.00 | pass | 1.8 | accum=4, data=evals/night2/all.jsonl, init_from=jaredpalmer/kev-9b, lr=2e-05, p_none_pair=0.25, replay=2000 |
+| night2-9b/02-trial-2 | Qwen3.5-9B-Base | 1 | 0.870 | 0.816 | 0.303 | 0.088 | 0.80 | 0.90 | 0.00 | pass | 1.09 | accum=4, data=evals/night2/assertion.jsonl, init_from=jaredpalmer/kev-9b, lr=2e-05, p_none_pair=0.25, replay=2000 |
+| night2-9b/01-trial-1 | Qwen3.5-9B-Base | 1 | 0.870 | 0.814 | 0.300 | 0.088 | 0.78 | 0.92 | 0.02 | pass | 1.21 | accum=4, data=evals/night2/unknowable.jsonl, init_from=jaredpalmer/kev-9b, lr=2e-05, p_none_pair=0.25, replay=2000 |
 | q35-9b/01-trial-1 | Qwen3.5-9B-Base | 1 | 0.876 | 0.812 | 0.291 | 0.075 | 0.80 | 0.90 | 0.02 | pass | 6.6 | accum=4, epochs=2, lr=5e-05, p_none_pair=0.25 |
 | q35-9b/00-trial-0 | Qwen3.5-9B-Base | 0 | 0.871 | 0.802 | 0.308 | 0.069 | 0.75 | 0.92 | 0.03 | pass | 5.78 | accum=4, epochs=2, lr=5e-05, p_none_pair=0.25 |
 | q35-4b/01-trial-1 | Qwen3.5-4B-Base | 1 | 0.876 | 0.800 | 0.322 | 0.095 | 0.75 | 0.88 | 0.02 | pass | 3.99 | epochs=2, lr=5e-05, p_none_pair=0.25 |
+| night2-4b/01-trial-1 | Qwen3.5-4B-Base | 1 | 0.881 | 0.797 | 0.316 | 0.088 | 0.78 | 0.95 | 0.02 | pass | 0.98 | data=evals/night2/unknowable.jsonl, init_from=jaredpalmer/kev-4b, lr=2e-05, p_none_pair=0.25, replay=2000 |
+| night2-4b-du/00-trial-0 | Qwen3.5-4B-Base | 1 | 0.872 | 0.797 | 0.299 | 0.069 | 0.78 | 0.92 | 0.02 | pass | 0.85 | data=evals/night2/dates_unknowable.jsonl, init_from=jaredpalmer/kev-4b, lr=2e-05, p_none_pair=0.25, replay=2000 |
 | v7-final/00-trial-0 | Qwen3-8B-Base | 0 | 0.863 | 0.796 | 0.337 | 0.099 | 0.69 | 0.87 | 0.02 | fail | 5.78 | accum=4, epochs=2, lr=5e-05, p_none_pair=0.25 |
 | q35-4b-s23/00-trial-0 | Qwen3.5-4B-Base | 2 | 0.877 | 0.794 | 0.316 | 0.082 | 0.78 | 0.93 | 0.02 | pass | 4.01 | epochs=2, lr=5e-05, p_none_pair=0.25 |
+| night2-4b/00-trial-0 | Qwen3.5-4B-Base | 1 | 0.871 | 0.793 | 0.333 | 0.105 | 0.77 | 0.93 | 0.02 | fail | 0.94 | data=evals/night2/dates.jsonl, init_from=jaredpalmer/kev-4b, lr=2e-05, p_none_pair=0.25, replay=2000 |
+| night2-4b/02-trial-2 | Qwen3.5-4B-Base | 1 | 0.877 | 0.791 | 0.337 | 0.110 | 0.78 | 0.95 | 0.02 | fail | 1.0 | data=evals/night2/assertion.jsonl, init_from=jaredpalmer/kev-4b, lr=2e-05, p_none_pair=0.25, replay=2000 |
+| night2-4b/03-trial-3 | Qwen3.5-4B-Base | 1 | 0.880 | 0.791 | 0.316 | 0.079 | 0.77 | 0.93 | 0.00 | pass | 1.29 | data=evals/night2/all.jsonl, init_from=jaredpalmer/kev-4b, lr=2e-05, p_none_pair=0.25, replay=2000 |
 | v7-rc3/01-trial-1 | Qwen3-4B-Base | 1 | 0.854 | 0.790 | 0.328 | 0.082 | 0.73 | 0.87 | 0.02 | pass | 2.84 | epochs=2, lr=5e-05, p_none_pair=0.25 |
 | q35-4b/00-trial-0 | Qwen3.5-4B-Base | 0 | 0.877 | 0.788 | 0.339 | 0.096 | 0.72 | 0.92 | 0.03 | pass | 4.15 | epochs=2, lr=5e-05, p_none_pair=0.25 |
+| night2-4b-dense2/00-trial-0 | Qwen3.5-4B-Base | 1 | 0.877 | 0.780 | 0.333 | 0.085 | 0.73 | 0.87 | 0.02 | pass | 4.08 | epochs=2, lora_targets=dense, lr=5e-05, p_none_pair=0.25 |
 | recipe-8b-r2/01-trial-1 | Qwen3-8B-Base | 1 | 0.868 | 0.779 | 0.336 | 0.081 | 0.67 | 0.87 | 0.05 | fail | 6.49 | accum=4, epochs=2, lr=5e-05, p_none_pair=0.25 |
 | q35-4b-nopolicy/01-trial-1 | Qwen3.5-4B-Base | 1 | 0.872 | 0.777 | 0.327 | 0.075 | 0.69 | 0.87 | 0.02 | fail | 4.73 | epochs=2, lr=5e-05, p_none_pair=0.25, train_sources=banking77,boolq,agnews,mnli,sst5,yelp,trec,dbpedia14,imdb,amazon,compositional |
 | v8-4b/00-trial-0 | Qwen3-4B-Base | 0 | 0.858 | 0.777 | 0.338 | 0.076 | 0.69 | 0.85 | 0.03 | fail | 3.06 | epochs=2, lr=5e-05, p_none_pair=0.25 |
@@ -72,6 +85,7 @@ Generated 2026-09-20T23:48+00:00 from runs/*/result.json. Selection on developme
 | mix-4b-v5/01-trial-1 | Qwen3-4B-Base | 0 | 0.858 | 0.713 | 0.408 | 0.072 | 0.50 | 0.93 | 0.00 | fail | 3.03 | p_none_pair=0.25, train_sources=banking77,boolq,agnews,mnli,sst5,yelp,trec,dbpedia14,amazon,imdb,compositional |
 | v4-4b-baseline/00-trial-0 | Qwen3-4B-Base | 0 | 0.849 | 0.704 | 0.463 | 0.113 | 0.58 | 0.93 | 0.02 | fail | 3.02 | epochs=2, p_none_pair=0.25 |
 | mix-4b-knobs/00-trial-0 | Qwen3-4B-Base | 0 | 0.850 | 0.686 | 0.435 | 0.076 | 0.45 | 0.92 | 0.02 | fail | 3.09 | epochs=2, p_none_pair=0.25, synthetic_repeat=3 |
+| night2-08b-du2/00-trial-0 | Qwen3.5-0.8B-Base | 1 | 0.825 | 0.652 | 0.499 | 0.099 | 0.42 | 0.83 | 0.02 | fail | 0.6 | data=evals/night2/dates_unknowable.jsonl, init_from=jaredpalmer/kev-0.8b, lr=4e-05, p_none_pair=0.25, replay=2000 |
 | q35-08b/02-trial-2 | Qwen3.5-0.8B-Base | 2 | 0.829 | 0.643 | 0.513 | 0.096 | 0.38 | 0.83 | 0.02 | fail | 1.57 | epochs=2, lr=0.0001, p_none_pair=0.25 |
 | q35-08b/01-trial-1 | Qwen3.5-0.8B-Base | 1 | 0.820 | 0.634 | 0.516 | 0.090 | 0.44 | 0.85 | 0.05 | fail | 1.48 | epochs=2, lr=0.0001, p_none_pair=0.25 |
 | q35-08b/00-trial-0 | Qwen3.5-0.8B-Base | 0 | 0.817 | 0.622 | 0.508 | 0.084 | 0.27 | 0.88 | 0.00 | fail | 1.58 | epochs=2, lr=0.0001, p_none_pair=0.25 |

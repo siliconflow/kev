@@ -1,0 +1,111 @@
+{
+  "schema": "kev-calibration-audit-v1",
+  "branch": "research/calibration-audit",
+  "status": "registered before new training runs",
+  "budget": {
+    "workspace_metered_before_usd": 392.13507560,
+    "existing_authorization_usd": 1000,
+    "additional_cap_usd": 600,
+    "initial_stage_cap_usd": 60,
+    "budget_amendment": "User raised the ceiling to $1000 before new training runs. Interpreted conservatively as total workspace spend, not $1000 additional. Experimental gates unchanged.",
+    "reserve_includes": ["screen", "replications if justified", "fresh audit if justified", "build and storage headroom"],
+    "new_credits_authorized": false,
+    "automatic_retries": 0
+  },
+  "parents": {
+    "4b": "jaredpalmer/kev-4b@485ace8703592fcf405488b262449990824cfed1",
+    "9b": "jaredpalmer/kev-9b@2629c06a5aeb0feb3b9783bafed17ed8f39ecf5c"
+  },
+  "data": {
+    "decision_suite": "evals/round3/decision-r3",
+    "training_sha256": "4dd74c9561eadb1dbd7ed19ec7de0f2c00027ad0749009a8dd88d575c0e8bd5e",
+    "training_records": 3425,
+    "temperature_fit_partition": "decision-r3/calibration.jsonl",
+    "temperature_fit_objective": "micro mean NLL of clean questions using raw logits",
+    "development_suite": "evals/round3/transfer-r3",
+    "development_role": "the old transfer-v4 development items, selection only",
+    "fresh_threshold_partition": "transfer-r3/calibration.jsonl",
+    "fresh_threshold_sha256": "cd7e41d744476a231424bcb4883ecb011aa51c23318862f4641e86f3c4b83c28",
+    "fresh_test_partition": "transfer-r3/test.jsonl",
+    "fresh_test_sha256": "23e786cc71a72fc15b565b80d720d3dcaffb2e5c7c79c5243077592df7a46370",
+    "fresh_test_records": 1260,
+    "secondary_development_suite": "evals/v9/transfer-v9",
+    "labels_modified": false,
+    "human_adjudication_completed": false,
+    "pretraining_overlap": "unknown",
+    "previous_test_sets": "historical regression evidence only; repeatedly exposed during previous model selection"
+  },
+  "metric_policy": {
+    "version": 2,
+    "confidence": "max returned option probability after the independently fitted temperature",
+    "ties": "whole equal-confidence groups; no within-tie selection",
+    "primary": "micro empirical threshold coverage at error <= 0.05",
+    "companion": "AURC, right-step integral at whole-tie thresholds, lower is better",
+    "secondary": ["NLL", "Brier", "ECE", "error among accepted answers", "high-confidence errors divided by all answers", "per-source accuracy"],
+    "bootstrap": "2000 paired source-stratified original-record-group resamples; full statistic recomputed for each draw",
+    "uncertainty_scope": "dataset sampling only; seed variation reported separately",
+    "deployment_policy": "threshold selected on fresh threshold-calibration set, applied without re-selection to final test; not a certified error guarantee"
+  },
+  "screen": {
+    "size": "4b",
+    "seed": 11,
+    "epochs": 1,
+    "lr": 0.00002,
+    "batch": 4,
+    "accum": 2,
+    "shared_data_and_augmentations": true,
+    "arms": [
+      {"name": "ce-control", "label_smoothing": 0.0, "brier_w": 0.0, "focal_gamma": 0.0},
+      {"name": "smoothing-005", "label_smoothing": 0.05, "brier_w": 0.0, "focal_gamma": 0.0},
+      {"name": "ce-brier-05", "label_smoothing": 0.0, "brier_w": 0.5, "focal_gamma": 0.0},
+      {"name": "focal-1", "label_smoothing": 0.0, "brier_w": 0.0, "focal_gamma": 1.0}
+    ],
+    "soft_target_policy": "Keep existing soft-target questions on ordinary soft-target cross-entropy, identically in every arm.",
+    "unchanged_checkpoint_control": "Re-evaluate the pinned released checkpoint with raw logits and the same calibration protocol; do not use old reports as the only control.",
+    "advance": {
+      "coverage_delta_vs_ce_control_min": 0.05,
+      "coverage_delta_vs_recalibrated_parent_min": 0.05,
+      "accuracy_delta_vs_each_min": -0.01,
+      "aurc_delta_vs_each_max": 0.0,
+      "per_source_accuracy_delta_min": -0.05,
+      "candidate_limit": 1,
+      "tie_break": ["higher coverage", "lower AURC", "lower NLL", "arm order"]
+    }
+  },
+  "replication": {
+    "only_if_screen_passes": true,
+    "sizes": ["4b", "9b"],
+    "seeds": [12, 13],
+    "arms": ["CE continuation control", "one preselected best loss"],
+    "conditions": [
+      "mean coverage gain >= 0.05 over paired-seed CE controls",
+      "coverage improvement has the same sign for both seeds",
+      "micro accuracy within 0.01 of the released parent and paired CE controls",
+      "no source accuracy regression greater than 0.05",
+      "AURC no worse than parent and CE control",
+      "unknowable high-confidence share <= 0.05 and intact-control accuracy within 0.02 of parent"
+    ],
+    "final_checkpoint_choice": "Among passing size/recipe groups, choose highest development coverage, then lowest NLL; write checkpoint hashes and thresholds before final scoring."
+  },
+  "final_audit": {
+    "read_only_after_selection_record": true,
+    "models": ["one preselected candidate", "its pinned parent", "the matching-seed CE continuation control"],
+    "temperature_refit_on_test": false,
+    "threshold_refit_on_test": false,
+    "promotion_recommendation_requires": [
+      "coverage gain >= 0.05 against parent and CE control, paired 95% CI lower bound > 0",
+      "accuracy delta 95% CI lower bound >= -0.01",
+      "AURC not worse",
+      "fixed-threshold accepted-set empirical error <= 0.05 with minimum 100 accepted knowable questions",
+      "fresh unknown/control behavior does not collapse by predicting uniform distributions on intact records"
+    ],
+    "failing_final_test": "report failure; do not select a different candidate using these outcomes",
+    "automatic_publication": false
+  },
+  "stop_rules": [
+    "If the first screen has no passing arm, report the negative result and leave the fresh final set unscored.",
+    "Do not launch a full retrain merely because a screened loss was the least bad.",
+    "Do not spend on 27B or expand the loss grid without a new evidence-based decision and budget check.",
+    "Do not overwrite historical outputs, deployed production app, published checkpoints, or release tags."
+  ]
+}

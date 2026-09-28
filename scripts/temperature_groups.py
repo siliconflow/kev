@@ -13,7 +13,8 @@ import numpy as np
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
-from kev.benchmark import metrics  # noqa: E402
+from kev.metrics import metrics  # noqa: E402
+from kev.suite import read_json
 
 RUNS = {"Kev-9B": "q35-9b/01-trial-1", "Kev-4B": "q35-4b-s23/00-trial-0", "Kev-0.8B": "q35-08b/02-trial-2"}
 GRID = np.exp(np.linspace(np.log(0.25), np.log(4), 81))
@@ -47,8 +48,8 @@ def summary(rows):
 
 def main():
     for name, run in RUNS.items():
-        dev = [r for r in json.loads((ROOT / "runs" / run / "development/rows.json").read_text()) if r["variant"] == "clean"]
-        ood = [r for r in json.loads((ROOT / "runs" / run / "transfer/rows.json").read_text()) if r["variant"] == "clean"]
+        dev = [r for r in read_json(ROOT / "runs" / run / "development/rows.json") if r["variant"] == "clean"]
+        ood = [r for r in read_json(ROOT / "runs" / run / "transfer/rows.json") if r["variant"] == "clean"]
         single = fit(dev); grouped = fit(dev, group_key)
         print(f"\n== {name}  (fitted on {len(dev)} in-distribution dev rows; applied to {len(ood)} out-of-domain dev rows)")
         print(f"   single T = {single:.2f}; grouped T = " + ", ".join(f"{t}/K{k}: {v:.2f}" for (t, k), v in sorted(grouped.items())))

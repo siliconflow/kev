@@ -6,8 +6,8 @@ from pathlib import Path
 
 import numpy as np
 
-from kev.benchmark import paired_bootstrap
-from kev.suite import write_json
+from kev.metrics import paired_bootstrap
+from kev.suite import read_json, write_json
 
 
 def nll_sensitivity(rows, floor):
@@ -35,10 +35,10 @@ def main():
     ap.add_argument("--out", required=True)
     a = ap.parse_args()
     candidate, reference = Path(a.candidate), Path(a.reference)
-    left, right = [json.loads((p / "report.json").read_text()) for p in (candidate, reference)]
+    left, right = [read_json(p / "report.json") for p in (candidate, reference)]
     if not left.get("suite_sha256") or left["suite_sha256"] != right.get("suite_sha256"):
         raise ValueError("comparison requires matching frozen-suite hashes")
-    lr, rr = [json.loads((p / "rows.json").read_text()) for p in (candidate, reference)]
+    lr, rr = [read_json(p / "rows.json") for p in (candidate, reference)]
     result = {"candidate": str(candidate), "reference": str(reference), "suite_sha256": left["suite_sha256"],
               "clean": {"candidate": left["clean"], "reference": right["clean"]},
               "paired": {metric: paired_bootstrap(lr, rr, metric=metric) for metric in ("nll", "acc", "brier")},

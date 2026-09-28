@@ -1,0 +1,12 @@
+{
+  "study": "calibration-screen-4b-s11",
+  "app": "kev-calibration-audit",
+  "status": "cancelled with explicit user approval before training",
+  "failure": "Modal worker dependency graph had 3 dependencies but received 4 object IDs: KEV_HF_SECRET was set locally but not propagated into the worker image.",
+  "training_started": false,
+  "checkpoints_created": false,
+  "calls_cancelled": ["fc-01M3287R6HVHQ8844672XZ8JCN", "fc-01M3287R8J561K3YQ5PYFATV8C", "fc-01M3287RBA84WKYRZ8CHBED1QT", "fc-01M3287RE18NA22ZBGN4HXW0HY", "fc-01M3287RGP4H5KBN2HD4S3AXFW"],
+  "fix": "Propagate only the app/GPU/secret-name configuration into the worker image so Modal object construction is identical locally and remotely. Secret values remain in Modal Secret, not image configuration or logs.",
+  "retry_policy": "Use a new study name; no old outputs deleted; production app unchanged.",
+  "cost": "Pending metered-billing reconciliation; do not assume failed startup is free."
+}

@@ -1,3 +1,7 @@
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
 [project]
 name = "kev"
 version = "0.1.0"
@@ -6,7 +10,7 @@ readme = "README.md"
 license = "Apache-2.0"
 license-files = ["LICENSE"]
 authors = [{ name = "Jared Palmer" }]
-requires-python = ">=3.12"
+requires-python = ">=3.12,<3.14"
 keywords = ["decision-model", "calibration", "lora", "typesafe", "transformers"]
 classifiers = [
     "Development Status :: 3 - Alpha",
@@ -35,6 +39,10 @@ serve = [
     "fastapi>=0.115",
     "typesafe-sdk>=0.6.0",
     "uvicorn>=0.30",
+    "mlx-lm>=0.31.3,<0.32; sys_platform == 'darwin' and platform_machine == 'arm64'",   # the Apple Silicon backend (kev.mlx_model); a no-op elsewhere
+]
+mlx = [
+    "mlx-lm>=0.31.3,<0.32; sys_platform == 'darwin' and platform_machine == 'arm64'",
 ]
 vision = [
     "pillow>=10.0",
@@ -52,3 +60,6 @@ dev = [
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 markers = ["server: needs a running kev.serve instance (KEV_BASE_URL)"]
+
+[tool.setuptools]
+packages = ["kev"]

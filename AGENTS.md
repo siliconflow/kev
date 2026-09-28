@@ -390,12 +390,13 @@ runs / the endpoint / the volumes. Tests: `tests/test_skill_scripts.py`.
 - Image channel (opt-in, merged 2026-09-24, rebuilt for the Server structure 2026-09-28): `KEV_VISION=1` attaches the base
   checkpoint's untrained vision tower (`model.visual.*` tensors, dropped by the text-only load path) and serves image
   requests. `state.images` (nonempty list of data/https URL strings, the workspace multimodal claim rule) is stripped by
-  `api.to_record` and never rendered into the text; `Server.probs_images` forwards through `kev/vision.py` (official
-  AutoImageProcessor patchify + row-form splice, no projection: Qwen3.5 merger out_hidden == text hidden on both tested
-  bases). Image requests bypass the batch queue and the prefix cache and run under `Server.lock` directly - their tensor
-  shapes share nothing with the captured text CUDA graphs. Needs the `vision` extra (torchvision, imported by
-  transformers' qwen2_vl processor). Without the gate, or on a text-only base, image requests get 422. Text path, training
-  and the prefix cache are untouched (tests/test_vision.py parity all green). "Channel open, untrained readout": an open
+  `api.to_record` and never rendered into the text; `Server._answer_rec` dispatches image records to
+  `serve._probs_images`, which runs through `kev/vision.py` under the Server's lock (outside the batched model thread;
+  the text prefix cache never sees image records) (official AutoImageProcessor patchify + row-form splice, no
+  projection: Qwen3.5 merger out_hidden == text hidden on both tested bases). Needs the `vision` extra (torchvision,
+  imported by transformers' qwen2_vl processor). Without the gate, or on a text-only base, image requests get 422. Text
+  path, training and the prefix cache are untouched (tests/test_vision.py + tests/test_v3.py parity all green).
+  "Channel open, untrained readout": an open channel is not a capability claim - report TVD/separation, not bacc.
   channel is not a capability claim - report TVD/separation, not bacc.
 
 ## Writing

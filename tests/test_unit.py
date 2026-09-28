@@ -37,6 +37,37 @@ def test_to_record_maps_all_three_types():
     assert [m["keys"] for m in meta] == [["false", "true"], ["calm", "angry"], ["0", "1"]] and meta[2]["legend"] == {"0": "can wait", "1": "today"}
 
 
+def test_score_legend_preserves_json_types():
+    """OpenRouter listing blocker: legend must echo criteria levels with their original
+    JSON types. render() flattening object/array levels into strings broke the contract."""
+    req = SystemOneRequest.model_validate({
+        "state": "resume screening", "model": "m",
+        "questions": {
+            "mixed": {"type": "score", "instructions": "Rate", "criteria": [
+                "no issue",
+                {"what": "cosmetic", "examples": ["typo", "spacing"]},
+                ["cosmetic", "no functional impact"],
+            ]},
+        },
+    })
+    rec, meta = to_record(req)
+    # Model prompt options stay rendered text ...
+    assert rec["questions"][0]["options"] == [
+        "no issue",
+        "what: cosmetic\nexamples:\n  - typo\n  - spacing",
+        "- cosmetic\n- no functional impact",
+    ]
+    # ... but the echo in the answer keeps the caller's JSON types exactly.
+    assert meta[0]["legend"] == {
+        "0": "no issue",
+        "1": {"what": "cosmetic", "examples": ["typo", "spacing"]},
+        "2": ["cosmetic", "no functional impact"],
+    }
+    ans = to_answers([[0.1, 0.2, 0.7]], meta)
+    assert ans["mixed"]["legend"] == meta[0]["legend"]
+    assert isinstance(ans["mixed"]["legend"]["1"], dict) and isinstance(ans["mixed"]["legend"]["2"], list)
+
+
 def test_to_answers_shapes_and_formulas():
     _, meta = to_record(SystemOneRequest.model_validate({"state": "s", "model": "m", "questions": {
         "n": {"type": "noul", "instructions": "i"},
@@ -171,14 +202,32 @@ def test_metrics_endpoint_shapes():
 
     r = client.get("/metrics")
     assert r.status_code == 200 and "kev_requests_total" in r.text and 'kev_model_info{run=""' in r.text
-    assert 'kev_inference_latency_ms_bucket{le="+Inf"}' not in r.text   # no inferences yet
+    assert 'kev_latency_ms_bucket{le="+Inf"}' not in r.text   # no inferences yet
 
     # fake an inference latency, then the histogram + Inf bucket must appear, monotonically increasing
-    S.METRICS["latency_ms"].append(42.0); S.METRICS["requests"] += 1
+    class _Srv:   # minimal Server stand-in: metrics() reads .latency via LatencyView
+        class _Ck:
+            requested = ""
+            class meta: base = ""
+        checkpoint = _Ck()
+        model = None
+        device = "cpu"
+        class _Mod: backend = ""
+        model = _Mod()
+        queue = __import__("queue").Queue()
+        batches = 0
+        batched_requests = 0
+        prefix_cache = __import__("types").SimpleNamespace(hits=0, misses=0)
+        latency = S.LatencyView()
+    import types
+    S.app.state.server = _Srv()
+    _Srv.latency.observe(42.0); S.METRICS["requests"] += 1
     r = client.get("/metrics")
-    assert 'le="+Inf"} 1' in r.text and "kev_inference_latency_ms_sum 42.0" in r.text
+    assert 'le="+Inf"} 1' in r.text and "kev_latency_ms_sum 42.0" in r.text
+    assert "kev_inferences_total 1" in r.text
     buckets = [float(l.split("} ")[1]) for l in r.text.splitlines() if "latency_ms_bucket" in l and "+Inf" not in l]
     assert buckets == sorted(buckets) and buckets[-1] == 1
+    del S.app.state.server
     S.METRICS["latency_ms"].clear(); S.METRICS["requests"] = 0   # don't leak into other tests' module state
 
 
@@ -1876,3 +1925,23 @@ def test_jev_counts_a_hosted_error_on_an_oversize_request_as_a_refusal(monkeypat
         j = P.JevPredictor("key", count_refusals=True, budget=100)
         with pytest.raises(raised): j(record)
         assert w.lines == lines and j.accounting()["refusals"] == refusals
+def test_ms_endpoint_env_precedence(monkeypatch):
+    """_ms_endpoint matches the ModelScope SDK standard: MODELSCOPE_ENDPOINT > MODELSCOPE_DOMAIN
+    (bare domain gets https://) > the public default. An in-cluster cache set via either variable
+    transfers the scale-out multi-GB base loads off modelscope.cn (fast replica cold starts)."""
+    from kev.checkpoint import _ms_endpoint
+    # default when neither set: the SF-side mirror, not the public origin
+    monkeypatch.delenv("MODELSCOPE_ENDPOINT", raising=False)
+    monkeypatch.delenv("MODELSCOPE_DOMAIN", raising=False)
+    assert _ms_endpoint() == "https://ms.sc4.ai:10443/api/v1/models"
+    # DOMAIN (deprecated form): bare domain gets a scheme and trailing slash stripped
+    monkeypatch.setenv("MODELSCOPE_DOMAIN", "ms-cache.svc.cluster.local:8080/")
+    assert _ms_endpoint() == "https://ms-cache.svc.cluster.local:8080/api/v1/models"
+    monkeypatch.setenv("MODELSCOPE_DOMAIN", "https://ms.sc4.ai")
+    assert _ms_endpoint() == "https://ms.sc4.ai/api/v1/models"
+    # ENDPOINT wins over DOMAIN when both are set
+    monkeypatch.setenv("MODELSCOPE_ENDPOINT", "http://cluster-cache:9000/")
+    assert _ms_endpoint() == "http://cluster-cache:9000/api/v1/models"
+    # ENDPOINT alone (the form the SDK prefers)
+    monkeypatch.delenv("MODELSCOPE_DOMAIN", raising=False)
+    assert _ms_endpoint() == "http://cluster-cache:9000/api/v1/models"

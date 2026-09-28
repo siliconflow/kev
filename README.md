@@ -239,7 +239,7 @@ There's a [chess demo](http://localhost:3001/chess), too. The board is the input
 
 For Choice with `K > 1` options, confidence is `(p_max − 1/K) / (1 − 1/K)`. A single option has confidence 1. Score confidence is `max(0, 1 − E|level − mode| / D)`: `mode` is the most likely level and `D` is the mean distance of a uniform distribution over the levels from its middle (2/3 for three levels), so all probability on one level gives 1 and a uniform or wider spread gives 0. Both formulas are the ones in TypeSafe's reference adapter ([`system-one-adapter`](https://github.com/typesafe-ai/system-one-adapter-python) 0.2.1). Neither field is a measured accuracy rate.
 
-Objects and arrays are converted to labeled text. Delimiter-like strings in user input are escaped before tokenization. Invalid requests return `422`. `usage.output_tokens` counts tokens in the serialized answers, not generated tokens.
+Objects and arrays are converted to labeled text. Delimiter-like strings in user input are escaped before tokenization. Invalid requests return `422`. `usage.output_tokens` counts tokens in the serialized answers, not generated tokens. In score answers, `legend` echoes the criteria levels verbatim with their original JSON types.
 
 | Method | Path | Purpose |
 |---|---|---|
@@ -247,7 +247,12 @@ Objects and arrays are converted to labeled text. Delimiter-like strings in user
 | `POST` | `/v1/systemone/permute` | Run one Choice question with different option orders (`n_perm` 1 to 64, default 6) |
 | `POST` | `/v1/systemone/separate` | Run each question in its own forward pass |
 
-A request may carry any number of questions. The server runs them a token budget at a time (one maximal row of 16,384 tokens per forward pass, counting the cached document once per question in that pass), so memory does not grow with the question count and the answers do not depend on the split. Every response carries an `x-typesafe-request-id` header. The server binds to `127.0.0.1` (`--host 0.0.0.0` to accept other machines) and is open by default; set `KEV_API_KEY` to require `Authorization: Bearer <key>` on `/v1/*`, as the TypeSafe clients always send it.
+| Method | Path | Purpose |
+|---|---|---|
+| `GET` | `/healthz` | Liveness: process + model thread (cheap, ~0 ms; for liveness probes) |
+| `GET` | `/healthz/ready` | Readiness: one real inference through the same path traffic takes — reflects the instance's serving capability; 503 + reason on any inference-path failure (OOM, a broken kernel, a wedged model thread); point readiness probes here |
+
+A request may carry any number of questions. The server runs them a token budget at a time (one maximal row of 16,384 tokens per forward pass, counting the cached document once per question in that pass), so memory does not grow with the question count and the answers do not depend on the split. Every response carries an `x-typesafe-request-id` header. The server binds to `0.0.0.0` (`--host 127.0.0.1` to keep it local) and is open by default; set `KEV_API_KEY` to require `Authorization: Bearer <key>` on `/v1/*`, as the TypeSafe clients always send it.
 
 | Variable | Effect |
 |---|---|
@@ -255,6 +260,10 @@ A request may carry any number of questions. The server runs them a token budget
 | `KEV_DATE_FACTS=1` | Append the number of days between any two dates in the state (see [Benchmarks](#benchmarks)) |
 | `KEV_DTYPE=fp32` | Serve the exact fp32 path the evaluations use (bf16 is the default on GPUs) |
 | `KEV_API_KEY` | Require a bearer key |
+| `MODELSCOPE_ENDPOINT` | Base URL the `KEV_BASE_HUB=modelscope` base loads pull from (the ModelScope SDK's standard variable); overrides the default mirror `https://ms.sc4.ai:10443`. Point it at an in-cluster cache so scale-out replicas warm from the cache instead of any remote origin |
+| `KEV_PROBE_WAIT_S` | `/healthz/ready` caps its wait on the probe inference (default `5`); a wedged model thread yields 503, never a hung probe |
+| `PYTORCH_CUDA_ALLOC_CONF` | Already set to `expandable_segments:True` in the image; a Dockerfile ENV, so a runtime `-e` overrides it. Keeps variable-size batches from stranding reserved-but-unallocated VRAM (fragmentation starves CUDA-graph captures on 24 GB cards) |
+| `MODELSCOPE_DOMAIN` | Same as `MODELSCOPE_ENDPOINT` but the SDK's deprecated form; a bare domain is upgraded to `https://` (`MODELSCOPE_ENDPOINT` wins when both are set) |
 
 ## How It Works
 

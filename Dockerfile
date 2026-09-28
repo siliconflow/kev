@@ -63,6 +63,21 @@ USER appuser
 ENV HF_HUB_DISABLE_XET=1
 
 EXPOSE 8000
+# Fragmentation is the default failure mode of a 24 GB card serving variable-size batches
+# (2026-09-25 production: 6.04 GiB reserved-but-unallocated while graph captures failed for want
+# of contiguous VRAM). expandable_segments lets the allocator grow/shrink segments instead of
+# stranding slack in fixed blocks. Override at runtime with -e PYTORCH_CUDA_ALLOC_CONF=... if a
+# workload prefers the stock allocator.
+ENV PYTORCH_CUDA_ALLOC_CONF="expandable_segments:True"
 # The SF cloud-function yaml overrides `command` for serve flags
 # (see deploy/kev-4b-4090.yaml in os_jev_exp).
 CMD ["python", "-m", "kev.serve", "--run", "jaredpalmer/kev-4b", "--port", "8000"]
+
+# Container-level liveness: /healthz (process + model thread), 3 failures -> unhealthy.
+# The deep check is /healthz/ready — point the platform's readiness probe there, not here:
+# it runs one real forward pass through the same path traffic takes and is what
+# "true reflection of the instance's serving capability" means (a CUDA-OOMed instance
+# answers GET endpoints with 200 forever; 2026-09-25: 4,288 /metrics polls green across
+# a 5% hard-error window). start-period covers weight loading (ModelScope + HF, ~4 min cold).
+HEALTHCHECK --interval=30s --timeout=5s --start-period=420s --retries=3 \
+  CMD ["python", "-c", "import urllib.request as u; u.urlopen('http://127.0.0.1:8000/healthz', timeout=4)"]

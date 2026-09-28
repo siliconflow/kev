@@ -20,7 +20,8 @@ import importlib.util
 import json
 import os
 import re
-import time
+import urllib.parse
+import urllib.request
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -42,9 +43,95 @@ def _default_hf_timeouts():
     os.environ.setdefault("HF_HUB_DOWNLOAD_TIMEOUT", "600")
 
 
-# ModelScope mirrors popular bases (Qwen/...) under the same repo id; the raw-file endpoint 302s to a CDN.
-# Used only when the caller cannot reach HF (KEV_BASE_HUB=modelscope) - the adapter still comes from the Hub.
-MS_API = "https://modelscope.cn/api/v1/models"
+def resolve_run(run):
+    """Local run directory as given, or a Hub repo id like jaredpalmer/kev-4b, optionally pinned to a revision or tag
+    with `@` (jaredpalmer/kev-4b@qwen3), downloaded to the HF cache. Returns a str path."""
+    _default_hf_timeouts()
+    if os.path.isdir(run):
+        return str(run)
+    from huggingface_hub import snapshot_download
+    repo, _, revision = str(run).partition("@")
+    return snapshot_download(repo, revision=revision or None, allow_patterns=["*.json", "*.safetensors", "*.pt", "*.txt", "*.jinja"])
+
+
+# ModelScope mirrors popular bases (Qwen/...) with the same repo id; the raw-file endpoint 302s to a CDN.
+# Used only when the caller can't reach HF (KEV_BASE_HUB=modelscope) — the adapter still comes from the Hub.
+# The endpoint follows the ModelScope SDK's standard precedence (modelscope_hub config.py):
+# The endpoint follows the ModelScope SDK's standard precedence (modelscope_hub config.py):
+# MODELSCOPE_ENDPOINT > MODELSCOPE_DOMAIN (deprecated by the SDK; a bare domain gets https://) >
+# the default. The default is the SF-side mirror (ms.sc4.ai:10443, same repo tree and Sha256
+# listing as modelscope.cn) — scale-out replicas warm from it instead of the public origin;
+# point MODELSCOPE_ENDPOINT at an in-cluster cache when one is injected.
+def _ms_endpoint():
+    ep = os.environ.get("MODELSCOPE_ENDPOINT", "").strip()
+    if not ep:
+        ep = os.environ.get("MODELSCOPE_DOMAIN", "").strip()
+        if ep and not ep.startswith(("http://", "https://")):
+            ep = "https://" + ep
+    return (ep or "https://ms.sc4.ai:10443").rstrip("/") + "/api/v1/models"
+
+
+MS_API = _ms_endpoint()
+
+
+def _ms_snapshot(repo, cache_root=None):
+    """Download a ModelScope repo (all files) to ~/.cache/kev-modelscope/<namespace>/<name>, stdlib only.
+    Files are cached by their listed Sha256 — a completed tree is never re-downloaded."""
+    import shutil, sys, time as _time
+    root = os.path.expanduser(cache_root or os.environ.get("KEV_MS_CACHE", "~/.cache/kev-modelscope"))
+    dest = os.path.join(root, *repo.split("/"))
+    os.makedirs(dest, exist_ok=True)
+    url = f"{MS_API}/{repo}/repo/files?Revision=master&Recursive=true"
+    for attempt in range(4):
+        try:
+            with urllib.request.urlopen(url, timeout=60) as r:
+                import json as _json; files = _json.load(r)["Data"]["Files"]
+            break
+        except Exception as e:
+            wait = 15 * (attempt + 1)
+            print(f"modelscope: file listing failed (attempt {attempt + 1}/4): {e!r}; retrying in {wait}s", flush=True)
+            if attempt == 3: raise
+            _time.sleep(wait)
+    files = [f for f in files if f.get("Type") != "tree"]
+    total = sum(f.get("Size", 0) for f in files)
+    print(f"modelscope: {repo} -> {dest} ({len(files)} files, {total / 1e9:.2f} GB); downloading (progress below)...", flush=True)
+    n = done_bytes = 0
+    for f in files:
+        path, sha, size = f["Path"], f.get("Sha256"), f.get("Size", 0)
+        out = os.path.join(dest, path); os.makedirs(os.path.dirname(out) or dest, exist_ok=True)
+        if os.path.exists(out) and (not sha or _file_sha256(out) == sha):
+            continue
+        # copy in 8MB chunks with per-file + running-total progress; a multi-GB shard takes minutes on a
+        # slow egress and silence looks like a hang in the pod log. Retry per file: transient CDN resets
+        # shouldn't kill a 20-minute download; .part keeps partial data but a reset mid-stream is easier
+        # to just restart cleanly from byte 0 (ModelScope's CDN is fast enough that this stays rare).
+        file_url = f"{MS_API}/{repo}/repo?FilePath={urllib.parse.quote(path)}&Revision=master"
+        got = 0
+        for attempt in range(4):
+            try:
+                if os.path.exists(out + ".part"): os.remove(out + ".part")
+                with urllib.request.urlopen(file_url, timeout=120) as r, open(out + ".part", "wb") as w:
+                    got = 0
+                    while True:
+                        chunk = r.read(8 << 20)
+                        if not chunk: break
+                        w.write(chunk); got += len(chunk); done_bytes += len(chunk)
+                        if got and size and got % (64 << 20) < (8 << 20):   # log every ~64 MB, one line each (pod log panels render \r poorly)
+                            print(f"  {path}: {got / 1e6:.0f}/{size / 1e6:.0f} MB (total {done_bytes / 1e9:.2f}/{total / 1e9:.2f} GB)", flush=True)
+                if size and got != size:
+                    raise IOError(f"incomplete read: {got} of {size} bytes")
+                os.replace(out + ".part", out)   # atomic: a .part file is never mistaken for a complete download
+                print(f"  {path}: {size / 1e6:.0f} MB done (total {done_bytes / 1e9:.2f}/{total / 1e9:.2f} GB)", flush=True)
+                break
+            except Exception as e:
+                done_bytes -= got if (size and got != size and got) else 0
+                wait = 15 * (attempt + 1)
+                print(f"  {path}: download failed (attempt {attempt + 1}/4): {e!r}; retrying in {wait}s", flush=True)
+                if attempt == 3: raise
+                _time.sleep(wait)
+        n += 1
+    print(f"modelscope: {repo} -> {dest} ({n} file(s) downloaded, {len(files) - n} cached)", flush=True)
+    return dest
 
 
 def _file_sha256(path):
@@ -55,63 +142,6 @@ def _file_sha256(path):
             h.update(chunk)
     return h.hexdigest()
 
-
-def _ms_snapshot(repo, cache_root=None):
-    """Download a ModelScope repo (all files) to ~/.cache/kev-modelscope/<namespace>/<name>, stdlib only.
-    Files are cached by their listed Sha256 - a completed tree is never re-downloaded."""
-    import shutil, urllib.parse, urllib.request
-    root = os.path.expanduser(cache_root or os.environ.get("KEV_MS_CACHE", "~/.cache/kev-modelscope"))
-    dest = os.path.join(root, *repo.split("/"))
-    os.makedirs(dest, exist_ok=True)
-    url = f"{MS_API}/{repo}/repo/files?Revision=master&Recursive=true"
-    with urllib.request.urlopen(url, timeout=60) as r:
-        files = json.loads(r.read())["Data"]["Files"]
-    n = 0
-    for f in files:
-        if f.get("Type") == "tree":
-            continue
-        path, sha = f["Path"], f.get("Sha256")
-        out = os.path.join(dest, path)
-        os.makedirs(os.path.dirname(out) or dest, exist_ok=True)
-        if os.path.exists(out) and (not sha or _file_sha256(out) == sha):
-            continue   # cached and hash-matching
-        for attempt in (1, 2, 3, 4):   # a multi-GB base over a flaky link: retry the file itself, not the whole tree
-            try:
-                with urllib.request.urlopen(f"{MS_API}/{repo}/repo?FilePath={urllib.parse.quote(path)}&Revision=master",
-                                            timeout=60) as r, open(out + ".part", "wb") as w:
-                    shutil.copyfileobj(r, w)
-                break
-            except Exception as e:
-                if attempt == 4:
-                    raise
-                print(f"modelscope: {path} attempt {attempt} failed ({e!r}); retrying")
-                time.sleep(10 * attempt)
-        os.replace(out + ".part", out)   # atomic: a .part file is never mistaken for a complete download
-        n += 1
-        print(f"modelscope: {path} done ({n}/{len(files)})")   # progress: deployments hung silently without it (a multi-GB base showed nothing for minutes)
-    print(f"modelscope: {repo} -> {dest} ({n} file(s) downloaded, {len(files) - n} cached)")
-    return dest
-
-
-def _base_source(meta):
-    """Where the base weights and tokenizer come from: normally the Hub id + revision head.pt pins;
-    KEV_BASE_HUB=modelscope swaps in a local ModelScope snapshot (same repo id). The revision pins an HF
-    commit and is meaningless on the mirror's master, None there. Everything that reads a base
-    (Checkpoint.load, Checkpoint.hybrid_base, kev.vision.attach) goes through this - one place."""
-    if os.environ.get("KEV_BASE_HUB") == "modelscope":
-        return _ms_snapshot(meta.base), None
-    return meta.base, meta.base_revision
-
-
-def resolve_run(run):
-    """Local run directory as given, or a Hub repo id like jaredpalmer/kev-4b, optionally pinned to a revision or tag
-    with `@` (jaredpalmer/kev-4b@qwen3), downloaded to the HF cache. Returns a str path."""
-    _default_hf_timeouts()
-    if os.path.isdir(run):
-        return str(run)
-    from huggingface_hub import snapshot_download
-    repo, _, revision = str(run).partition("@")
-    return snapshot_download(repo, revision=revision or None, allow_patterns=["*.json", "*.safetensors", "*.pt", "*.txt", "*.jinja"])
 
 
 @dataclass
@@ -279,10 +309,18 @@ class Checkpoint:
                 pass
         return datetime.date.fromtimestamp(self.file("head.pt").stat().st_mtime).isoformat()
 
+    def base_dir(self):
+        """The base the checkpoint trains on, as a loadable id/path. KEV_BASE_HUB=modelscope swaps the pinned
+        HF id for a local ModelScope snapshot (CN deployments where HF is slow/unreachable); an HF revision pin
+        is meaningless on the MS mirror (master), so it is dropped. The adapter itself still comes from the Hub."""
+        if os.environ.get("KEV_BASE_HUB") == "modelscope":
+            return _ms_snapshot(self.meta.base), None
+        return self.meta.base, self.meta.base_revision
+
     def hybrid_base(self):
         """Whether the base has Gated DeltaNet layers (Qwen3.5), read from its config without loading weights."""
         from transformers import AutoConfig
-        base, revision = _base_source(self.meta)
+        base, revision = self.base_dir()
         return is_hybrid(AutoConfig.from_pretrained(base, revision=revision).get_text_config())
 
     def backend(self, device, opts=LoadOptions()):
@@ -296,8 +334,9 @@ class Checkpoint:
         """-> (tokenizer, model) in eval mode with the LoRA applied (or the full backbone loaded) and the pointer head loaded. The model is a
         DecisionModel (torch) or an MLXDecisionModel (backend mlx); both expose the same scoring interface."""
         meta = self.meta
-        tok = load_tokenizer(*_base_source(meta))
-        m = self._load_mlx(tok, opts) if self.backend(device, opts) == "mlx" else self._load_torch(tok, device, opts)
+        base, base_revision = self.base_dir()
+        tok = load_tokenizer(base, revision=base_revision)
+        m = self._load_mlx(tok, opts) if self.backend(device, opts) == "mlx" else self._load_torch(tok, device, opts, base, base_revision)
         m.head.load_state_dict(meta.head); m.eval()
         m.head.temperature = meta.temperature if opts.temperature is None else opts.temperature
         return tok, m
@@ -308,7 +347,7 @@ class Checkpoint:
         if not opts.merge: raise ValueError("the MLX backend always merges the adapter (KEV_MERGE=0 needs backend=torch)")
         if self.meta.option_isolation: raise ValueError("option_isolation needs the packed mask; not available on the MLX backend")
         if not self.hybrid_base(): raise ValueError(f"the MLX backend is for the hybrid (Qwen3.5) bases; {self.meta.base} is attention-only and runs on MPS with backend=torch")
-        base, revision = _base_source(self.meta)
+        base, revision = self.base_dir()
         base_dir = str(base)   # a snapshot directory (Hub cache or MS mirror) loads directly; a Hub id resolves to the cache
         if not os.path.isdir(base_dir):
             base_dir = resolve_run(f"{base}@{revision or ''}")   # the snapshot the torch path already cached
@@ -316,8 +355,8 @@ class Checkpoint:
         merge_lora(m.lm, self.path, opts.lora_scale)
         return m
 
-    def _load_torch(self, tok, device, opts):
-        m, merged = self._full_torch(tok, device, opts) if self.full else self._adapted_torch(tok, device, opts)
+    def _load_torch(self, tok, device, opts, base, base_revision):
+        m, merged = self._full_torch(tok, device, opts, base, base_revision) if self.full else self._adapted_torch(tok, device, opts, base, base_revision)
         serving = str(device).startswith("cuda") and m.hybrid
         if opts.fused and serving and merged:   # fused projections need plain (merged or full) weights
             from .fused_qwen35 import fuse
@@ -329,7 +368,7 @@ class Checkpoint:
 
     SAVED_DTYPES = {"bf16": "bfloat16", "fp32": "float32"}   # head.pt weights_dtype -> the dtype save_pretrained writes to config.json
 
-    def _full_torch(self, tok, device, opts):
+    def _full_torch(self, tok, device, opts, base, base_revision):
         """-> (model, True). Full weights load in the dtype head.pt's `weights_dtype` names (bf16 for every kev.train
         --full_ft run: the dtype they were trained in), which must be the dtype save_pretrained recorded in config.json;
         otherwise a mislabelled export would be silently cast (fp32 weights rounded to bf16, or bf16 upcast to twice the
@@ -340,11 +379,10 @@ class Checkpoint:
         expected, saved = self.SAVED_DTYPES.get(meta.weights_dtype), cfg.get("dtype") or cfg.get("torch_dtype")
         if expected is None or saved not in (None, expected):
             raise ValueError(f"{self.path}: config.json records the weights as {saved} but head.pt says weights_dtype={meta.weights_dtype!r}")
-        base, revision = _base_source(meta)
-        return DecisionModel(base, tok, device, revision=revision, head_dim=meta.head_dim, option_isolation=meta.option_isolation,
+        return DecisionModel(base, tok, device, revision=base_revision, head_dim=meta.head_dim, option_isolation=meta.option_isolation,
                              dtype=opts.dtype or getattr(torch, expected), attn=opts.attn, weights=self.path), True
 
-    def _adapted_torch(self, tok, device, opts):
+    def _adapted_torch(self, tok, device, opts, base, base_revision):
         """-> (model, whether the adapter was merged): the base with this checkpoint's LoRA."""
         from peft import PeftModel
         meta = self.meta
@@ -355,8 +393,7 @@ class Checkpoint:
             # (one rounding of W + delta, as for every served Kev; parity in runs/serving-27b-*).
             dtype, merge = torch.bfloat16, merge and bool(opts.fused)
         merge = merge and not self.adapter_config().get("trainable_token_indices")   # token-trained adapters stay unmerged
-        base, revision = _base_source(meta)
-        m = DecisionModel(base, tok, device, lora=None, revision=revision, head_dim=meta.head_dim,
+        m = DecisionModel(base, tok, device, lora=None, revision=base_revision, head_dim=meta.head_dim,
                           option_isolation=meta.option_isolation, dtype=dtype, attn=opts.attn)
         m.lm = PeftModel.from_pretrained(m.lm, self.path, torch_device=str(device)).to(device)   # trainable token embeddings, if any, live in the adapter
         if opts.lora_scale != 1:

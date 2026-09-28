@@ -6,6 +6,7 @@ Score  -> options = ordered level descriptions; answer = expected level, legend,
 """
 import json
 import re
+import copy
 from datetime import datetime
 from typing import Any, Literal, Union
 from pydantic import BaseModel, Field, model_validator
@@ -124,12 +125,18 @@ def to_record(req: SystemOneRequest):
             opts = [option_text(k, v) for k, v in q.criteria.items()]
         else:
             opts = [render(x) for x in q.criteria]
-            m["legend"] = dict(zip(m["keys"], opts))
+            # legend echoes the caller's criteria levels verbatim (deep copy, original
+            # JSON types preserved). Upstream zips keys with the *rendered* option text,
+            # which flattens object/array levels into strings (OpenRouter listing blocker,
+            # see TODO-legend.md): the model prompt still uses render(); only the echo
+            # in the response keeps types.
+            m["legend"] = {str(i): copy.deepcopy(x) for i, x in enumerate(q.criteria)}
         qs.append({"instr": render(q.instructions), "options": opts, "label": 0}); meta.append(m)
     rec = {"state": render(state), "questions": qs}
     if images is not None:
         rec["images"] = images
     return rec, meta
+
 
 
 # Both confidence formulas mirror TypeSafe's reference adapter, system-one-adapter 0.2.1

@@ -238,9 +238,12 @@ class DecisionModel(nn.Module):
             if getattr(cfg, "pad_token_id", None) is None:
                 cfg.pad_token_id = pad_id(tok)
         load = {"dtype": dtype, "attn_implementation": attn}
-        if cfg is not None: load["config"] = cfg
+        if cfg is not None: load["config"] = cfg   # a Hub id base: the pad backfill only matters through from_pretrained
         if direct_load: load["device_map"] = {"": torch.cuda.current_device() if device == "cuda" else device}   # "cuda": under torchrun, this rank's GPU
-        self.lm = AutoModel.from_pretrained(weights, **load) if weights else AutoModelForCausalLM.from_pretrained(name, revision=revision, **load).model
+        if weights:
+            self.lm = AutoModel.from_pretrained(weights, **load)
+        else:
+            self.lm = AutoModelForCausalLM.from_pretrained(name, revision=revision, **load).model
         self.pad_id = pad_id(tok)
         # hybrid backbones (Qwen3.5: Gated DeltaNet layers, recurrent) cannot honour the block-causal mask, so every
         # question runs as its own causal row continuing from the state (rows_of). Attention-only backbones keep the

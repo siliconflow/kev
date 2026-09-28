@@ -43,6 +43,42 @@ GIT_LIMIT = 10 * 1024 * 1024
 ADMISSION_TOKENIZER = ("Qwen/Qwen3.5-4B-Base", "1001bb4d826a52d1f399e183466143f4da7b741b")
 # programmatic policy sources (kev.study_v3 / kev.contrastive); the trainer's mix ablations treat them as one group
 SYNTHETIC_SOURCES = ("legacy_policy", "compositional", "contrastive")
+# Suites deleted from the repo because they are unsound as a gate: {suite dir: why, when, the last round that read it}.
+# load_split / read_manifest refuse them with the reason; kev.rounds.validate lists a read of one as archived for rounds up
+# to `last_round` (their committed rows under runs/ are the record and still reproduce) and refuses it after that.
+REMOVED_SUITES = {
+    "evals/external/scienthoon-v1": {
+        "removed": "2026-09-27",
+        "last_round": 22,
+        "reason": ("unsound as a gate: 291 templated synthetic support tickets x 3 questions; `queue` is saturated (0.948-0.952 "
+                   "for every 27B), `priority` is unlearnable by construction (its own manifest: the label follows an org rule "
+                   "absent from the text), and `angry` has 15 of 291 gold labels that contradict the text and turns on ~12 stock "
+                   "closing phrases with disputed conventions"),
+        "record": "PLAN.md (Standing rules; 2026-09-27 note); committed rows under runs/ (e.g. runs/r20-scienthoon)",
+    },
+}
+
+
+class RemovedSuite(ValueError):
+    """A read of a suite in REMOVED_SUITES."""
+
+
+def suite_key(path):
+    """'evals/...' for a suite path given relative, absolute or as a container saw it (/root/kev/evals/x); None if none."""
+    parts = Path(str(path)).parts
+    return str(Path(*parts[parts.index("evals"):])) if "evals" in parts else None
+
+
+def removed_suite(path):
+    """The REMOVED_SUITES entry of a suite path (any form suite_key accepts), or None."""
+    key = suite_key(path)
+    return REMOVED_SUITES.get(key) if key else None
+
+
+def refuse_removed(path):
+    if entry := removed_suite(path):
+        raise RemovedSuite(f"{suite_key(path)} was removed on {entry['removed']}: {entry['reason']}. Rounds up to "
+                           f"{entry['last_round']} read it; their committed rows are the record ({entry['record']}). Do not read it again.")
 
 
 def digest(path):
@@ -135,10 +171,12 @@ def validate_training(records, manifest):
 
 
 def read_manifest(directory):
+    refuse_removed(directory)
     return read_json(Path(directory) / "manifest.json")
 
 
 def load_split(directory, split, allow_test=False):
+    refuse_removed(directory)   # a removed suite is refused with its reason, not a missing-file error
     if split not in SPLITS:
         raise ValueError(f"unknown split: {split}")
     if split == "test" and not allow_test:

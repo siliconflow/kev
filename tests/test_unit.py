@@ -2,6 +2,7 @@
 Run: uv run --extra serve python -m pytest tests/test_unit.py -q
 """
 import math
+import time
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -174,7 +175,9 @@ def test_ms_snapshot_downloads_and_resumes_from_cache(tmp_path, monkeypatch):
             return io.BytesIO(b"{}")
         return io.BytesIO(blob)
 
-    with patch("kev.checkpoint.urllib.request.urlopen", side_effect=fake_urlopen):
+    # _ms_snapshot imports urllib.request inside the function; the global module is the
+    # same object, so patching urllib.request.urlopen hits it from any importer.
+    with patch("urllib.request.urlopen", side_effect=fake_urlopen):
         dest = _ms_snapshot("Qwen/Qwen3-4B-Base", cache_root=str(tmp_path))
         assert open(f"{dest}/model.safetensors", "rb").read() == blob
         assert open(f"{dest}/config.json", "rb").read() == b"{}"
@@ -185,7 +188,7 @@ def test_ms_snapshot_downloads_and_resumes_from_cache(tmp_path, monkeypatch):
         assert open(f"{dest}/model.safetensors", "rb").read() == blob
 
     # listing counts as 2 files but config.json never changed; second call downloaded only the corrupted one
-    with patch("kev.checkpoint.urllib.request.urlopen", side_effect=fake_urlopen) as m:
+    with patch("urllib.request.urlopen", side_effect=fake_urlopen) as m:
         _ms_snapshot("Qwen/Qwen3-4B-Base", cache_root=str(tmp_path))
         assert m.call_count == 1   # the listing only — both files are intact in the cache
 
@@ -719,6 +722,126 @@ def test_master_adamw_refuses_nonfinite_gradients():
                for p, (w, m) in zip(params, before))
 
 
+def test_none_pair_max_state_pairs_only_short_states_and_the_plan_counts_them(tiny_base):
+    """--none_pair_max_state: the records that train none pairs are exactly the eligible ones whose state (encode's count,
+    <state> included) is at most N tokens, drawn from each record's own stream (the same set every call, a new draw per
+    epoch); encode_batch gives exactly those records their two siblings; microbatch_plan counts the siblings in a record's
+    cost, and without pairs cuts the same runs as before (the default path is today's)."""
+    from collections import Counter
+    from types import SimpleNamespace
+    from kev.data import load_records, materialize
+    from kev.model import MAX_STATE, encode, load_tokenizer
+    from kev.train import encode_batch, microbatch_plan, none_pairs, state_token_counts
+    tok = load_tokenizer(str(tiny_base / "base"))
+    reqs = load_records(tiny_base / "data.jsonl")   # states of 6 + i tokens, each with a 3-option Choice
+    counts = state_token_counts(tok, reqs)
+    assert [counts[id(r)] for r in reqs] == [sum(s == 0 for s in encode(tok, materialize(r))["seg"]) for r in reqs] == [6 + i for i in range(16)]
+    knobs = dict(seed=0, p_none=0.0, p_none_distract=0.0, p_distract=0.0, perm_kl=0.0, perm_frac=0.0, max_state=MAX_STATE, row_budget=0, shared_prefix=1)
+    a = SimpleNamespace(**knobs, p_none_pair=1.0, none_pair_max_state=10)
+    everything = 100   # a gate every state passes
+    short = {id(r) for r in reqs if counts[id(r)] <= 10}
+    assert none_pairs(a, reqs, 0, counts) == short and len(short) == 5
+    noul = [{**r, "questions": {"angry": r["questions"]["angry"]}} for r in reqs]   # no eligible Choice: no pair
+    assert none_pairs(a, noul, 0, state_token_counts(tok, noul)) == set()
+    half = SimpleNamespace(**{**vars(a), "p_none_pair": 0.5, "none_pair_max_state": everything})
+    drawn = [none_pairs(half, reqs, ep, counts) for ep in (0, 0, 1)]
+    assert drawn[0] == drawn[1] and drawn[0] != drawn[2] and 0 < len(drawn[0]) < 16
+    model = DecisionModel(str(tiny_base / "base"), tok, "cpu")
+    batch = encode_batch(model, tok, a, reqs, 0, short)
+    assert Counter(v.request_id for v in batch) == Counter({r["_meta"]["id"]: 3 if id(r) in short else 1 for r in reqs})
+    assert len(encode_batch(model, tok, SimpleNamespace(**{**knobs, "p_none_pair": 0.0}), reqs, 0)) == 16   # pairs None: today's draw
+    plan_knobs = SimpleNamespace(batch=2, accum=2, length_sort=1, shared_prefix=1)
+    plain = [microbatch_plan(reqs, plan_knobs, 2, rank) for rank in (0, 1)]
+    assert [microbatch_plan(reqs, plan_knobs, 2, rank, set()) for rank in (0, 1)] == plain
+    paired = [microbatch_plan(reqs, plan_knobs, 2, rank, short) for rank in (0, 1)]
+    assert paired != plain and [[len(c) for c, _, _ in p] for p in paired] != [[len(c) for c, _, _ in p] for p in plain]
+    assert sorted(r["_meta"]["id"] for p in paired for c, _, _ in p for r in c) == sorted(r["_meta"]["id"] for p in plain for c, _, _ in p for r in c)
+
+
+def test_plan_shapes_are_the_encoded_shapes(tiny_base):
+    """--pass_tokens_max plans on plan_shapes: per record, the (state, branches) token shapes of exactly the variants
+    encode_batch then encodes (augmented, none-pair siblings included), with or without the gate's pairs."""
+    from types import SimpleNamespace
+    from kev.data import load_records
+    from kev.model import MAX_STATE, load_tokenizer
+    from kev.train import encode_batch, none_pairs, plan_shapes, shape, state_token_counts
+    tok = load_tokenizer(str(tiny_base / "base"))
+    model = DecisionModel(str(tiny_base / "base"), tok, "cpu")
+    reqs = load_records(tiny_base / "data.jsonl")
+    counts = state_token_counts(tok, reqs)
+    a = SimpleNamespace(seed=0, p_none=0.3, p_none_distract=0.3, p_distract=0.3, p_none_pair=0.5, none_pair_max_state=12, perm_kl=0.0, perm_frac=0.0,
+                        max_state=MAX_STATE, row_budget=0, shared_prefix=1)
+    for pairs in (none_pairs(a, reqs, 1, counts), None):
+        shapes = plan_shapes(model, tok, a, reqs, 1, pairs, counts)
+        assert all(shapes[id(r)] == [shape(v.enc) for v in encode_batch(model, tok, a, [r], 1, pairs)] for r in reqs)
+        assert any(len(s) == 3 for s in shapes.values()) and any(len(s) == 1 for s in shapes.values())
+
+
+def test_pass_tokens_max_caps_every_pass_with_equal_counts_per_rank():
+    """--pass_tokens_max: on token shapes, a step whose costliest run is over the ceiling gets more micro-batches, the same
+    number on every rank, until no pass is over it; each step still trains its own records once (a short last step with
+    more runs than records repeats its cheapest, counted in the step's normaliser); a record over the ceiling on its
+    own is refused; without shapes the plan is today's."""
+    from kev.train import microbatch_plan, pass_tokens
+    # two full steps of 8 records (2 x 2 per rank) and a last step of 3; the short records at indices divisible by 3 carry siblings
+    sizes = [300, 290, 280, 270, 260, 5, 6, 7, 8, 9, 12, 60, 70, 15, 25, 35, 400, 390, 7]
+    reqs = [{"_meta": {"id": f"r{i}"}, "state": "s" * n, "questions": {"q": {"instr": "x"}}} for i, n in enumerate(sizes)]
+    shapes = {id(r): [(n, [4])] + ([(n, [5]), (n, [5])] if n < 100 and i % 3 == 0 else []) for i, (r, n) in enumerate(zip(reqs, sizes))}
+    cost = lambda chunk: pass_tokens([s for r in chunk for s in shapes[id(r)]], True)
+    a, world = SimpleNamespace(batch=2, accum=2, length_sort=1, shared_prefix=1, pass_tokens_max=450), 2
+    plans = [microbatch_plan(reqs, a, world, rank, None, shapes) for rank in range(world)]
+    assert len(plans[0]) == len(plans[1]) and [e for _, _, e in plans[0]] == [e for _, _, e in plans[1]]
+    assert max(cost(c) for p in plans for c, _, _ in p) <= 450
+    free = [microbatch_plan(reqs, SimpleNamespace(**{**vars(a), "pass_tokens_max": 0}), world, rank, None, shapes) for rank in range(world)]
+    assert max(cost(c) for p in free for c, _, _ in p) > 450 and len(free[0]) == 5 and len(plans[0]) == 7   # steps 1 and 3 got one more each
+    ends = [k for k, (_, _, e) in enumerate(plans[0]) if e]
+    steps = [[r["_meta"]["id"] for p in plans for c, _, _ in p[lo:hi + 1] for r in c] for lo, hi in zip([0] + [k + 1 for k in ends], ends)]
+    assert [sorted(s) for s in steps[:2]] == [sorted(r["_meta"]["id"] for r in reqs[:8]), sorted(r["_meta"]["id"] for r in reqs[8:16])]
+    assert sorted(steps[2]) == ["r16", "r17", "r18", "r18"]   # 4 runs for 3 records: the cheapest repeats
+    assert [plans[0][k][1] for k in ends] == [8, 8, 4]         # and counts in the step's normaliser
+    with pytest.raises(ValueError, match="r16"):
+        microbatch_plan(reqs, SimpleNamespace(**{**vars(a), "pass_tokens_max": 400}), world, 0, None, shapes)   # r16 alone: 400 + 4
+    assert microbatch_plan(reqs, a, world, 0) == microbatch_plan(reqs, SimpleNamespace(batch=2, accum=2, length_sort=1, shared_prefix=1), world, 0)
+
+
+def test_pass_tokens_max_refuses_an_attention_only_base(tiny_base, tmp_path, monkeypatch):
+    """pass_tokens measures the row form and the shared prefix, which a hybrid backbone always runs; an attention-only one
+    runs the packed mask (rows_form) for records under ROW_PASS_TOKENS, a cost the ceiling does not see, so kev.train
+    refuses the flag there once the model is built (and trains the hybrid tiny base with it)."""
+    import shutil
+    from transformers import Qwen3_5ForCausalLM, Qwen3_5TextConfig
+    base = tmp_path / "attn"
+    config = Qwen3_5TextConfig.from_pretrained(tiny_base / "base")
+    config.layer_types = ["full_attention", "full_attention"]
+    torch.manual_seed(0)
+    Qwen3_5ForCausalLM(config).to(torch.bfloat16).save_pretrained(base)
+    for f in (tiny_base / "base").iterdir():
+        if "token" in f.name or f.name == "special_tokens_map.json": shutil.copy(f, base / f.name)
+    args = ("--length_sort", "1", "--pass_tokens_max", "160", "--lora", "4", "--max_steps", "1")
+    with pytest.raises(SystemExit, match="needs a hybrid backbone"):
+        train_tiny(tiny_base, tmp_path / "refused", "--base", str(base), *args, monkeypatch=monkeypatch)
+    train_tiny(tiny_base, tmp_path / "hybrid", *args, monkeypatch=monkeypatch)
+    assert (tmp_path / "hybrid" / "head.pt").exists()
+
+
+def test_pass_tokens_max_refusals(monkeypatch, capsys):
+    """The ceiling caps the passes --length_sort plans: refused without it, with --row_budget and with --perm_kl (a
+    permuted copy is a second pass alive at the same time); a study trial the same (kev.experiment.validated_trial), where
+    it is optional and absent from today's config hashes."""
+    from kev.experiment import validated_trial
+    for extra in ((), ("--length_sort", "1", "--perm_kl", "0.1"), ("--length_sort", "1", "--row_budget", "8192")):
+        with pytest.raises(SystemExit):
+            _parse_train(monkeypatch, "--pass_tokens_max", "40960", *extra)
+        assert "--pass_tokens_max caps" in capsys.readouterr().err
+    assert _parse_train(monkeypatch, "--pass_tokens_max", "40960", "--length_sort", "1").pass_tokens_max == 40960
+    manifest = {"base_revisions": {"b": "0" * 40}, "trainable_sources": []}
+    assert validated_trial({"base": "b", "length_sort": 1, "pass_tokens_max": 40960}, manifest)["pass_tokens_max"] == 40960
+    assert "pass_tokens_max" not in validated_trial({"base": "b", "length_sort": 1}, manifest)
+    for bad in ({"pass_tokens_max": 40960}, {"length_sort": 1, "pass_tokens_max": 40960, "perm_kl": 0.1}, {"length_sort": 1, "pass_tokens_max": 0}):
+        with pytest.raises(ValueError):
+            validated_trial({"base": "b", **bad}, manifest)
+
+
 @pytest.mark.parametrize("shared", [0, 1])
 def test_row_budget_changes_passes_not_gradients(tiny_base, shared):
     """--row_budget splits a micro-batch into forward/backward passes (here every record by question, each part carrying
@@ -864,16 +987,26 @@ def _run_train(args, out, ranks=1):
     return done.stdout
 
 
-@pytest.mark.parametrize("ranks", [1, 2])
-def test_resume_is_bit_identical(tiny_base, tmp_path, ranks):
+@pytest.mark.parametrize("ranks,gate", [(1, ()), (2, ()), (1, ("--none_pair_max_state", "10")), (2, ("--none_pair_max_state", "10")),
+                                        # the ceilings just above the costliest tiny record alone (siblings included: 157 padded
+                                        # tokens with every record's own draw, 127 gated), so some steps split
+                                        (1, ("--pass_tokens_max", "160")), (2, ("--none_pair_max_state", "10", "--pass_tokens_max", "128"))])
+def test_resume_is_bit_identical(tiny_base, tmp_path, ranks, gate):
     """A full-weight run that stops after step 3 (its resume point: fp32 masters and moments, scheduler, RNG, data
     position) and continues with --resume 1 ends with the same bits as an uninterrupted run, across an epoch boundary,
-    on one process and on two FSDP2 ranks."""
+    on one process and on two FSDP2 ranks; with --none_pair_max_state too (the ranks deal the same gated pairs), and with
+    --pass_tokens_max (the continuation plans the same extra micro-batches)."""
+    import re
     from safetensors.torch import load_file
     from kev.checkpoint import read_meta
     args = ["--base", str(tiny_base / "base"), "--data", str(tiny_base / "data.jsonl"), "--device", "cpu", "--batch", "2", "--accum", str(2 // ranks),
-            "--lr", "1e-3", "--epochs", "2", "--p_none_pair", "0.5", "--length_sort", "1", *FULL]
-    _run_train(args, tmp_path / "whole", ranks)
+            "--lr", "1e-3", "--epochs", "2", "--p_none_pair", "0.5", "--length_sort", "1", *FULL, *gate]
+    out = _run_train(args, tmp_path / "whole", ranks)
+    assert ("none pairs: " in out) == ("--none_pair_max_state" in gate)
+    if "--pass_tokens_max" in gate:   # the first epoch (where the run stops) has more micro-batches than --accum per step; no pass is over
+        ceiling = int(gate[-1])
+        plans = [tuple(map(int, m)) for m in re.findall(r"plan: (\d+) micro-batches per rank for (\d+) steps \(--accum \d+\); the plan's largest pass (\d+)", out)]
+        assert len(plans) == 2 and plans[0][0] > plans[0][1] * (2 // ranks) and all(largest <= ceiling for _, _, largest in plans), out
     _run_train([*args, "--save_every_steps", "3", "--stop_after", "3"], tmp_path / "split", ranks)
     assert (tmp_path / "split/resume/latest.json").exists() and not (tmp_path / "split/model.safetensors").exists()
     _run_train([*args, "--resume", "1"], tmp_path / "split", ranks)
@@ -1057,6 +1190,13 @@ def test_full_ft_plumbing():
     manifest = {"base_revisions": {"b": "0" * 40}, "trainable_sources": []}
     trial = validated_trial({"base": "b", "full_ft": 1, "weights_dtype": "bf16", "row_budget": 16384, "max_steps": 20, "accum": 128}, manifest)
     assert (trial["full_ft"], trial["row_budget"], trial["max_steps"]) == (1, 16384, 20) and "max_steps" not in validated_trial({"base": "b"}, manifest)
+    from kev.model import MAX_STATE, MAX_TRAIN_STATE
+    gate = MAX_STATE * 8
+    assert validated_trial({"base": "b", "p_none_pair": 0.25, "none_pair_max_state": gate}, manifest)["none_pair_max_state"] == gate
+    assert "none_pair_max_state" not in validated_trial({"base": "b", "p_none_pair": 0.25}, manifest)   # absent: today's recipe and config hash
+    for bad in ({"none_pair_max_state": gate}, {"p_none_pair": 0.25, "none_pair_max_state": 0}, {"p_none_pair": 0.25, "none_pair_max_state": MAX_TRAIN_STATE + 1}):
+        with pytest.raises(ValueError):
+            validated_trial({"base": "b", **bad}, manifest)
     for bad in ({"full_ft": 1}, {"full_ft": 1, "weights_dtype": "bf16", "row_budget": -1}, {"max_steps": 1.5}):
         with pytest.raises(ValueError):
             validated_trial({"base": "b", **bad}, manifest)
@@ -1081,7 +1221,7 @@ def test_full_ft_plumbing():
 
 
 def test_continue_trial_only_continues_the_same_full_weight_run(tmp_path, monkeypatch):
-    """kev.experiment.continue_trial (a Modal retry after a timeout, or modal_app.py::resume) retrains with the trial's own
+    """kev.experiment.continue_trial (the next attempt after a timeout, modal_app.continue_full_trial) retrains with the trial's own
     config, which kev.train continues from its resume point, and scores it; it refuses a LoRA trial, a finished one and
     one whose code changed."""
     import kev.experiment as E
@@ -1191,8 +1331,8 @@ def test_resume_writer_bounds_the_wait_for_peers(tmp_path, monkeypatch):
 
 
 def test_full_weight_trial_failures_are_returned_and_seen(tmp_path, monkeypatch):
-    """A full-weight trial that fails with an error returns {"failed": ...} (Modal retries only what raises, and its
-    retries are for timeouts); kev.rounds.poll_modal raises TrialFailed for it, so the watcher marks it failed."""
+    """A full-weight trial that fails with an error returns {"failed": ...} (only a timeout is continued); kev.rounds.poll_modal
+    raises TrialFailed for it, so the watcher marks it failed."""
     import types
     import modal
     import modal_app
@@ -1206,6 +1346,279 @@ def test_full_weight_trial_failures_are_returned_and_seen(tmp_path, monkeypatch)
         rounds.poll_modal("fc-x")
     monkeypatch.setattr(modal.FunctionCall, "from_id", lambda call_id: types.SimpleNamespace(get=lambda timeout: {"label": "trial-0", "objective": 1.0}))
     assert rounds.poll_modal("fc-x") == "done"
+
+
+class _FakeModalFunction:
+    """modal.Function stand-in for run_full_trial: records with_options and spawn (args, kwargs), returns fc-new-<n>."""
+    def __init__(self, fail=False): self.options, self.spawned, self.fail = [], [], fail
+
+    def with_options(self, **options):
+        self.options.append(options); return self
+
+    def spawn(self, *args, **kwargs):
+        if self.fail: raise ConnectionError("the launcher died mid-spawn")
+        self.spawned.append((args, kwargs)); return SimpleNamespace(object_id=f"fc-new-{len(self.spawned)}")
+
+
+class _Clock:
+    """A clock the fake sleep advances (lease waits and staleness run instantly)."""
+    def __init__(self, t=1_000_000.0): self.t = t
+
+    def __call__(self): return self.t
+
+    def sleep(self, seconds): self.t += seconds
+
+
+def _entries(*calls):
+    return [{"nonce": f"n{i}", "call": c, "at": 0.0} for i, c in enumerate(calls)]
+
+
+def _ledgered_study(tmp_path, monkeypatch, record, status, lease=None, fail=False):
+    """A study with a spawn record, a fake run_full_trial, fake call statuses and the trial's lease (dict or callable)."""
+    import modal_app
+    from kev import rounds
+    from kev.suite import write_json
+    (tmp_path / "runs").mkdir(exist_ok=True)
+    write_json(tmp_path / "runs/s.spawn.json", record)
+    fn = _FakeModalFunction(fail)
+    monkeypatch.setattr(modal_app, "ROOT", tmp_path)
+    monkeypatch.setattr(modal_app, "deployed_run_trial", lambda sources, function: fn if function == "run_full_trial" else pytest.fail(function))
+    monkeypatch.setattr(rounds, "poll_modal", lambda call_id: status[call_id])
+    monkeypatch.setattr(modal_app, "trial_lease", lease if callable(lease) else (lambda study, trial: lease))
+    return modal_app, fn
+
+
+def _record(*calls):
+    return {"name": "s", "calls": {"trial-0": calls[-1]}, "attempts": {"trial-0": _entries(*calls)}, "bound_usd": 987.99, "gpu": "H200:8", "timeout": 28800,
+            "full_ft": True, "modal_retries": 0}
+
+
+ARGS = ("s", "00-trial-0", {"full_ft": 1}, "evals/sft-v2-r22", "evals/v4/transfer-v4", {"kev/x.py": "h"}, "c" * 40)
+
+
+def test_full_weight_studies_spawn_without_modal_retries(tmp_path, monkeypatch):
+    """Modal charged each killed timed-out attempt twice against Retries(2): round 22's trial got two attempts of three. A
+    study now spawns every trial with retries off and writes the attempt ledger its continuations are counted in; each
+    attempt is recorded pending (a nonce) before its spawn, and the nonce goes to the attempt for its lease."""
+    import modal_app
+    from kev.budget import compute_bound
+    from kev.suite import read_json
+    monkeypatch.setattr(modal_app, "ROOT", tmp_path)
+    jobs = [modal_app.Job("s", 0, "trial-0", {"full_ft": 1}, "evals/smoke-v1", {}, "0" * 40, None, None)]
+    monkeypatch.setattr(modal_app, "admit_study", lambda *a: (jobs, 987.99, {"gpu": "H200:8", "timeout": 28800, "retries": 0, "cpu": 16, "memory": (1, 2),
+                                                                              "function": "run_full_trial", "full_ft": True}))
+    fn = _FakeModalFunction()
+    monkeypatch.setattr(modal_app, "deployed_run_trial", lambda sources, function: fn)
+    monkeypatch.setattr(modal_app, "local_source_hashes", lambda: {})
+    modal_app.launch_detached("evals/smoke-v1", "plan.json", "s", "H200:8", timeout=28800)
+    assert fn.options == [{"gpu": "H200:8", "timeout": 28800, "retries": 0, "cpu": 16, "memory": (1, 2)}]
+    record = read_json(tmp_path / "runs/s.spawn.json")
+    [entry] = record["attempts"]["trial-0"]
+    assert record["calls"] == {"trial-0": "fc-new-1"} and entry["call"] == "fc-new-1" and fn.spawned[0][1] == {"attempt": {"nonce": entry["nonce"], "number": 1}}
+    assert {k: record[k] for k in ("bound_usd", "gpu", "timeout", "full_ft", "modal_retries")} == {"bound_usd": 987.99, "gpu": "H200:8", "timeout": 28800, "full_ft": True, "modal_retries": 0}
+    assert compute_bound("H200:8", 28800, 1, True) == pytest.approx(987.99, abs=0.01)   # the three attempts the ledger allows
+    (tmp_path / "runs/s.spawn.json").unlink(); fn.fail = True   # the launcher dies inside the spawn: the attempt is on record, pending
+    with pytest.raises(ConnectionError): modal_app.launch_detached("evals/smoke-v1", "plan.json", "s", "H200:8", timeout=28800)
+    record = read_json(tmp_path / "runs/s.spawn.json")
+    assert record["calls"] == {"trial-0": None} and record["attempts"]["trial-0"][0]["call"] is None and record["attempts"]["trial-0"][0]["nonce"]
+
+
+def test_admit_study_turns_modal_retries_off(tmp_path, monkeypatch):
+    import kev.experiment
+    import modal_app
+    monkeypatch.setattr(kev.experiment, "load_plan", lambda suite, path: [{"full_ft": 1, "weights_dtype": "bf16"}])
+    monkeypatch.setattr(modal_app, "ROOT", tmp_path)
+    monkeypatch.setattr(modal_app, "local_git_commit", lambda: "0" * 40)
+    monkeypatch.setattr(modal_app, "local_source_hashes", lambda: {})
+    _, bound, options = modal_app.admit_study("evals/smoke-v1", "plan.json", "s", "H200:8", [], None, 1000, 28800)
+    assert options["retries"] == 0 and options["full_ft"] and options["function"] == "run_full_trial" and bound == pytest.approx(987.99, abs=0.01)
+
+
+def test_continue_full_trial_spawns_counted_attempts_one_at_a_time(tmp_path, monkeypatch):
+    """modal_app.continue_full_trial (resume --trial, which kev.rounds watch runs after a timeout): only a call that ended by
+    a timeout gets a next attempt, with the ledger's GPU and timeout, retries off and a pending entry's nonce; the ledger
+    records it; a running call and a spent budget are refused; a trial without a ledger needs --beyond-bound and is not
+    recorded."""
+    from kev.budget import FULL_FT_RETRIES
+    from kev.suite import read_json
+    status = {"fc-0": "running", "fc-new-1": "timeout", "fc-new-2": "timeout"}
+    modal_app, fn = _ledgered_study(tmp_path, monkeypatch, _record("fc-0"), status)
+    with pytest.raises(SystemExit, match="is running"):
+        modal_app.continue_full_trial(*ARGS)
+    assert fn.spawned == []
+    status["fc-0"] = "timeout"
+    assert modal_app.continue_full_trial(*ARGS) == "fc-new-1"
+    assert fn.options[-1] == {"gpu": "H200:8", "cpu": 16, "memory": (409600, 471040), "timeout": 28800, "retries": 0}
+    args, kwargs = fn.spawned[-1]
+    ledger = read_json(tmp_path / "runs/s.spawn.json")
+    assert args == ("s", 0, "trial-0", {"full_ft": 1}, "evals/sft-v2-r22", {"kev/x.py": "h"}, "c" * 40, None, "evals/v4/transfer-v4")
+    assert kwargs == {"attempt": {"nonce": ledger["attempts"]["trial-0"][-1]["nonce"], "number": 2}}
+    assert modal_app.continue_full_trial(*ARGS) == "fc-new-2"
+    ledger = read_json(tmp_path / "runs/s.spawn.json")
+    assert ledger["calls"]["trial-0"] == "fc-new-2" and [e["call"] for e in ledger["attempts"]["trial-0"]] == ["fc-0", "fc-new-1", "fc-new-2"] == ["fc-0", "fc-new-1", "fc-new-2"][:1 + FULL_FT_RETRIES]
+    with pytest.raises(SystemExit, match="3 of 3 attempts used"):
+        modal_app.continue_full_trial(*ARGS)
+    assert len(fn.spawned) == 2
+    legacy = {"name": "s", "calls": {"trial-0": "fc-0"}, "bound_usd": 987.99, "timeout": 28800}   # round 22's record: Modal retried its calls
+    modal_app, fn = _ledgered_study(tmp_path, monkeypatch, legacy, {"fc-0": "timeout"})
+    with pytest.raises(SystemExit, match="no attempt ledger"):
+        modal_app.continue_full_trial(*ARGS)
+    assert modal_app.continue_full_trial(*ARGS, beyond_bound=("H200:8", 28800)) == "fc-new-1"
+    assert read_json(tmp_path / "runs/s.spawn.json") == legacy   # outside the ledger: not recorded as if it were bounded
+
+
+def test_continue_full_trial_records_the_attempt_before_its_spawn(tmp_path, monkeypatch):
+    """Review B1: a crash between the spawn and the record left an unrecorded live attempt. The entry is now written first;
+    a launcher that dies inside the spawn leaves it pending, and the next continuation refuses while it may still start."""
+    from kev.suite import read_json
+    clock = _Clock()
+    modal_app, fn = _ledgered_study(tmp_path, monkeypatch, _record("fc-0"), {"fc-0": "timeout"}, fail=True)
+    with pytest.raises(ConnectionError):
+        modal_app.continue_full_trial(*ARGS, now=clock, sleep=clock.sleep)
+    entries = read_json(tmp_path / "runs/s.spawn.json")["attempts"]["trial-0"]
+    assert len(entries) == 2 and entries[-1]["call"] is None and entries[-1]["at"] == clock.t
+    fn.fail = False
+    with pytest.raises(SystemExit, match="without a recorded call"):
+        modal_app.continue_full_trial(*ARGS, now=clock, sleep=clock.sleep)
+    assert fn.spawned == []
+
+
+def test_a_pending_attempt_is_adopted_from_its_lease_or_abandoned_once_stale(tmp_path, monkeypatch):
+    """A pending entry whose container started names its call in the lease (adopted: the watcher then polls it, nothing is
+    spawned while it runs); one that never took the lease within LEASE_STALE is counted as abandoned and the next attempt
+    goes ahead."""
+    from kev.budget import LEASE_STALE
+    from kev.suite import read_json
+    clock = _Clock()
+    record = _record("fc-0", None); record["attempts"]["trial-0"][-1]["at"] = clock.t; record["calls"]["trial-0"] = "fc-0"
+    live = {"nonce": "n1", "attempt": 2, "call_id": "fc-orphan", "started": clock.t, "heartbeat": clock.t, "ended": None}
+    modal_app, fn = _ledgered_study(tmp_path, monkeypatch, record, {"fc-0": "timeout", "fc-orphan": "running"}, lease=live)
+    with pytest.raises(SystemExit, match="fc-orphan is running"):
+        modal_app.continue_full_trial(*ARGS, now=clock, sleep=clock.sleep)
+    ledger = read_json(tmp_path / "runs/s.spawn.json")
+    assert ledger["calls"]["trial-0"] == "fc-orphan" and ledger["attempts"]["trial-0"][-1]["call"] == "fc-orphan" and fn.spawned == []
+    modal_app, fn = _ledgered_study(tmp_path, monkeypatch, record, {"fc-0": "timeout"}, lease=None)   # it never started
+    with pytest.raises(SystemExit, match="without a recorded call"):
+        modal_app.continue_full_trial(*ARGS, now=clock, sleep=clock.sleep)
+    clock.sleep(LEASE_STALE)
+    assert modal_app.continue_full_trial(*ARGS, now=clock, sleep=clock.sleep) == "fc-new-1"
+    entries = read_json(tmp_path / "runs/s.spawn.json")["attempts"]["trial-0"]
+    assert entries[1]["abandoned"] and entries[2]["call"] == "fc-new-1" and fn.spawned[0][1]["attempt"]["number"] == 3   # the abandoned one still counts
+
+
+def test_continue_full_trial_waits_for_the_old_containers_lease(tmp_path, monkeypatch):
+    """Review B2: a timed-out container keeps running (and committing) for its cancellation grace. The continuation waits,
+    bounded, until the lease is ended or stale; a lease that stays fresh past the wait is a refusal."""
+    from kev.budget import LEASE_STALE
+    clock = _Clock()
+    beat = {"t": clock.t}
+    lease = lambda study, trial: {"nonce": "n0", "attempt": 1, "call_id": "fc-0", "started": 0.0, "heartbeat": beat["t"], "ended": None}
+    modal_app, fn = _ledgered_study(tmp_path, monkeypatch, _record("fc-0"), {"fc-0": "timeout"}, lease=lease)
+    assert modal_app.continue_full_trial(*ARGS, now=clock, sleep=clock.sleep) == "fc-new-1"   # the heartbeats stopped: it waited them out
+    assert clock.t - beat["t"] >= LEASE_STALE
+    modal_app, fn = _ledgered_study(tmp_path, monkeypatch, _record("fc-0"), {"fc-0": "timeout"}, lease=lease)
+    def still_beating(seconds): clock.sleep(seconds); beat["t"] = clock.t   # a container that is alive
+    beat["t"] = clock.t
+    with pytest.raises(SystemExit, match="still fresh"):
+        modal_app.continue_full_trial(*ARGS, now=clock, sleep=still_beating)
+    assert fn.spawned == []
+    ended = lambda study, trial: {"nonce": "n0", "attempt": 1, "call_id": "fc-0", "started": 0.0, "heartbeat": clock.t, "ended": clock.t}
+    modal_app, fn = _ledgered_study(tmp_path, monkeypatch, _record("fc-0"), {"fc-0": "timeout"}, lease=ended)
+    start = clock.t
+    assert modal_app.continue_full_trial(*ARGS, now=clock, sleep=clock.sleep) == "fc-new-1" and clock.t == start   # ended cleanly: no wait
+
+
+def test_continue_full_trial_refuses_a_call_that_did_not_time_out(tmp_path, monkeypatch):
+    modal_app, fn = _ledgered_study(tmp_path, monkeypatch, _record("fc-0"), {})
+    from kev import rounds
+    def failed(call_id): raise RuntimeError("CUDA out of memory")
+    def offline(call_id): raise ConnectionResetError()
+    monkeypatch.setattr(rounds, "poll_modal", failed)
+    with pytest.raises(SystemExit, match=r"is failed \(RuntimeError\)"):
+        modal_app.continue_full_trial(*ARGS)
+    monkeypatch.setattr(rounds, "poll_modal", offline)   # review N2: this machine's network is not the trial failing
+    with pytest.raises(SystemExit, match=r"is unreachable \(ConnectionResetError\)"):
+        modal_app.continue_full_trial(*ARGS)
+    monkeypatch.setattr(rounds, "poll_modal", lambda call_id: "done")
+    with pytest.raises(SystemExit, match="is done"):
+        modal_app.continue_full_trial(*ARGS)
+    monkeypatch.setattr(rounds, "poll_modal", lambda call_id: "refused")   # a refused call never started: it is continued
+    assert modal_app.continue_full_trial(*ARGS) == "fc-new-1"
+
+
+class _FakeVolume:
+    """The kev-leases volume as two containers see it: a shared committed dict of files; reload() copies it into this
+    container's view (a directory), commit() copies the view back. `others` runs before each reload (another container)."""
+    def __init__(self, root, shared, others=()):
+        self.root, self.shared, self.others, self.commits = Path(root), shared, list(others), 0
+
+    def reload(self):
+        for step in self.others: step(self.shared)
+        for path, text in self.shared.items():
+            (self.root / path).parent.mkdir(parents=True, exist_ok=True); (self.root / path).write_text(text, encoding="utf-8")
+
+    def commit(self):
+        self.commits += 1
+        for p in self.root.rglob("*.json"): self.shared[str(p.relative_to(self.root))] = p.read_text(encoding="utf-8")
+
+
+def _lease(tmp_path, shared, clock, nonce, others=()):
+    import modal_app
+    volume = _FakeVolume(tmp_path / nonce, shared, others)
+    return modal_app.TrialLease(tmp_path / nonce / "s/00-trial-0/attempt.json", volume, {"nonce": nonce, "number": 2}, f"fc-{nonce}", clock=clock, sleep=clock.sleep), volume
+
+
+def test_an_attempt_refuses_while_another_attempts_lease_is_fresh(tmp_path):
+    """Review B2, the container side: an attempt that starts while another attempt's heartbeat is younger than LEASE_STALE
+    (the old container in its cancellation grace, or an unrecorded spawn) refuses; a stale or ended lease is taken over."""
+    import json
+    from kev.budget import LEASE_STALE, lease_state
+    clock, shared = _Clock(), {}
+    old, old_volume = _lease(tmp_path, shared, clock, "old")
+    assert old.acquire() is None and old_volume.commits == 1
+    assert json.loads(shared["s/00-trial-0/attempt.json"])["nonce"] == "old"
+    clock.sleep(300); assert old.beat()
+    new, new_volume = _lease(tmp_path, shared, clock, "new")
+    reason = new.acquire()
+    assert reason and "attempt 2 (call fc-old) holds the trial" in reason and new_volume.commits == 0   # nothing written
+    clock.sleep(LEASE_STALE)   # no heartbeat since: the old container is gone
+    assert lease_state(json.loads(shared["s/00-trial-0/attempt.json"]), clock()) == "stale"
+    assert new.acquire() is None
+    record = json.loads(shared["s/00-trial-0/attempt.json"])
+    assert record["nonce"] == "new" and record["previous"]["nonce"] == "old"
+    assert not old.beat()   # the old one, should it wake, does not overwrite the new lease
+    new.end()
+    assert lease_state(json.loads(shared["s/00-trial-0/attempt.json"]), clock()) == "ended"
+    third, _ = _lease(tmp_path, shared, clock, "third")
+    assert third.acquire() is None   # an ended lease needs no wait
+
+
+def test_two_attempts_claiming_at_once_one_loses(tmp_path):
+    import json
+    clock, shared = _Clock(), {}
+    def rival(shared):   # another container writes its claim between our write and our read-back
+        if "s/00-trial-0/attempt.json" in shared and json.loads(shared["s/00-trial-0/attempt.json"])["nonce"] == "a":
+            shared["s/00-trial-0/attempt.json"] = json.dumps({"nonce": "b", "attempt": 2, "call_id": "fc-b", "started": clock(), "heartbeat": clock(), "ended": None})
+    a, _ = _lease(tmp_path, shared, clock, "a", others=[rival])
+    assert "lost the lease" in a.acquire()
+
+
+def test_a_refused_attempt_touches_nothing(tmp_path, monkeypatch):
+    """trial(): a full-weight attempt that finds a fresh lease returns {"refused": ...} before it looks at the trial: no
+    failed.json, no run, and poll_modal reads it as "refused" (continued, never a failure)."""
+    import json
+    import modal_app
+    from kev.experiment import source_hashes
+    clock = _Clock()
+    lease = tmp_path / "leases/s/00-trial-0/attempt.json"; lease.parent.mkdir(parents=True)
+    lease.write_text(json.dumps({"nonce": "old", "attempt": 1, "call_id": "fc-old", "started": clock(), "heartbeat": time.time(), "ended": None}), encoding="utf-8")
+    monkeypatch.setattr(modal_app, "LEASES_MOUNT", str(tmp_path / "leases"))
+    monkeypatch.setattr(modal_app, "RUNS_MOUNT", str(tmp_path / "runs"))
+    monkeypatch.setattr(modal_app, "leases_volume", SimpleNamespace(reload=lambda: None, commit=lambda: pytest.fail("wrote the lease")))
+    monkeypatch.setattr(modal_app, "run_attempt", lambda *a: pytest.fail("ran"))
+    monkeypatch.setattr(modal_app.modal, "current_function_call_id", lambda: "fc-new")
+    result = modal_app.trial("s", 0, "trial-0", {"full_ft": 1}, "suite", source_hashes(), "c" * 40, attempt={"nonce": "new", "number": 2})
+    assert result["label"] == "trial-0" and "holds the trial" in result["refused"] and not (tmp_path / "runs").exists()
 
 
 class _ScriptedStop:
@@ -1232,7 +1645,6 @@ def test_resume_points_are_committed_as_they_complete(tmp_path, monkeypatch, cap
     watcher.poll()
     assert commits == []   # nothing new
     write_json(tmp_path / "latest.json", {"dir": "step-0000005", "step": 5})
-
     watcher.poll()
     assert commits == [0] and "resume point 5 NOT committed" in capsys.readouterr().out
     watcher.poll()
@@ -1513,8 +1925,6 @@ def test_jev_counts_a_hosted_error_on_an_oversize_request_as_a_refusal(monkeypat
         j = P.JevPredictor("key", count_refusals=True, budget=100)
         with pytest.raises(raised): j(record)
         assert w.lines == lines and j.accounting()["refusals"] == refusals
-
-
 def test_ms_endpoint_env_precedence(monkeypatch):
     """_ms_endpoint matches the ModelScope SDK standard: MODELSCOPE_ENDPOINT > MODELSCOPE_DOMAIN
     (bare domain gets https://) > the public default. An in-cluster cache set via either variable

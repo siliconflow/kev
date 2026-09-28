@@ -129,6 +129,8 @@ It is still a sub-1B model. On the development splits it trails Jev everywhere i
 
 Jev's devtools-v1 figure is over all 1,074 development questions; Kev's rows drop the reused CodeReviewer id (2 questions), as on the Kev-4B card.
 
+The scienthoon suite was retired as a Kev evaluation on 2026-09-27: its tickets are templated, and one of its three questions (`priority`) depends on an organisational rule that the text does not state (`PLAN.md`). The scienthoon figures on this card are kept as the record of how the release was decided.
+
 Paired against the `night2-du` version (record-clustered bootstrap, 95 %): documents development +21.0 pp [+18.0, +24.0], locked test +24.4 [+21.3, +27.6], private held-out +23.2 [+19.9, +26.4]; hard-v1 development +24.4 [+20.9, +28.0], test +26.9 [+23.4, +30.4]; devtools-v1 development +11.5 [+8.9, +14.0], test +16.4 [+13.1, +19.4]; SemIf +2.1 [−3.5, +7.6]; scienthoon +1.4 [−1.5, +4.1]; WANLI-v2 +3.2 [+1.7, +4.8]; TypeSafe −3.4 [−13.5, +5.0]; locked out-of-domain test +1.2 [−1.1, +3.7].
 
 **JevBench public items, report only.** `runs/jevbench-public/kev-08b-r15` holds the unchanged harness run against this checkpoint. Over all 231 public items accuracy goes 0.597 → 0.636, most of it on the standard tier: 0.736 → 0.819, with 6 items newly right and none newly wrong. On the hard tier it goes 0.333 → 0.360: paired over the 111 hard items that is +2.7 pp [−1.8, +7.2], with 5 newly right and 2 newly wrong (exact McNemar p = 0.453). Hard-tier ECE falls 0.245 → 0.181. For comparison, Kev-4B's skills delta gained +9.0 pp on the same hard items. The skill data moved the 0.8B far less out of distribution than in distribution.

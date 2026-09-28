@@ -77,6 +77,8 @@ Kev-27B is a **decision model**: one document (the *state*) and a set of typed q
 | WANLI-v2 (1,002 NLI pairs) | 0.745 | 0.740 | – |
 | TypeSafe (89 answered rows) | 0.865 | 0.820 | – |
 
+The scienthoon suite was retired as a Kev evaluation on 2026-09-27: its tickets are templated, and one of its three questions (`priority`) depends on an organisational rule that the text does not state (`PLAN.md`). The scienthoon figures on this card are kept as the record of how the release was decided.
+
 Paired against Kev-9B (record-clustered bootstrap, 95 %): transfer-r6 test +2.1 pp [+0.3, +3.8]; longstate-v3 buried questions +27.7 [+23.1, +32.5]; SemIf +6.2 [+2.8, +10.4]; scienthoon +4.1 [+1.9, +6.3]; real documents +2.9 [+0.7, +5.3]; WANLI-v2 +0.5 [−1.6, +2.6].
 
 How it was selected: two seeds were trained under a rule registered before any training (`PLAN_27b.md`, B1 v2, at tag `research-archive-2026-09-24`): development criteria (transfer-v4 ≥ 0.842, MMLU-Pro ≥ 0.65, unknowable share ≤ 0.05, held-out pairs ≥ 0.75, long states ≥ Kev-9B + 10 pp, pooled externals ≥ Kev-9B), then one read of two fresh panels against Kev-9B, then one locked read (≥ 0.862, Brier ≤ 0.237). Seed 1 missed MMLU-Pro (0.630); seed 2 passed every step and is this checkpoint. Three earlier 27B trials (round 6) had missed the development rule by less than a point; their record is in `PLAN.md` at tag `research-archive-2026-09-24` ("Round 6").

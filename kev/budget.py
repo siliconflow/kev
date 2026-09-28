@@ -17,13 +17,31 @@ FULL_FT_SHARDED = 16, (409600, 471040)         # 400 / 460 GiB
 FULL_FT_DISK = 1048576                         # MiB of ephemeral disk (1 TiB); Modal bills disk as memory at 20:1
 MAX_SNAPSHOTS = 8                              # snapshots one full-weight run may plan (fractions + every-N steps)
 RESUME_POINT_GB, CHECKPOINT_GB = 307, 51.2     # a 27B's resume point (fp32 masters + moments) and bf16 checkpoint, the disk math above
-# A study's limits. Full-weight trials may run to Modal's 24 h cap per attempt and are retried after a timeout (each
-# retry continues from the trial's last resume point, kev.experiment.continue_trial), so their bound counts every attempt
-# and their budget cap covers one 8 x H200 day (a LoRA study keeps the $250 cap).
+# A study's limits. Full-weight trials may run to Modal's 24 h cap per attempt and are continued after a timeout (each
+# continuation is a new call that resumes from the trial's last resume point, kev.experiment.continue_trial), so their
+# bound counts every attempt and their budget cap covers one 8 x H200 day (a LoRA study keeps the $250 cap).
 MAX_TIMEOUT = {False: 28800, True: 86400}   # a 24 h attempt fits the $1,000 cap on one H200 (3 x 24 h x ~$11/h); on
-                                             # H200:8 (~$41/h) the cap allows ~8 h attempts, a day with the retries
+                                             # H200:8 (~$41/h) the cap allows ~8 h attempts, a day with the continuations
 MAX_BUDGET = {False: 250, True: 1000}
+# Continuations per full-weight trial: at most 1 + FULL_FT_RETRIES calls, each one attempt. They are spawned by
+# `kev.rounds watch` (or modal_app.py::resume --trial), not by Modal: calls go out with Modal's retries off, because Modal
+# charges a timed-out attempt twice when the container then outlives the 30 s cancellation grace (a timeout and a killed
+# task; a full-weight trial always does, its trainer and volume commits run on), and the retry the kill triggers can start
+# while another attempt of the same input is running. Round 22's trial got two 8 h attempts of the three its bound
+# counted (scripts/modal_retry_probe.py: Retries(2) and killed attempts -> 2 attempts; retries=0 -> exactly 1).
 FULL_FT_RETRIES = 2
+# The attempt lease: a running full-weight attempt holds <study>/<trial>/attempt.json on the kev-leases volume
+# (modal_app.TrialLease), refreshed every LEASE_HEARTBEAT seconds from a thread of its own and marked ended when the
+# attempt exits cleanly. A lease that is not ended and whose heartbeat is younger than LEASE_STALE belongs to a container
+# that may still be writing the trial: a new attempt refuses to start and continue_full_trial waits. LEASE_STALE = 900 s:
+#   30 s  Modal's cancellation grace after a timeout, during which the old container keeps running (and committing)
+# + 523 s the longest resume-point commit of the runs volume seen (round 22: 206-523 s); the heartbeat does not wait for it,
+#         but a commit the old container started just before its kill is covered even if a heartbeat had waited behind it
+# + 60 s  one heartbeat interval (the last heartbeat can be that old when the container dies)
+# = 613 s, rounded up to 15 min for clock skew between the containers and the launcher (seconds, NTP) and a few failed
+# heartbeat commits in a row: a live attempt is mistaken for a dead one only after 15 heartbeats fail in a row.
+# The cost is a continuation that starts up to ~15 min after a killed attempt, against 8 h attempts.
+LEASE_HEARTBEAT, LEASE_STALE = 60, 900
 CPU_HOURLY, MEMORY_GIB_HOURLY = 0.04730, 0.008   # USD per core hour and per GiB hour (memory billed at the limit here)
 # Checkpoint interpolation (scripts/interpolate_checkpoint.py, modal_app.py::interpolate): CPU only. The base backbone stays
 # resident in bf16 (51 GB for Qwen3.8-27B, 25.6B parameters; loading it through transformers also stages the 2.5 GB LM
@@ -68,3 +86,22 @@ def compute_bound(gpu, timeout, trials, full_ft=False):
     """The most `trials` containers can cost if each runs to `timeout` seconds, counting a full-weight trial's retries."""
     if timeout <= 0 or trials < 1: raise ValueError("invalid GPU, timeout, or trial count")
     return hourly_rate(gpu, full_ft) * timeout / 3600 * trials * (1 + FULL_FT_RETRIES if full_ft else 1)
+
+
+def trial_attempts(spawn, label):
+    """(attempts used, attempts allowed) for one trial of a spawn record (runs/<study>.spawn.json, modal_app.launch_detached).
+    A record written with Modal's retries off ("modal_retries": 0) keeps each trial's attempts in `attempts`, one per entry
+    ({"nonce", "call", ...}; a pending entry, written before its spawn, and an abandoned one count too, since their call
+    may run), and allows compute_bound's count: 1 + FULL_FT_RETRIES for a full-weight trial, 1 otherwise. An older record
+    (Modal retried each call, and nothing local says how many attempts ran) is taken to have used them all."""
+    allowed = 1 + FULL_FT_RETRIES if spawn.get("full_ft") else 1
+    if spawn.get("modal_retries") != 0: return allowed, allowed
+    return max(1, len(spawn.get("attempts", {}).get(label) or [])), allowed
+
+
+def lease_state(lease, now):
+    """'none' (no lease), 'ended' (its attempt exited cleanly), 'fresh' (a heartbeat younger than LEASE_STALE: its container
+    may still be writing the trial) or 'stale' (no heartbeat for LEASE_STALE: the container is gone)."""
+    if not lease: return "none"
+    if lease.get("ended"): return "ended"
+    return "fresh" if now - lease["heartbeat"] < LEASE_STALE else "stale"

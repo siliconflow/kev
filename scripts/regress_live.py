@@ -118,9 +118,18 @@ if code == 200:
     check("kev-latest listed", "kev-latest" in names, str(names))
 
 print("\n=== 4. Validation: invalid request -> 422 ===")
-code, body, ms = call("POST", "/v1/systemone", {"state": "x", "model": "kev-latest",
-                                                "questions": {"q": {"type": "score", "instructions": "?", "criteria": ["only-one"]}}})
-check("score with 1 level rejected 422", code == 422, f"HTTP {code}: {str(body)[:120]}")
+# Note: since upstream #45 (came in with the a68d776 merge, live since 6c92662) a single-level
+# score is VALID: 200 with probabilities {"0": 1.0} (tests/test_api.py). The old 422 check is
+# inverted; empty criteria remains invalid.
+code, body, ms = call("POST", "/v1/systemone", {  # single level: now valid per TypeSafe SDK contract
+    "state": "x", "model": "kev-latest",
+    "questions": {"q": {"type": "score", "instructions": "?", "criteria": ["only-one"]}}})
+check("score with 1 level accepted 200 (contract since #45)", code == 200, f"HTTP {code}: {str(body)[:120]}")
+
+code, body, ms = call("POST", "/v1/systemone", {  # empty criteria stays invalid
+    "state": "x", "model": "kev-latest",
+    "questions": {"q": {"type": "score", "instructions": "?", "criteria": []}}})
+check("score with 0 levels rejected 422", code == 422, f"HTTP {code}: {str(body)[:120]}")
 
 code, body, ms = call("POST", "/v1/systemone", {"state": "x", "model": "kev-latest", "questions": {}})
 check("empty questions rejected 422", code == 422, f"HTTP {code}: {str(body)[:120]}")

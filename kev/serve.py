@@ -437,7 +437,7 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--run", default="runs/kev")
     ap.add_argument("--fallback", default="runs/smoke")
-    ap.add_argument("--host", default="0.0.0.0", help="interface to bind; 0.0.0.0 (the container/K8s default: probes and the gateway reach the pod IP) or 127.0.0.1 for local use")
+    ap.add_argument("--host", default="0.0.0.0", help="interface to bind; 0.0.0.0 serves beyond this machine (a container, a VM behind a proxy)")
     ap.add_argument("--port", type=int, default=8008)
     a = ap.parse_args()
     run = a.run if is_hub_id(a.run) or os.path.exists(f"{a.run}/head.pt") else a.fallback
@@ -453,15 +453,17 @@ def main():
     ck = Checkpoint(run)
     tok, model = ck.load(dev, opts)
     if fused_default and not opts.fused and model.hybrid: print("fused Qwen3.5 kernels off: install the flash-linear-attention version kev/fused_qwen35.py pins (FLA_VERSION) to turn them on")
-    app.state.server = Server(ck, tok, model, dev)
+    # Image channel (opt-in, KEV_VISION=1): attach the base's untrained vision tower to the
+    # loaded model. base/base_revision come from the checkpoint's head.pt meta; on the
+    # ModelScope path (KEV_BASE_HUB=modelscope, a deploy-pack switch resolved inside
+    # Checkpoint) the revision is a local dir and does not apply.
     if os.environ.get("KEV_VISION") == "1":
         from .vision import attach
-        app.state.server.vision = attach(model, tok, ck.meta.base,
-                                         ck.meta.base_revision if os.environ.get("KEV_BASE_HUB") != "modelscope" else None)
+        vision = attach(model, tok, ck.meta.base,
+                        None if (isinstance(ck.meta.base, str) and os.path.isdir(ck.meta.base)) else ck.meta.base_revision)
     else:
-        app.state.server.vision = None
-    print(f"serving {ck.requested} ({ck.path}) on {dev} via {model.backend} ({model.dtype}) :{a.port}")   # /v1/models reports the run as given, not the resolved cache path
-
+        vision = None
+    app.state.server = Server(ck, tok, model, dev, vision=vision)
     print(f"serving {ck.requested} ({ck.path}) on {dev} via {model.backend} ({model.dtype}) {a.host}:{a.port}")   # /v1/models reports the run as given, not the resolved cache path
     import uvicorn
     uvicorn.run(app, host=a.host, port=a.port)

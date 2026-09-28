@@ -24,7 +24,22 @@ Title Case sections, API tables, Authors + License); model cards are formal.
     `--anchor/--anchor_w/--anchor_sources` (KL toward the frozen base's zero-shot answers, from `kev.anchors`),
     `--label_smoothing/--brier_w/--focal_gamma` (the round-3 calibration screen; all default 0 and none is in a release).
   - augmentation / mix: `--p_none`, `--p_none_distract`, `--p_distract`, `--p_none_pair`, `--synthetic_repeat`,
-    `--public_frac`, `--train_sources`, `--holdout`.
+    `--public_frac`, `--train_sources`, `--holdout`. `--none_pair_max_state N` (plan key `none_pair_max_state`, needs
+    `--p_none_pair > 0`; absent = every record may pair, today's recipes byte for byte): only records whose state has at
+    most N tokens (encode's count, `<state>` included) emit none pairs, drawn from each record's own stream
+    (`kev.train.none_pairs`), and `--length_sort` counts their two siblings (the state twice more) in the record's cost, so a
+    pass cannot outgrow the cost its run was cut to. A pair repeats the whole state, so on long states it tripled a pass
+    past the GPU (round 21's projection). `--pass_tokens_max N` (plan key `pass_tokens_max`, needs `--length_sort 1` and a hybrid
+    base, whose passes are always rows or a shared prefix, what `pass_tokens` measures (an attention-only base runs the packed
+    mask, refused once the model is built); not with `--row_budget` or `--perm_kl`; absent = today's plan byte for byte): the plan cuts each step on exact token shapes
+    (`kev.train.plan_shapes`: every variant the epoch trains, siblings included, branches encoded without their state, the
+    state counted once by `state_token_counts`) instead of characters, and a step whose costliest pass is over N padded
+    tokens (`pass_tokens`) gets one more micro-batch per rank until none is (every rank the same count; a record over N
+    alone is refused before the first step). Round 21 ran out of memory at its 62nd step on a characters plan: a
+    token-dense PII state set the padding of 16 states at 5,877 tokens, a 98.7k-token pass costed in characters like its
+    slot's other passes of 33-50k tokens.
+    27B, 8 H200: N = 40,960 peaks at 101.6-108.2 GiB per GPU on the worst passes the plan allows
+    (`scripts/sft_probe.py --passes`, `runs/sft-probe/r22-ceiling-27b-8xh200`).
   - architecture / precision: `--lora`, `--lora_targets all|dense|attn|qv` (`dense` freezes the DeltaNet projections on
     hybrid bases), `--head_dim`, `--option_isolation`, `--special_embeddings`, `--dtype` (autocast) vs `--weights_dtype`
     (frozen backbone; bf16 is required by the fused MoE experts of 35B-A3B).
@@ -74,8 +89,13 @@ Title Case sections, API tables, Authors + License); model cards are formal.
   `results.jsonl` ledger, `--transfer <suite>` for an OOD read per trial, `--aggregate` to rank an existing directory,
   `--resume` for interrupted trials (evaluation; unfinished full-weight trials continue training from their resume point),
   `--wait-pid` to queue behind a training job). A full-weight trial runs under torchrun on every GPU of its container,
-  writes a resume point every `experiment.RESUME_MINUTES` and is retried by Modal after a timeout (`kev.budget`:
-  `FULL_FT_RETRIES`, up to 24 h per attempt, $1,000 per study; the bound counts every attempt); each retry continues.
+  writes a resume point every `experiment.RESUME_MINUTES` and is continued after a timeout by `kev.rounds watch`, not by
+  Modal (`kev.budget`: `FULL_FT_RETRIES` continuations, up to 24 h per attempt, $1,000 per study; the bound counts every
+  attempt): trials spawn with Modal's retries off, because Modal charged each killed timed-out attempt twice and gave
+  round 22's trial two of its three attempts (`scripts/modal_retry_probe.py`); `runs/<study>.spawn.json` is the attempt
+  ledger (`calls` = each trial's current call, `attempts` = all of them), and `modal_app.py::resume --trial <label>`
+  (`modal_app.continue_full_trial`, what `watch` runs) spawns the next attempt only after a call ended by a timeout,
+  within the ledger, with the study's GPU and timeout; `--beyond-bound` continues a trial without a ledger, uncounted. Each attempt is written to the ledger pending (a nonce) before its spawn; a pending entry blocks continuations until its call is adopted from the lease or it is `kev.budget.LEASE_STALE` old. The lease: every full-weight attempt holds `<study>/<trial>/attempt.json` on the `kev-leases` volume (`modal_app.TrialLease`: nonce, attempt, call id, heartbeat every `LEASE_HEARTBEAT` s from its own thread, marked ended on a clean exit); an attempt that finds another attempt's lease fresher than `LEASE_STALE` (900 s) returns `{"refused": ...}` without touching the trial, and `continue_full_trial` waits (bounded) for the old lease to end or go stale, so a continuation starts only after the old container is gone.
   It also keeps snapshots at `experiment.SNAPSHOT_FRACTIONS` (0.25, 0.5, 0.75 of its optimizer steps) in
   `<trial>/snapshots/step-<N>/checkpoint` (plan keys `snapshot_fractions` (a string, `"none"` for none) and
   `snapshot_every_steps`, which needs `max_steps` so `validated_trial` can check `MAX_SNAPSHOTS`; neither changes the
@@ -88,8 +108,8 @@ Title Case sections, API tables, Authors + License); model cards are formal.
   `modal_app.py::mirror_snapshots --study X [--paths /runs/...checkpoint] [--repo jaredpalmer/kev-snapshots] [--dry-run]`
   (re)uploads existing ones (a 27B checkpoint is ~51 GB; ask before mirroring those).
   The container commits the runs volume after every completed resume point and snapshot (a timeout skips the final commit); an attempt
-  that fails with an error writes `failed.json` and returns `{"failed": ...}` instead of raising, so it is not retried
-  (`kev.rounds.poll_modal` reports it as a failure). `modal_app.py::pull` (and `kev.rounds watch`) leaves full-weight
+  that fails with an error writes `failed.json` and returns `{"failed": ...}` instead of raising, so it is never continued
+  (`kev.rounds.poll_modal` reports it as a failure; a timeout it reports as `"timeout"`). `modal_app.py::pull` (and `kev.rounds watch`) leaves full-weight
   shards (`model*.safetensors` directly in a `checkpoint/` directory: final and snapshots) and resume points on the volume (`--weights` copies them);
   read a snapshot like any checkpoint: `::benchmarks --jobs "/runs/<study>/<trial>/snapshots/step-<N>/checkpoint@<suite>@<name>"`.
 - Rounds (every registered experiment since round 5): one spec per round, `experiments/rounds/r<N>.json`, committed before any
@@ -98,7 +118,7 @@ Title Case sections, API tables, Authors + License); model cards are formal.
   (panels of reads, bootstrapped metrics, criteria on paired bounds, rank) and confirmation stages. `kev/rounds.py` is the
   one engine: `uv run python -m kev.rounds {validate,launch,watch,launch-reads,readout,confirm} <spec>`; `watch` polls the
   spawned trials (state in `runs/<study>.watch.json`, resumable; DNS/connection errors retried, a trial's own exception is a
-  failure), pulls each finished trial's study (one pull per study at a time, `modal_app.pull_lock`) and launches its reads once (per-arm lock; the
+  failure, a timed-out full-weight trial gets its next attempt within the spawn record's ledger), pulls each finished trial's study (one pull per study at a time, `modal_app.pull_lock`) and launches its reads once (per-arm lock; the
   launch intent is written first to `runs/r<N>-reads-<arm>.json`, and an arm launched within its reads' timeout is not relaunched; a
   finished call that maps to no arm is logged and makes `watch` exit non-zero),
   60 s apart, then writes `runs/r<N>-readout/round<N>.json`; `confirm <spec> --stage <s>` writes `runs/r<N>-verdict/<size>-<s>.json`.
@@ -128,7 +148,9 @@ Title Case sections, API tables, Authors + License); model cards are formal.
   deltas are `kev.rounds.paired` (2,000 resamples, seed 0, micro). Rounds 5-18 are recorded specs (`"archive": "research-archive-2026-09-24"`): their plans, reads, data builders
   and per-round scripts live on that git tag, not on main; `validate` lists what this checkout lacks instead of failing, and
   `launch`/`watch`/`launch-reads` refuse a recorded round (a new round is a new spec, without `archive`, and must have its plans
-  and parents' reads). `tests/test_rounds.py` reproduces the committed read-outs of rounds 5-18 and verdicts of 8/10/11/12/15
+  and parents' reads). A read of a removed suite (`kev.suite.REMOVED_SUITES`: scienthoon-v1, last read by round 22) is listed as
+  archived for rounds up to its `last_round` (with or without `archive`; their read-outs come from the committed rows), refused for any
+  later round, and never launched again (`read_commands`, `load_split`). `tests/test_rounds.py` reproduces the committed read-outs of rounds 5-18 and verdicts of 8/10/11/12/15
   exactly; offline (CI) it runs round 5's read-out, round 15's locked verdict and round 20's six interpolated arms, whose rows are on main; round 19's read-out
   (and round 20's whole read-out) runs where the private dataset is readable (its trials' `sft-v1` development rows: `scripts/private_rows.py`); every other case
   skips unless `KEV_ROUNDS_ROOT` points at a checkout with the archived rows and outputs (the research checkout, or a worktree
@@ -141,8 +163,9 @@ Title Case sections, API tables, Authors + License); model cards are formal.
   Manifests pin dataset + base revisions and the sha256 of every partition. Current: `evals/v7/decision-v7` (the release
   recipe), `evals/v8/decision-v8`, `evals/v4/transfer-v4` and `evals/v9/transfer-v9` (MMLU-Pro, buried states,
   unknowable) for OOD, `evals/round3/{decision-r3,transfer-r3}` (calibration audit; the 1,260-record final panel was
-  read by the 2026-09-22 release confirmation and has been a short-state guard since round 11), `evals/smoke-v1` for tests, plus `evals/external/` (semif-v1, scienthoon-v1, ekzhang-mmlupro-v1, and SemIf's pinned third-party selections wanli-v1 + typesafe-v1 via
-  `scripts/freeze_semif_external.py`; `scripts/compare_typesafe.py` reports equal-case agreement/TVD against the reference and published answers, `--tokenizer` adds accuracy by state length; Kev-9B/4B scored 2026-09-22: WANLI 0.703/0.695 vs Jev 0.758, TypeSafe 0.809/0.856 agreement on 89 answered rows vs 0.891, `runs/kev-*-{wanli,typesafe}-v1`),
+  read by the 2026-09-22 release confirmation and has been a short-state guard since round 11), `evals/smoke-v1` for tests, plus `evals/external/` (semif-v1, ekzhang-mmlupro-v1, and SemIf's pinned third-party selections wanli-v1 + typesafe-v1 via
+  `scripts/freeze_semif_external.py`; `scripts/compare_typesafe.py` reports equal-case agreement/TVD against the reference and published answers, `--tokenizer` adds accuracy by state length; Kev-9B/4B scored 2026-09-22: WANLI 0.703/0.695 vs Jev 0.758, TypeSafe 0.809/0.856 agreement on 89 answered rows vs 0.891, `runs/kev-*-{wanli,typesafe}-v1`; `external/scienthoon-v1` was removed on 2026-09-27, unsound as a gate: `kev.suite.REMOVED_SUITES` refuses a read with the reason, and from round 23
+  the pooled external guard is SemIf + WANLI-v2 + TypeSafe (PLAN.md, standing rules)),
   `evals/night2/` (delta training data, `scripts/build_night2_data.py`), `evals/diagnostics/` (binding-v1), `evals/hard-v1`
   (programmatically labelled skill records in seven families: long policy documents, trade-offs, probability, multi-hop,
   temporal/numeric, judging a proposed answer, missing-fact abstention; `scripts/build_hard_v1.py` + `hard_v1_{common,policy,families,numeric}.py`,
@@ -171,6 +194,21 @@ Title Case sections, API tables, Authors + License); model cards are formal.
   4k-16k buckets on the exact path and its 32k / 64k rows through the long-row rule (> `ROW_PASS_TOKENS`: state once, fused kernels, `kernels: efficient`).
   Read-out `scripts/longdoc_report.py` (`--parity` compares two reads row by row), overlap `scripts/screen_longdoc_v1.py`, serving cost
   `scripts/longdoc_serving.py` (`modal_app.py::script`); results in `runs/longdoc-v1-report/README.md`. Its synthetic part is at ceiling for every system read.
+  `evals/sft-v2` is the extended SFT corpus (private mirror `jaredpalmer/kev-private-train`, manifest only; built by kev-sft `assemble-v2`,
+  `assemble/build_v2.py`): sft-v1 plus the private components tasksource-v1, longify (8k-64k states built from sft-v1 train), longdoc (code-assembled long documents), ood,
+  tone (calm / frustrated / angry minimal pairs), injection, agents, guardrails-pii and guardrails-grounding, each hash-checked against its own manifest
+  (recorded with path, commit and mirror revision under `inputs.private_components`). tasksource-v1's family list stays private: its records carry source
+  `tasksource`. Every record is admitted at 64k states and screened (kev-sft `assemble/screen_v2.py`, the kev-sft screen rule) against every evaluation
+  partition of every frozen Kev suite, the private evaluation mirror, JevBench public and the eval-only suites below; a non-clean `_meta.variant` moves
+  to `_meta.twin` (`kev.benchmark` scores only clean rows). Its calibration/development partitions are held-out items of the training components: in
+  distribution, in-trial screening only. `evals/sft-v2-r21` is the same records with states of at most 32,768 tokens, round 21's training suite (PLAN
+  "Round 21"; one epoch of the 64k corpus does not fit three 8-hour attempts on 8 H200s, so it also caps each
+  of sft-v1's public sources at 1,200 train records and keeps only states up to 8k tokens in calibration/development,
+  the in-distribution screening partitions no rule reads; none pairs gated at 8k, `--none_pair_max_state`). Eval-only suites set aside by its components (private mirror
+  `jaredpalmer/kev-private-evals`, development only, report-only; source names shared with sft-v2's training records, so never a temperature pool):
+  `evals/ood-v2`, `evals/agents-ood-v1`, `evals/guardrails-ood-v1` (PII + grounding + injection). `evals/tasksource-heldout-v1` (development + locked test; 24 whole dataset families held out of tasksource-v1: held-out
+  datasets) publishes hashes and counts only; its family list is in the private kev-sft manifest, so its rows and per-source reports stay in the
+  private dataset (`scripts/private_rows.py`), and with no sources listed it cannot be a temperature pool read.
   `kev.jev --count-refusals` counts HTTP 400/413/422, and a 5xx on a request past 1.5 x Jev's ~32k-token context (the gateway answers oversize with either), as refused.
   Partitions over ~10 MB are not in git; they are mirrored at the Hub dataset `jaredpalmer/kev-suites` (revision pinned
   in `kev/suite.py: SUITES_REVISION`) and `load_split` fetches + verifies them on first use. After freezing a new suite:
@@ -317,8 +355,8 @@ runs / the endpoint / the volumes. Tests: `tests/test_skill_scripts.py`.
 - `kev/publish.py`   run -> Hub repo: adapter, head.pt, tokenizer, trial result/provenance/log, the card as README.md; `--tag`, `--revision`, `--private`
 - `modal_app.py`     every GPU entrypoint: trials, locked tests, probes, benches, anchors, smoke
 - `scripts/`         one-off builders and read-outs: `calibrate_checkpoint.py`, `build_night2_data.py`, `build_binding_diagnostic.py`,
-                     `freeze_{semif,scienthoon,calibration_audit}.py`, `{build,label,freeze}_documents_v*.py`, `calibration_audit.py`, `review_calibration_screen.py`,
-                     `compare_{q35,night2}.py`, `temperature_groups.py`, `base_mmlu_probe.py`, `scienthoon_drift.py` (round 20's scienthoon analysis), `plot_*.py` + `chartstyle.py`, `publish_space.sh`
+                     `freeze_{semif,calibration_audit}.py`, `{build,label,freeze}_documents_v*.py`, `calibration_audit.py`, `review_calibration_screen.py`,
+                     `compare_{q35,night2}.py`, `temperature_groups.py`, `base_mmlu_probe.py`, `plot_*.py` + `chartstyle.py`, `publish_space.sh`
 - `tests/test_api.py` conformance against the docs' example requests + official SDK
 
 ## Notes
@@ -349,18 +387,16 @@ runs / the endpoint / the volumes. Tests: `tests/test_skill_scripts.py`.
 - `evals/round3/transfer-r3/test.jsonl` was frozen as a fresh final panel; the loss screen found no qualifying candidate, so its first read was the 2026-09-22 release confirmation of the soft-target Kev-9B, and since round 11 it is half of the pooled short-state guard. It is spent as confirmation. Select and record a candidate before evaluating it; do not reuse previously inspected test partitions as untouched confirmation.
 - Isolate research deployments with `KEV_APP_NAME=kev-calibration-audit`. `worker_environment` propagates app/GPU/secret-name settings to prevent Modal dependency-count startup failures; secret values stay in Modal Secrets.
 - Verify live spend/rates with `uv run modal billing summary --json` and `uv run modal billing rates --json`. Training admission uses the actual configured CPU and maximum host memory, not the old 2-CPU/48-GiB assumptions. Initial cancelled startup calls and successful jobs are recorded separately.
-
-- Serving path (`kev.evaluate.load` + `kev.serve`): LoRA merged in fp32 then cast (`KEV_MERGE=0` to keep unmerged), `KEV_ATTN=sdpa` default on MPS,
-  `KEV_SHAPE_BUCKET=64` on MPS, state-prefix KV LRU (`KEV_PREFIX_CACHE=4`, `KEV_PREFIX_MIN_TOKENS=384`). Any change here must keep the parity
-  tests in tests/test_v3.py (merged vs unmerged, prefix vs full pass, bucket padding) passing; report numbers with the fp32 unmerged path.
-- Image channel (opt-in, 2026-09-24): `KEV_VISION=1` attaches the base checkpoint's untrained vision tower
-  (`model.visual.*` tensors, dropped by the text-only load path) and serves image requests. `state.images`
-  (list of data/https URLs) is stripped by `api.to_record` and never rendered into the text;
-  `serve._probs_images` runs through `kev/vision.py` under the Server's lock (outside the batched model thread; the text prefix cache never sees image records) (official AutoImageProcessor patchify + row-form
-  splice, no projection: Qwen3.5 merger out_hidden == text hidden on both tested bases). Needs the `vision`
-  extra (torchvision, imported by transformers' qwen2_vl processor). Without the gate, or on a text-only
-  base, image requests get 422. Text path, training and the prefix cache are untouched
-  (tests/test_vision.py + tests/test_v3.py parity all green). "Channel open, untrained readout": an open
+- Image channel (opt-in, merged 2026-09-24, rebuilt for the Server structure 2026-09-28): `KEV_VISION=1` attaches the base
+  checkpoint's untrained vision tower (`model.visual.*` tensors, dropped by the text-only load path) and serves image
+  requests. `state.images` (nonempty list of data/https URL strings, the workspace multimodal claim rule) is stripped by
+  `api.to_record` and never rendered into the text; `Server._answer_rec` dispatches image records to
+  `serve._probs_images`, which runs through `kev/vision.py` under the Server's lock (outside the batched model thread;
+  the text prefix cache never sees image records) (official AutoImageProcessor patchify + row-form splice, no
+  projection: Qwen3.5 merger out_hidden == text hidden on both tested bases). Needs the `vision` extra (torchvision,
+  imported by transformers' qwen2_vl processor). Without the gate, or on a text-only base, image requests get 422. Text
+  path, training and the prefix cache are untouched (tests/test_vision.py + tests/test_v3.py parity all green).
+  "Channel open, untrained readout": an open channel is not a capability claim - report TVD/separation, not bacc.
   channel is not a capability claim - report TVD/separation, not bacc.
 
 ## Writing

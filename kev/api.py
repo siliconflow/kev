@@ -101,13 +101,18 @@ def question_keys(qtype: str, criteria) -> list[str]:
 
 
 def to_record(req: SystemOneRequest):
-    """-> internal record for encode(), plus per-question metadata to map probabilities back.
+    """-> internal record for encode(), plus per-question metadata ({"id", "type", "keys", "legend" for score}) to map
+    probabilities back.
 
     An object state may carry an `images` key (list of data/https URLs, the workspace
     multimodal convention); it is stripped here and passed through as rec["images"] - it
-    is NEVER rendered into the text (URLs/base64 would poison the state segment)."""
+    is NEVER rendered into the text (URLs/base64 would poison the state segment). Image
+    requests dispatch in serve.Server to the vision path, so text requests keep this
+    path byte-identical."""
     state, images = req.state, None
-    if isinstance(state, dict) and isinstance(state.get("images"), list):
+    if isinstance(state, dict) and isinstance(state.get("images"), list) and state["images"] \
+            and all(isinstance(r, str) and r for r in state["images"]):
+        # nonempty list of nonempty strings = an image claim; anything else is just data
         images = state["images"]
         state = {k: v for k, v in state.items() if k != "images"}
     qs, meta = [], []
@@ -131,6 +136,7 @@ def to_record(req: SystemOneRequest):
     if images is not None:
         rec["images"] = images
     return rec, meta
+
 
 
 # Both confidence formulas mirror TypeSafe's reference adapter, system-one-adapter 0.2.1

@@ -247,11 +247,12 @@ Objects and arrays are converted to labeled text. Delimiter-like strings in user
 | `POST` | `/v1/systemone/permute` | Run one Choice question with different option orders (`n_perm` 1 to 64, default 6) |
 | `POST` | `/v1/systemone/separate` | Run each question in its own forward pass |
 
+| Method | Path | Purpose |
+|---|---|---|
 | `GET` | `/healthz` | Liveness: process + model thread (cheap, ~0 ms; for liveness probes) |
 | `GET` | `/healthz/ready` | Readiness: one real inference through the same path traffic takes — reflects the instance's serving capability; 503 + reason on any inference-path failure (OOM, a broken kernel, a wedged model thread); point readiness probes here |
 
-
-A request may carry any number of questions. The server runs them a token budget at a time (one maximal row of 16,384 tokens per forward pass, counting the cached document once per question in that pass), so memory does not grow with the question count and the answers do not depend on the split. Every response carries an `x-typesafe-request-id` header. The server binds to `127.0.0.1` (`--host 0.0.0.0` to accept other machines) and is open by default; set `KEV_API_KEY` to require `Authorization: Bearer <key>` on `/v1/*`, as the TypeSafe clients always send it.
+A request may carry any number of questions. The server runs them a token budget at a time (one maximal row of 16,384 tokens per forward pass, counting the cached document once per question in that pass), so memory does not grow with the question count and the answers do not depend on the split. Every response carries an `x-typesafe-request-id` header. The server binds to `0.0.0.0` (`--host 127.0.0.1` to keep it local) and is open by default; set `KEV_API_KEY` to require `Authorization: Bearer <key>` on `/v1/*`, as the TypeSafe clients always send it.
 
 | Variable | Effect |
 |---|---|
@@ -351,12 +352,11 @@ These commands use development data. Test data requires `--allow-test`. The benc
 
 **Dates.** Kev can't subtract dates reliably, but it can use a day count it's given. `KEV_DATE_FACTS=1` appends one sentence per pair of dates in the state ("June 26, 2026 is 8 days before July 4, 2026"). On the deadline policy questions this takes Kev-9B from 0.80 to 0.90 (Jev 0.93). None of the tables use it.
 
-**Other people's test sets.** `evals/external/` holds test sets from other projects, converted to this format, with their published live Jev results. [SemIf](https://github.com/TheoLeeCJ/SemIf) uses the last two to compare its own models, and they are rebuilt from the same hash-verified sources with `scripts/freeze_semif_external.py`. Some were scored on earlier versions of the Kev weights, which the Kev column names.
+**Other people's test sets.** `evals/external/` holds test sets from other projects, converted to this format, with their published live Jev results. [SemIf](https://github.com/TheoLeeCJ/SemIf) uses the last two to compare its own models, and they are rebuilt from the same hash-verified sources with `scripts/freeze_semif_external.py`. Some were scored on earlier versions of the Kev weights, which the Kev column names. Another, scienthoon's synthetic support tickets, was removed on 2026-09-27 because it cannot serve as a gate (templated text; one of its three questions depends on a rule the text does not state); the model cards keep the scienthoon numbers their releases were decided on.
 
 | Suite | What it is | Jev | Kev |
 |---|---|---|---|
 | [SemIf](https://github.com/TheoLeeCJ/SemIf) | 144 authored decisions | 0.965 | 0.917 (Kev-9B at `v7-base`) |
-| [scienthoon](https://github.com/scienthoon/jev-ood-calibration) | 900 support tickets, routing / tone | 0.897 / 0.914 | 0.952 / 0.911 (Kev-9B at `v7-base`) |
 | `wanli-v1` | 256 WANLI test pairs: supported, insufficient or contradicted | 0.758 | 0.703 (Kev-9B), 0.695 (Kev-4B at `night2-du-release`) |
 | `typesafe-v1` | The 102 public evals.typesafe.ai questions over 20 cases: agreement / distance on the 89 that fit | 0.891 / 0.125 | 0.809 / 0.226 (Kev-9B), 0.856 / 0.231 (Kev-4B at `night2-du-release`) |
 

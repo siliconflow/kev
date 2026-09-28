@@ -71,13 +71,17 @@ log; all three skip names that already exist locally / on the volume.
   Full-weight studies: plans set `full_ft: 1, weights_dtype: bf16` (the trainer then shares each state across its
   questions, `shared_prefix`, and writes a resume point every `kev.experiment.RESUME_MINUTES`); `admit_study` asks for
   `kev.budget.trial_resources` (one GPU: 24 CPU, 360-400 GiB for the host-side masters; `--gpu H200:8`: 16 CPU,
-  128-256 GiB), allows `--timeout` up to 86,400 s and a $1,000 budget, and gives each trial `FULL_FT_RETRIES` Modal
-  retries: a timed-out trial is called again and continues from its last resume point (`kev.experiment.continue_trial`);
+  128-256 GiB), allows `--timeout` up to 86,400 s and a $1,000 budget, and counts `FULL_FT_RETRIES` continuations per
+  trial. Modal's retries are off (it charged a killed timed-out attempt twice: `scripts/modal_retry_probe.py`); a timed-out
+  trial is continued by `kev.rounds watch` through `modal_app.py::resume --trial <label>` (`modal_app.continue_full_trial`:
+  a new call, only after the last one ended by a timeout, counted in `runs/<study>.spawn.json`'s `attempts`, with the
+  study's GPU and timeout; the attempt is recorded pending before its spawn, and it waits for the old attempt's lease on the
+  `kev-leases` volume to end or go stale, `kev.budget.LEASE_STALE`), which continues from its last resume point (`kev.experiment.continue_trial`);
   the container commits the volume after each completed resume point (`modal_app.commit_resume_points`; proof:
   `runs/sft-resume-e2e-*`); an attempt that fails with an error writes `failed.json` and returns `{"failed": ...}`
-  (not raised, so not retried; the watcher reports it). The bound counts every attempt, so an 8 x H200 day is
-  `--timeout 28800` (three 8 h attempts, $939). `modal_app.py::resume --study <study> --suite <suite> --gpu H200:8` also continues unfinished
-  full-weight trials by hand.
+  (never continued; the watcher reports it). The bound counts every attempt, so an 8 x H200 day is
+  `--timeout 28800` (three 8 h attempts, $939). `modal_app.py::resume --study <study> --suite <suite> [--trial <label>]` also continues
+  timed-out full-weight trials by hand, within the ledger (`--beyond-bound --gpu H200:8 --timeout N` for a study spawned before it, uncounted).
   **Snapshots**: every full-weight trial also writes loadable bf16 checkpoints after 0.25, 0.5 and 0.75 of its optimizer
   steps (`kev.experiment.SNAPSHOT_FRACTIONS`; plan keys `snapshot_fractions` as a string, `"none"` to turn them off, and
   `snapshot_every_steps`) to `/runs/<study>/<trial>/snapshots/step-<N>/checkpoint` (same files as the final checkpoint,

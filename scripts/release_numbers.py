@@ -17,6 +17,7 @@ from kev.suite import read_json, write_json  # noqa: E402
 KEYS = ("n", "acc", "brier", "ece", "confident_error_rate", "coverage_at_5pct_error")
 READS = ("docs1_dev", "docs1_test", "docs2", "long2", "r6test", "long3", "hard_dev", "devtools_dev", "hard_test", "devtools_test",
          "semif", "scienthoon", "wanli2", "typesafe")   # optional per release; the report keeps this order
+# scienthoon: removed as an eval on 2026-09-27 (kev.suite.REMOVED_SUITES); kept so the recorded releases reproduce from their committed rows
 
 
 def summary(rows):

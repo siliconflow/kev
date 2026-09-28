@@ -232,15 +232,18 @@ class DecisionModel(nn.Module):
         # transformers 5.17 hard-reads config.pad_token_id in Qwen2/Qwen3.5 __init__ (nn.Embedding padding_idx);
         # several public configs (e.g. Qwen2.5-0.5B) ship without the key -> AttributeError at load. Backfill it
         # from AutoConfig before from_pretrained (tokenizer pad id, else 0 matching pad_id()).
+        cfg = None
+        if weights is None:
+            cfg = AutoConfig.from_pretrained(name, revision=revision)
+            if getattr(cfg, "pad_token_id", None) is None:
+                cfg.pad_token_id = pad_id(tok)
         load = {"dtype": dtype, "attn_implementation": attn}
+        if cfg is not None: load["config"] = cfg   # a Hub id base: the pad backfill only matters through from_pretrained
         if direct_load: load["device_map"] = {"": torch.cuda.current_device() if device == "cuda" else device}   # "cuda": under torchrun, this rank's GPU
         if weights:
             self.lm = AutoModel.from_pretrained(weights, **load)
         else:
-            cfg = AutoConfig.from_pretrained(name, revision=revision)
-            if getattr(cfg, "pad_token_id", None) is None:
-                cfg.pad_token_id = pad_id(tok)
-            self.lm = AutoModelForCausalLM.from_pretrained(name, revision=revision, config=cfg, **load).model
+            self.lm = AutoModelForCausalLM.from_pretrained(name, revision=revision, **load).model
         self.pad_id = pad_id(tok)
         # hybrid backbones (Qwen3.5: Gated DeltaNet layers, recurrent) cannot honour the block-causal mask, so every
         # question runs as its own causal row continuing from the state (rows_of). Attention-only backbones keep the

@@ -262,6 +262,8 @@ A request may carry any number of questions. The server runs them a token budget
 | `KEV_API_KEY` | Require a bearer key |
 | `MODELSCOPE_ENDPOINT` | Base URL the `KEV_BASE_HUB=modelscope` base loads pull from (the ModelScope SDK's standard variable); overrides the default mirror `https://ms.sc4.ai:10443`. Point it at an in-cluster cache so scale-out replicas warm from the cache instead of any remote origin |
 | `KEV_PROBE_WAIT_S` | `/healthz/ready` caps its wait on the probe inference (default `5`); a wedged model thread yields 503, never a hung probe |
+| `KEV_MAX_QUEUE` | Requests allowed to wait at once (default `64`, `0` = unbounded). Beyond it the server answers 503 + `Retry-After` instead of queueing work a full card cannot serve; `/healthz/ready` uses the same queue, so a full queue also marks the instance unready |
+| `KEV_GRAPH_*` | Size the CUDA graphs' resident buffers on a card smaller than the defaults: `KEV_GRAPH_TOKENS` (32768), `KEV_GRAPH_BANK_WIDTH` (4096), `KEV_GRAPH_STATES` (16), `KEV_GRAPH_ROWS` (32), `KEV_GRAPH_ROW` (1024), `KEV_GRAPH_STATE` (1024), `KEV_GRAPH_KEPT` (256), plus the capture gate `KEV_GRAPH_BYTES_PER_TOKEN` (2048) / `KEV_GRAPH_MIN_FREE_MIB` (256) and `KEV_GRAPH_SHEDS_MAX` (2) — the number of OOM sheds after which graphs stay off for good (eager serving continues) |
 | `PYTORCH_CUDA_ALLOC_CONF` | Already set to `expandable_segments:True` in the image; a Dockerfile ENV, so a runtime `-e` overrides it. Keeps variable-size batches from stranding reserved-but-unallocated VRAM (fragmentation starves CUDA-graph captures on 24 GB cards) |
 | `MODELSCOPE_DOMAIN` | Same as `MODELSCOPE_ENDPOINT` but the SDK's deprecated form; a bare domain is upgraded to `https://` (`MODELSCOPE_ENDPOINT` wins when both are set) |
 

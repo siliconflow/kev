@@ -34,6 +34,8 @@ same buffers and the bucket joins `pending`; capture_pending() captures them lat
 waiting). Replays run one at a time (kev.serve has one model thread), each refills what it reads, and its results are
 copied out before the next replay; that is what makes the shared buffers and the shared memory pool safe.
 """
+import gc
+import os
 from collections import OrderedDict
 from typing import NamedTuple
 
@@ -41,21 +43,33 @@ import torch
 from transformers import DynamicCache
 from transformers.cache_utils import DynamicLayer, LinearAttentionLayer
 
-# Limits of the graphed passes (not the model's context: that is kev.model.MAX_STATE / SERVE_MAX_STATE)
-GRAPH_TOKENS = 32768   # rows x positions one row pass may hold in the attention buffers (about 1 GB on Kev-4B and 9B)
-GRAPH_STATE = 1024     # longest state bucket the state pass graphs. A longer state pass is compute-bound, and the padding plus
+
+def _int_env(name, default):
+    """A GRAPH_* limit read from the environment, so a smaller card can serve with smaller buffers (KEV_GRAPH_*)."""
+    try:
+        return int(os.environ.get(name, default))
+    except ValueError:
+        raise ValueError(f"{name} must be an integer, got {os.environ[name]!r}")
+
+
+# Limits of the graphed passes (not the model's context: that is kev.model.MAX_STATE / SERVE_MAX_STATE).
+# Each is a KEV_GRAPH_* override: the resident buffers are the biggest non-model allocation of a serving
+# process (bank + row buffers below), so a card that cannot hold the defaults can serve with less.
+GRAPH_TOKENS = _int_env("KEV_GRAPH_TOKENS", 32768)   # rows x positions one row pass may hold in the attention buffers (about 1 GB on Kev-4B and 9B)
+GRAPH_STATE = _int_env("KEV_GRAPH_STATE", 1024)      # longest state bucket the state pass graphs. A longer state pass is compute-bound, and the padding plus
                        # the explicit mask (no causal flash attention) made a 2,200-token one slower as a graph (L40S, Kev-4B:
                        # 223 vs 208 ms per request), so it runs eagerly
-GRAPH_ROW = 1024       # longest question-row bucket the row pass graphs
-GRAPH_ROWS = 32        # question rows per graphed pass; more run as several replays
-GRAPH_STATES = 16      # states per state pass: the bank's entries
-BANK_WIDTH = 4096      # positions per bank entry (states are right-aligned in it; about 2 GB for 16 entries on Kev-4B and 9B)
-GRAPHS_KEPT = 256      # captured graphs kept, least recently used evicted (a busy server met ~160 on mixed traffic)
+GRAPH_ROW = _int_env("KEV_GRAPH_ROW", 1024)          # longest question-row bucket the row pass graphs
+GRAPH_ROWS = _int_env("KEV_GRAPH_ROWS", 32)          # question rows per graphed pass; more run as several replays
+GRAPH_STATES = _int_env("KEV_GRAPH_STATES", 16)      # states per state pass: the bank's entries
+BANK_WIDTH = _int_env("KEV_GRAPH_BANK_WIDTH", 4096)  # positions per bank entry (states are right-aligned in it; about 2 GB for 16 entries on Kev-4B and 9B)
+GRAPHS_KEPT = _int_env("KEV_GRAPH_KEPT", 256)        # captured graphs kept, least recently used evicted (a busy server met ~160 on mixed traffic)
 PASS_TOKENS = 256      # tokens a pass costs however few it holds: below about this many, a pass is bound by reading the
                        # weights, not by compute (bf16 GEMMs: peak FLOP/s over memory bandwidth is ~200-400 on H100, H200, B200, L40S)
 HOT_BUCKET = 3         # eager passes after which a busy server captures a bucket's graph anyway (capture_due)
-GRAPH_BYTES_PER_TOKEN = 2048   # graph-private intermediates a captured token plausibly costs (bf16 activations x ~2 consumers); a heuristic gate, not physics
-GRAPH_MIN_FREE = 256 * 2**20   # a capture needs at least this much free-device VRAM whatever its size (largest observed graph-private pool: ~524 MiB for 75+ graphs)
+GRAPH_BYTES_PER_TOKEN = _int_env("KEV_GRAPH_BYTES_PER_TOKEN", 2048)   # graph-private intermediates a captured token plausibly costs (bf16 activations x ~2 consumers); a heuristic gate, not physics
+GRAPH_MIN_FREE = _int_env("KEV_GRAPH_MIN_FREE_MIB", 256) * 2**20      # a capture needs at least this much free-device VRAM whatever its size (largest observed graph-private pool: ~524 MiB for 75+ graphs)
+GRAPH_SHEDS_MAX = _int_env("KEV_GRAPH_SHEDS_MAX", 2)  # OOM sheds after which graphs stay off for good: a card that cannot hold them serves eagerly instead of thrashing
 
 
 def bucket(n, steps=8, floor=16):
@@ -174,6 +188,8 @@ class CudaGraphs:
         self.eager_runs = {}          # key -> how many passes of a pending bucket ran eagerly
         self.failed = {}              # key -> (why its capture failed, input buffer); the bucket keeps running eagerly
         self.captures = 0
+        self.sheds = 0                # release() calls: OOM batches that shed the graphs' memory (kev.serve._run)
+        self.disabled = False         # graphs stay off after GRAPH_SHEDS_MAX sheds, or when their buffers cannot be rebuilt
         probe = DynamicCache(config=lm.config)   # learn the cache layout (layer kinds, state shapes, dtypes) from one eager pass
         with torch.no_grad():
             lm(input_ids=torch.full((1, 16), pad_id, device=self.device), past_key_values=probe, use_cache=True)
@@ -182,12 +198,65 @@ class CudaGraphs:
         # would leave the buffers stale and move probabilities silently, so refuse it here.
         if not all(type(l) is DynamicLayer or (type(l) is LinearAttentionLayer and l.number_of_states == 1 and not l.record_past) for l in probe.layers):
             raise ValueError(f"CUDA graphs support attention and single-state DeltaNet cache layers only; got {sorted({type(l).__name__ for l in probe.layers})}")
-        self.bank = Buffers(probe, GRAPH_STATES * BANK_WIDTH, GRAPH_STATES, self.device)
-        # the bank has one layout for every pass, so the state and row graphs agree on it: attention [GRAPH_STATES, heads,
-        # BANK_WIDTH, dim] with states right-aligned at the end, DeltaNet [GRAPH_STATES, *state]
-        self.bank_views = self.bank.views(GRAPH_STATES, BANK_WIDTH)
-        self.rowbuf = Buffers(probe, GRAPH_TOKENS, GRAPH_ROWS, self.device)
-        self.hidden = torch.zeros(GRAPH_ROWS * GRAPH_ROW * lm.config.hidden_size, dtype=self.dtype, device=self.device)
+        # the probe stays: it is the layout every rebuild of the shared buffers reads (see _ensure_buffers)
+        self.probe = probe
+        self._ensure_buffers()
+        print(f"kev.cuda_graphs: shared buffers resident ({self.buffer_mib()} MiB), {self._free_bytes() // 2**20} MiB device-free; "
+              f"KEV_GRAPH_* shrinks them on a card that cannot hold the defaults", flush=True)
+
+    def buffer_mib(self):
+        """Device memory the shared bank/row buffers hold (0 once released and before a rebuild)."""
+        if not getattr(self, "bank", None) or not hasattr(self.bank, "slots"): return 0
+        n = sum(t.numel() * t.element_size() for _, flats, _ in self.bank.slots for t in flats)
+        n += sum(t.numel() * t.element_size() for _, flats, _ in self.rowbuf.slots for t in flats)
+        return (n + self.hidden.numel() * self.hidden.element_size()) // 2**20
+
+    def _ensure_buffers(self):
+        """Allocate the shared bank/row buffers if they are not resident; -> False when they cannot fit.
+
+        release(buffers=True) drops them so an OOM batch can retry on a card that is otherwise full; the next
+        graphed pass rebuilds them from the probe. A rebuild that cannot allocate turns graphs off for the rest
+        of the process (`disabled`): eager passes need far less memory, so serving continues slower rather than
+        failing every batch. Called from admits() under kev.serve's model-thread lock."""
+        if getattr(self, "bank", None) is not None: return True
+        if getattr(self, "disabled", False): return False
+        try:
+            self.bank = Buffers(self.probe, GRAPH_STATES * BANK_WIDTH, GRAPH_STATES, self.device)
+            # the bank has one layout for every pass, so the state and row graphs agree on it: attention [GRAPH_STATES, heads,
+            # BANK_WIDTH, dim] with states right-aligned at the end, DeltaNet [GRAPH_STATES, *state]
+            self.bank_views = self.bank.views(GRAPH_STATES, BANK_WIDTH)
+            self.rowbuf = Buffers(self.probe, GRAPH_TOKENS, GRAPH_ROWS, self.device)
+            self.hidden = torch.zeros(GRAPH_ROWS * GRAPH_ROW * self.lm.config.hidden_size, dtype=self.dtype, device=self.device)
+            return True
+        except Exception as e:
+            from .device import out_of_memory
+            if not out_of_memory(e): raise
+            self.bank = self.bank_views = self.rowbuf = self.hidden = None
+            self.disabled = True
+            print(f"kev.cuda_graphs: rebuilding the shared buffers failed, every later pass runs eagerly: {e}", flush=True)
+            return False
+
+    def release(self, buffers=False):
+        """Shed what an OOM batch could not allocate from, then retry: every captured graph and their shared
+        private pool (1.47 GiB on the 2026-10-28 incident card), and with `buffers` the shared bank/row buffers
+        too (~3 GiB at the defaults). Buffers are rebuilt by the next admitted pass (_ensure_buffers).
+
+        A capture's private memory is freed when its last graph reference goes, so the drop is followed by
+        gc.collect(); device-free is re-read after empty_cache. After GRAPH_SHEDS_MAX sheds the graphs stay
+        off for good: a card that cannot hold them serves eagerly instead of shedding, recapturing, shedding."""
+        try: torch.cuda.synchronize(self.device)   # a replay still in flight would fault when its pool goes
+        except Exception: pass
+        self.graphs.clear(); self.pending.clear(); self.eager_runs.clear(); self.failed.clear()
+        self.captures = 0
+        if buffers: self.bank = self.bank_views = self.rowbuf = self.hidden = None
+        gc.collect()
+        torch.cuda.empty_cache()
+        self.sheds += 1
+        if self.sheds >= GRAPH_SHEDS_MAX:
+            self.disabled = True
+        print(f"kev.cuda_graphs: shed the graphs{' and their buffers' if buffers else ''} after an OOM "
+              f"({self.sheds}/{GRAPH_SHEDS_MAX}), {self._free_bytes() // 2**20} MiB device-free"
+              f"{'; graphs stay off now' if self.disabled else ''}", flush=True)
 
     def _cache(self, views, filled, previous):
         """A DynamicCache over buffer views: attention layers hold `filled` cached positions, DeltaNet layers the states."""
@@ -248,6 +317,9 @@ class CudaGraphs:
         empty_cache on entry would stall a busy server for each capture. thread_local: CUDA calls of other threads (a
         request tokenizing, a model card read) cannot invalidate the capture. A capture that fails leaves its bucket running
         eagerly, for good."""
+        if getattr(self, "disabled", False) or not self._ensure_buffers():
+            self.pending.clear(); self.eager_runs.clear()   # graphs are off: never capture into a card that shed them
+            return
         for _ in range(len(self.pending) if limit is None else min(limit, len(self.pending))):
             key = max(self.pending, key=self.eager_runs.get)
             (body, buf), _ = self.pending.pop(key), self.eager_runs.pop(key)
@@ -284,19 +356,22 @@ class CudaGraphs:
         """Capture one pending graph now? Always when idle; under load once a bucket keeps running eagerly (HOT_BUCKET
         eager passes), because a request arriving meanwhile waits for the capture (~0.4 s)."""
         runs = list(self.eager_runs.values())   # a snapshot: wait_idle and /v1/models call this off the model thread
-        return bool(runs) and (idle or max(runs) >= HOT_BUCKET)
+        return not getattr(self, "disabled", False) and bool(runs) and (idle or max(runs) >= HOT_BUCKET)
 
     def stats(self):
         return {"captured": self.captures, "kept": len(self.graphs), "pending": len(self.pending), "failed": len(self.failed),
                 "gated": sum(1 for why, _ in self.failed.values() if why.startswith("gated")),
+                "sheds": getattr(self, "sheds", 0), "disabled": getattr(self, "disabled", False), "buffers_mib": self.buffer_mib(),
                 "free_mib": (self._free_bytes() // 2**20) if self.device.type == "cuda" else None}
 
     # Serving: which requests the graphed passes take, and one batch of them
 
-    @staticmethod
-    def admits(state_len, row_lens, cached):
+    def admits(self, state_len, row_lens, cached):
         """Whether a request's passes fit the graphed passes: its rows, and its state (a new one runs the graphed state
-        pass; a cached one only has to fit the bank)."""
+        pass; a cached one only has to fit the bank). False once graphs are off (released and not rebuilt, or
+        disabled after GRAPH_SHEDS_MAX sheds) - kev.model.probs_batch then takes the eager path, which needs no
+        shared buffers. Rebuilds released buffers lazily: kev.serve._run calls the model thread under its lock."""
+        if getattr(self, "disabled", False) or not self._ensure_buffers(): return False
         return bucket(max(row_lens)) <= GRAPH_ROW and (state_len <= BANK_WIDTH if cached else bucket(state_len) <= GRAPH_STATE)
 
     @torch.no_grad()
@@ -305,6 +380,8 @@ class CudaGraphs:
         order; per request its state's cache: the cached one, a new one if `keep`, else None). States grouped by length
         (length_groups) share a state pass (identical states once); each request takes one bank entry, so at most GRAPH_STATES per group.
         Every row pass writes its picks straight to their place in the output."""
+        if not self._ensure_buffers():
+            raise RuntimeError("CUDA graphs are off: their shared buffers could not be rebuilt after an OOM")
         at = [0]
         for r in requests: at.append(at[-1] + sum(map(len, r.picks)))
         out = torch.empty((at[-1], self.lm.config.hidden_size), dtype=torch.float32, device=self.device)

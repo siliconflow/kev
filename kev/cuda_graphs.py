@@ -43,6 +43,8 @@ import torch
 from transformers import DynamicCache
 from transformers.cache_utils import DynamicLayer, LinearAttentionLayer
 
+from .device import empty_cache, out_of_memory, sync
+
 
 def _int_env(name, default):
     """A GRAPH_* limit read from the environment, so a smaller card can serve with smaller buffers (KEV_GRAPH_*)."""
@@ -229,7 +231,6 @@ class CudaGraphs:
             self.hidden = torch.zeros(GRAPH_ROWS * GRAPH_ROW * self.lm.config.hidden_size, dtype=self.dtype, device=self.device)
             return True
         except Exception as e:
-            from .device import out_of_memory
             if not out_of_memory(e): raise
             self.bank = self.bank_views = self.rowbuf = self.hidden = None
             self.disabled = True
@@ -244,13 +245,13 @@ class CudaGraphs:
         A capture's private memory is freed when its last graph reference goes, so the drop is followed by
         gc.collect(); device-free is re-read after empty_cache. After GRAPH_SHEDS_MAX sheds the graphs stay
         off for good: a card that cannot hold them serves eagerly instead of shedding, recapturing, shedding."""
-        try: torch.cuda.synchronize(self.device)   # a replay still in flight would fault when its pool goes
+        try: sync(self.device)   # a replay still in flight would fault when its pool goes
         except Exception: pass
         self.graphs.clear(); self.pending.clear(); self.eager_runs.clear(); self.failed.clear()
         self.captures = 0
         if buffers: self.bank = self.bank_views = self.rowbuf = self.hidden = None
         gc.collect()
-        torch.cuda.empty_cache()
+        empty_cache(self.device)
         self.sheds += 1
         if self.sheds >= GRAPH_SHEDS_MAX:
             self.disabled = True

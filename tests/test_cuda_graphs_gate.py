@@ -28,6 +28,7 @@ def test_gate_skips_capture_and_marks_gated(monkeypatch):
     g = object.__new__(CudaGraphs)          # no __init__: no CUDA, no model
     g.device, g.pending, g.eager_runs = torch.device("cpu"), {}, {}
     g.failed, g.captures, g.graphs = {}, 0, {}
+    g.bank, g.bank_views, g.rowbuf, g.hidden, g.disabled = "bank", "views", "rowbuf", "hidden", False   # resident buffers
     g.pending[("rows", 1, 128, 2048)] = (lambda buf: None, "buf-token")
     g.eager_runs[("rows", 1, 128, 2048)] = 3
 
@@ -55,6 +56,7 @@ def test_capture_proceeds_when_vram_available(monkeypatch):
     g = object.__new__(CudaGraphs)
     g.device, g.pending, g.eager_runs = torch.device("cpu"), {}, {}
     g.failed, g.captures, g.graphs, g.eager_runs = {}, 0, {}, {}
+    g.bank, g.bank_views, g.rowbuf, g.hidden, g.disabled = "bank", "views", "rowbuf", "hidden", False   # resident buffers
     key = ("rows", 2, 128, 64)
     g.pending[key] = (lambda buf: None, "buf-token")
     g.eager_runs[key] = 3

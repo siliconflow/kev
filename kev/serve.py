@@ -5,7 +5,8 @@ Run: uv run --extra serve python -m kev.serve --run runs/kev --port 8008
 TypeSafe-compatible: POST /v1/systemone, GET /v1/models, the `x-typesafe-request-id` response header, and bearer auth
 when KEV_API_KEY is set (unset = open server, the local default). Demo extras: POST /v1/systemone/permute (one Choice
 under several option orders) and POST /v1/systemone/separate (each question in its own pass, for the packed-vs-separate
-comparison). KEV_PREFIX_CACHE / KEV_PREFIX_MIN_TOKENS / KEV_PREFIX_MAX_TOKENS size the state-prefix cache; KEV_DATE_FACTS=1 opts into the
+comparison). KEV_PREFIX_CACHE / KEV_PREFIX_MIN_TOKENS / KEV_PREFIX_MAX_TOKENS size the state-prefix cache; KEV_MAX_QUEUE bounds the
+waiting requests (default 64, 0 = unbounded, beyond it 503 + Retry-After); KEV_DATE_FACTS=1 opts into the
 date preprocessing (api.with_date_facts). Backend and precision follow LoadOptions (KEV_BACKEND, KEV_DTYPE, ...): on Apple
 Silicon the hybrid Qwen3.5 checkpoints run on MLX by default, elsewhere on torch in bf16.
 """
@@ -30,6 +31,9 @@ PREFIX_MAX_TOKENS = int(os.environ.get("KEV_PREFIX_MAX_TOKENS", "65536"))  # sta
 DATE_FACTS = os.environ.get("KEV_DATE_FACTS", "0") == "1"
 API_KEY = os.environ.get("KEV_API_KEY")                                  # unset = open server; set = require Authorization: Bearer <key>, as the TypeSafe clients always send
 MAX_BATCH = 64                                                           # requests the model thread takes at once (kev.cuda_graphs splits them to fit its buffers)
+MAX_QUEUE = int(os.environ.get("KEV_MAX_QUEUE", "64"))                   # requests allowed to wait at once; 0 = unbounded. Beyond it a request is refused 503 + Retry-After
+                                                                         # instead of queueing forever behind a batch that cannot allocate (2026-10-28: 269 requests
+                                                                         # queued against a full card, every one of them a 500 minutes later)
 MODEL_NAMES = ("kev-latest", "jev-latest")                               # both names serve this checkpoint; jev-latest is the TypeSafe SDK default model, so an unconfigured client works
 
 
@@ -71,6 +75,20 @@ class PrefixCache:
         self.entries.clear()
 
 
+def enqueue(q, item):
+    """Put `item` in the model thread's queue, refusing with 503 (not blocking) when it is full.
+
+    Backpressure is what keeps an overloaded instance honest: unbounded, a queue turns into a pile of
+    requests that all fail together once the batch they wait for cannot allocate, and the platform's
+    probes (which see only GETs) never learn (2026-10-28). A refusal frees the gateway to retry or fail
+    fast, and /healthz/ready goes through the same queue, so a full queue also marks the instance
+    unready."""
+    try: q.put_nowait(item)
+    except queue.Full:
+        raise HTTPException(503, f"queue full: {q.maxsize} requests already waiting; retry shortly",
+                            headers={"Retry-After": "1"})
+
+
 @dataclass
 class Server:
     """The loaded checkpoint, the state-prefix cache (PrefixCache), and the one model thread that runs every forward pass.
@@ -89,12 +107,14 @@ class Server:
     release_date: str = field(default="")   # for the TypeSafe model card; resolved once (may ask the Hub)
     vision: object = None   # kev.vision.VisionHook under KEV_VISION=1 (set in main); None keeps image requests a 422
     latency: object = None   # LatencyView: request-level model-time observations for kev_latency_ms_*
+    refusals: int = 0        # requests refused because the queue was full (enqueue)
+    graph_sheds: int = 0     # batches that shed the CUDA graphs' memory after an OOM (_run)
 
     def __post_init__(self):
         self.release_date = self.release_date or self.checkpoint.release_date()
         self.latency = self.latency or LatencyView()
         self.prefix_cache = PrefixCache(PREFIX_CACHE_SIZE, int(PREFIX_MIN_TOKENS) if PREFIX_MIN_TOKENS else self.model.prefix_min_tokens)
-        self.queue, self.stopping = queue.Queue(), threading.Event()
+        self.queue, self.stopping = queue.Queue(maxsize=MAX_QUEUE), threading.Event()   # maxsize 0 = unbounded
         # the model thread gives up the GIL at every CUDA sync and waits to get it back while the event loop parses and
         # answers requests; at Python's default 5 ms switch interval those waits stretched a batch's model time ~2x.
         # Process-wide, so close() puts it back.
@@ -120,7 +140,10 @@ class Server:
         try: enc = self.model.encode(self.tok, rec, max_state=SERVE_MAX_STATE, max_branch=SERVE_MAX_BRANCH)
         except ValueError as e: raise HTTPException(422, str(e))
         done = Future()
-        self.queue.put((enc, done))
+        try: enqueue(self.queue, (enc, done))
+        except HTTPException:
+            self.refusals += 1
+            raise
         return done
 
     def probs(self, rec):
@@ -149,17 +172,29 @@ class Server:
                 with self.lock: graphs.capture_pending(limit=1)
 
     def _run(self, encs):
-        """One batch through model.probs_batch, with the prefix cache. -> per request (probs, stats). A pass out of device
-        memory while states are cached drops the cache and runs once more: the cache only saves time, and kept resident
-        it failed every later batch of that size (#75, @vtxyer)."""
+        """One batch through model.probs_batch, with the prefix cache. -> per request (probs, stats).
+
+        A pass out of device memory sheds what only costs speed and runs again, in two steps: the cached
+        states first (#75, @vtxyer: kept resident, they failed every later batch of that size), then the
+        CUDA graphs' private pool and their shared buffers (2026-10-28: a 24 GB card held ~1.5 GiB of
+        graph pools and ~3 GiB of shared buffers, so every batch of 269 failed on a 2 MiB output
+        allocation and nothing recovered until the container restarted). After the second shed the model
+        routes these passes eagerly (kev.cuda_graphs.admits), so serving continues on a card that cannot
+        hold the graphs. Only a third OOM reaches the client."""
         sync(self.device); t = time.time()
-        for retry in (False, True):
+        graphs = getattr(self.model, "graphs", None)
+        for step in ("cache", "graphs", None):
             keys, cached, keep = self.prefix_cache.plan(encs)
             try: ps, prefixes = self.model.probs_batch(encs, cached, keep); break
             except Exception as e:
-                if retry or not self.prefix_cache.entries or not out_of_memory(e): raise
-            cached = None; self.prefix_cache.clear(); self.prefix_cache.oom_retries += 1   # after the except: its traceback holds the failed pass's tensors
-            empty_cache(self.device)
+                if step is None or not out_of_memory(e): raise
+                cached = None
+                if step == "cache" and self.prefix_cache.entries:
+                    self.prefix_cache.clear(); self.prefix_cache.oom_retries += 1
+                elif graphs is not None:
+                    graphs.release(buffers=True); self.graph_sheds += 1
+                else: raise          # nothing left to shed: the card cannot serve this batch
+            empty_cache(self.device)   # after the except: its traceback holds the failed pass's tensors
         sync(self.device); dt = round((time.time() - t) * 1000, 1)
         self.prefix_cache.store(keys, cached, prefixes)
         self.batches += 1; self.batched_requests += len(encs)
@@ -325,7 +360,8 @@ def healthz_ready():
         ok = answers["type"] == "score" and answers["legend"] == {"0": "no", "1": "yes"} \
              and sum(answers["probabilities"].values()) > 0.99
         return {"ok": ok, "latency_ms": body["latency_ms"], "probe_ms": round((time.perf_counter() - t0) * 1000, 1),
-                "queued": s.queue.qsize(), "batches": s.batches, "errors": METRICS["errors"]}
+                "queued": s.queue.qsize(), "capacity": getattr(s.queue, "maxsize", 0),
+                "batches": s.batches, "errors": METRICS["errors"], "refused": getattr(s, "refusals", 0)}
     except Exception as e:
         METRICS["errors"] += 1
         s = getattr(app.state, "server", None)
@@ -359,6 +395,9 @@ def metrics():
     lines.append(f"kev_inference_errors_total {METRICS['errors']}")
     if s is not None:
         lines.append(f"kev_queue_depth {s.queue.qsize()}")
+        lines.append(f"kev_queue_capacity {getattr(s.queue, 'maxsize', 0)}")
+        lines.append(f"kev_queue_refusals_total {getattr(s, 'refusals', 0)}")
+        lines.append(f"kev_graph_sheds_total {getattr(s, 'graph_sheds', 0)}")
         if s.device == "cuda":
             a, r = torch.cuda.memory_allocated(), torch.cuda.memory_reserved()
             lines += [f"kev_gpu_memory_allocated_bytes {a}", f"kev_gpu_memory_reserved_bytes {r}",
@@ -429,7 +468,8 @@ def models():
             "cuda_graphs": graphs.stats() if (graphs := getattr(s.model, "graphs", None)) else None,
             "prefix_cache": {"size": s.prefix_cache.size, "min_state_tokens": s.prefix_cache.min_tokens, "max_tokens": s.prefix_cache.max_tokens, "hits": s.prefix_cache.hits,
                              "misses": s.prefix_cache.misses, "cached_states": len(s.prefix_cache.entries), "oom_retries": s.prefix_cache.oom_retries},
-            "batches": {"count": s.batches, "requests": s.batched_requests, "queued": s.queue.qsize()}}
+            "batches": {"count": s.batches, "requests": s.batched_requests, "queued": s.queue.qsize(),
+                        "capacity": s.queue.maxsize, "refused": getattr(s, "refusals", 0)}}
     return {"models": [{"name": name, **card} for name in MODEL_NAMES]}
 
 

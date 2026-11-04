@@ -147,6 +147,205 @@ def test_systemone_errors_counter_counts_inference_failures():
         del S.app.state.server
 
 
+def test_healthz_fails_on_an_unrecoverable_error():
+    """/healthz (liveness) turns 503 once the device context is poisoned: no retry in this process can serve
+    again, so the platform restarting the container is the recovery (2026-11-04: 117 minutes of 503 readiness
+    with a 200 liveness). The reason is the recorded error."""
+    from fastapi.testclient import TestClient
+    import kev.serve as S
+
+    class Dead:
+        class _T:
+            def is_alive(self): return True
+        thread = _T()
+        fatal = "the device context is broken"
+        busy_since = unready_since = None
+
+    S.app.state.server = Dead()
+    try:
+        r = TestClient(S.app).get("/healthz")
+        assert r.status_code == 503, r.text[:200]
+        assert r.json()["ok"] is False and "unrecoverable accelerator error" in r.json()["why"]
+        assert "the device context is broken" in r.json()["why"]
+    finally:
+        del S.app.state.server
+
+
+def test_healthz_fails_when_nothing_is_served_for_the_unready_window():
+    """The 600 s rule: readiness failing for KEV_UNREADY_MAX_S with no completed batch in that window fails
+    liveness whatever the cause — while an instance still completing batches (pure overload) stays 200."""
+    import time
+    from fastapi.testclient import TestClient
+    import kev.serve as S
+
+    class Idle:
+        class _T:
+            def is_alive(self): return True
+        thread = _T()
+        fatal = ""
+        busy_since = None
+
+    s, now = Idle(), time.monotonic()
+    S.app.state.server = s
+    try:
+        client = TestClient(S.app)
+        s.unready_since = s.last_batch_at = now - S.UNREADY_MAX_S - 30   # unready, and nothing completed since
+        r = client.get("/healthz")
+        assert r.status_code == 503, r.text[:200]
+        assert "no batch completed" in r.json()["why"]
+
+        s.unready_since, s.last_batch_at = now - S.UNREADY_MAX_S - 30, now - 5   # unready, but batches still complete
+        r = client.get("/healthz")
+        assert r.status_code == 200, r.text[:200]
+        assert r.json()["unready_s"] > S.UNREADY_MAX_S - 60             # the clock is exposed for diagnosis
+
+        s.unready_since = None                                          # readiness passes again
+        r = client.get("/healthz")
+        assert r.status_code == 200 and r.json()["unready_s"] is None
+    finally:
+        del S.app.state.server
+
+
+def test_healthz_fails_when_one_batch_is_wedged():
+    """A model thread stuck inside one batch cannot report its own death: an in-flight batch older than
+    KEV_STALL_S fails liveness (the batch is then killed by the container restart)."""
+    import time
+    from fastapi.testclient import TestClient
+    import kev.serve as S
+
+    class Wedged:
+        class _T:
+            def is_alive(self): return True
+        thread = _T()
+        fatal = ""
+        unready_since = None
+        last_batch_at = 0.0
+
+    s = Wedged()
+    S.app.state.server = s
+    try:
+        client = TestClient(S.app)
+        s.busy_since = time.monotonic() - S.STALL_S - 10
+        r = client.get("/healthz")
+        assert r.status_code == 503 and "in flight" in r.json()["why"]
+        s.busy_since = time.monotonic() - 1
+        assert client.get("/healthz").status_code == 200
+    finally:
+        del S.app.state.server
+
+
+def test_healthz_ready_short_circuits_after_an_unrecoverable_error():
+    """With the context poisoned, readiness fails immediately without queueing a probe pass behind it, and it
+    does not inflate the error counter (the cause is already on /healthz)."""
+    from fastapi.testclient import TestClient
+    import kev.serve as S
+
+    class Dead:
+        class _T:
+            def is_alive(self): return True
+        thread = _T()
+        fatal = "the device context is broken"
+        unready_since = None
+        class _Q:
+            def qsize(self): return 4
+        queue = _Q()
+        def submit(self, rec): raise AssertionError("readiness must not submit after a fatal error")
+
+    s = Dead()
+    S.app.state.server = s
+    e0 = S.METRICS["errors"]
+    try:
+        r = TestClient(S.app, raise_server_exceptions=False).get("/healthz/ready")
+        assert r.status_code == 503 and "unrecoverable accelerator error" in r.json()["why"]
+        assert r.json()["queued"] == 4 and S.METRICS["errors"] == e0
+        assert s.unready_since is not None
+    finally:
+        S.METRICS["errors"] = e0
+        del S.app.state.server
+
+
+def test_healthz_ready_starts_and_clears_the_unready_clock():
+    """Every readiness 503 starts the clock /healthz reads; a passing probe clears it."""
+    from fastapi.testclient import TestClient
+    import kev.serve as S
+
+    class Failing:
+        class _T:
+            def is_alive(self): return True
+        thread = _T()
+        fatal = ""
+        unready_since = None
+        class _Q:
+            def qsize(self): return 0
+        queue = _Q()
+        def submit(self, rec): raise RuntimeError("CUDA out of memory. Tried to allocate 1.10 GiB.")
+
+    f = Failing()
+    S.app.state.server = f
+    q0 = __import__("queue").Queue()
+    e0 = S.METRICS["errors"]
+    try:
+        client = TestClient(S.app, raise_server_exceptions=False)
+        assert client.get("/healthz/ready").status_code == 503
+        assert f.unready_since is not None
+
+        class OK:
+            from concurrent.futures import Future
+            class _T:
+                def is_alive(self): return True
+            thread = _T()
+            fatal = ""
+            unready_since = 1.0       # was unready; this pass clears it
+            queue = q0
+            batches = 1
+            def submit(self, rec):
+                x = OK.Future(); x.set_result(([[0.0, 1.0]],
+                    {"tokens": 9, "state_tokens": 4, "latency_ms": 3.0, "prefix_cache_hit": False}))
+                return x
+            def _body(self, req, meta, ps, m):
+                return {"model": req.model, "answers": {"probe": {"type": "score", "score": 1.0, "confidence": 1.0,
+                        "legend": {"0": "no", "1": "yes"}, "probabilities": {"0": 0.0, "1": 1.0}}},
+                        "usage": {"input_tokens": 9, "output_tokens": 8}, "latency_ms": m["latency_ms"]}
+        ok = OK()
+        S.app.state.server = ok
+        assert client.get("/healthz/ready").status_code == 200
+        assert ok.unready_since is None
+    finally:
+        S.METRICS["errors"] = e0
+        del S.app.state.server
+
+
+def test_healthz_ready_queue_full_starts_the_unready_clock():
+    """A full queue is a 503 readiness too: a wedged thread fills the queue, and if that were not recorded the
+    liveness watchdog would never see the instance as unready."""
+    from fastapi.testclient import TestClient
+    from fastapi import HTTPException
+    import kev.serve as S
+
+    class Full:
+        class _T:
+            def is_alive(self): return True
+        thread = _T()
+        fatal = ""
+        unready_since = None
+        class _Q:
+            def qsize(self): return 64
+        queue = _Q()
+        def submit(self, rec):
+            raise HTTPException(503, "queue full: 64 requests already waiting; retry shortly", headers={"Retry-After": "1"})
+
+    s = Full()
+    S.app.state.server = s
+    e0 = S.METRICS["errors"]
+    try:
+        r = TestClient(S.app, raise_server_exceptions=False).get("/healthz/ready")
+        assert r.status_code == 503 and "queue full" in r.json()["why"]
+        assert s.unready_since is not None
+    finally:
+        S.METRICS["errors"] = e0
+        del S.app.state.server
+
+
 def test_metrics_exposes_errors_queue_and_gpu_dimensions():
     """/metrics gains the dimensions the incident needed: error counter, queue depth, and
     (on cuda) allocator/GPU-memory gauges. CPU hosts skip the gauges rather than fail."""
@@ -187,7 +386,56 @@ def test_metrics_exposes_errors_queue_and_gpu_dimensions():
         assert "kev_latency_ms_sum 42.8" in txt
         assert f'kev_latency_ms_bucket{{le="25"}} 2' in txt      # 21.4 <= 25
         assert "kev_inferences_total 2" in txt                    # request-level count from the view
+        assert "kev_fatal 0" in txt and "kev_unready_seconds 0" in txt
+        assert "kev_pressure_sheds_total 0" in txt
         # cpu device: NO gpu gauges (guard by device, not by import success)
         assert "kev_gpu_memory_allocated_bytes" not in txt
+    finally:
+        del S.app.state.server
+
+
+def test_metrics_exposes_the_graph_and_health_dimensions():
+    """/metrics carries what only /v1/models JSON had: the CUDA graphs' resident buffer bytes, their capture
+    counters and whether they are off — the 2026-11-04 card held ~3 GiB of buffers no scraper could see."""
+    from fastapi.testclient import TestClient
+    from types import SimpleNamespace
+    import kev.serve as S
+
+    stats = {"captured": 4, "kept": 3, "pending": 2, "failed": 5, "gated": 5,
+             "sheds": 1, "disabled": True, "buffers_mib": 1024, "free_mib": 29}
+    class MS:
+        class _T:
+            def is_alive(self): return True
+        class _Ck:
+            requested = "jaredpalmer/kev-4b"
+            class meta:
+                base = "Qwen/Qwen3.5-4B-Base"
+        checkpoint = _Ck()
+        model = SimpleNamespace(backend="torch", graphs=SimpleNamespace(stats=lambda: stats))
+        device = "cpu"
+        thread = _T()
+        class _Q:
+            def qsize(self): return 0
+            maxsize = 64
+        queue = _Q()
+        batches = 5
+        batched_requests = 9
+        lock = __import__("threading").Lock()
+        prefix_cache = __import__("types").SimpleNamespace(hits=0, misses=0, size=4, min_tokens=384, entries=[])
+        pressure_sheds = 2
+        fatal = "the device context is broken"
+        unready_since = None
+
+    m = MS()
+    m.latency = S.LatencyView()
+    S.app.state.server = m
+    try:
+        txt = TestClient(S.app).get("/metrics").text
+        assert "kev_graph_buffers_bytes 1073741824" in txt          # 1024 MiB
+        assert "kev_graph_captured 4" in txt and "kev_graph_pending 2" in txt
+        assert "kev_graph_failed 5" in txt and "kev_graph_gated_total 5" in txt
+        assert "kev_graph_disabled 1" in txt
+        assert "kev_pressure_sheds_total 2" in txt and "kev_fatal 1" in txt
+        assert "kev_unready_seconds 0" in txt
     finally:
         del S.app.state.server

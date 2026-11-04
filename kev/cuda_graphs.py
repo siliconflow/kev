@@ -43,7 +43,7 @@ import torch
 from transformers import DynamicCache
 from transformers.cache_utils import DynamicLayer, LinearAttentionLayer
 
-from .device import empty_cache, out_of_memory, sync
+from .device import empty_cache, free_bytes, out_of_memory, sync
 
 
 def _int_env(name, default):
@@ -304,10 +304,9 @@ class CudaGraphs:
         return max(GRAPH_MIN_FREE, tokens * GRAPH_BYTES_PER_TOKEN)
 
     def _free_bytes(self):
-        """Free VRAM as the device sees it: reserved-but-unallocated caching-allocator slack is NOT free for a
-        graph-private pool, so read device free memory, not allocator slack."""
-        free, _total = torch.cuda.mem_get_info(self.device)
-        return free
+        """Free VRAM as the driver sees it (kev.device.free_bytes): reserved-but-unallocated caching-allocator slack
+        is NOT free for a graph-private pool, so read device free memory, not allocator slack."""
+        return free_bytes(self.device)
 
     @torch.no_grad()
     def capture_pending(self, limit=None):

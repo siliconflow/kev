@@ -1,4 +1,6 @@
 """The accelerator this process uses: cuda, then mps, then cpu."""
+import re
+
 import torch
 
 
@@ -34,3 +36,32 @@ def allocated_bytes(device):
     if kind(device) == "mps": return torch.mps.current_allocated_memory()
     if kind(device) == "cuda": return torch.cuda.max_memory_allocated()
     return 0
+
+
+def free_bytes(device):
+    """Free device memory as the driver sees it, or None on a backend with no such query.
+
+    Reserved-but-unallocated caching-allocator slack is NOT free for a new segment mapping (a fragmented allocator
+    fails a 20 MiB map with 1.9 MiB free while its own slack is larger), so a caller deciding whether a mapping can
+    succeed must read the driver's number, not the allocator's."""
+    return torch.cuda.mem_get_info(device)[0] if kind(device) == "cuda" else None
+
+
+_ACCELERATOR_ERROR = getattr(torch, "AcceleratorError", None)   # torch >= 2.6 raises it for CUDA runtime failures
+
+_UNRECOVERABLE = re.compile(
+    r"Sticky error|CUDA_ERROR_|unspecified launch failure|illegal memory access|device-side assert|"
+    r"CUDA error:|illegal instruction|context is destroyed|context has been destroyed", re.IGNORECASE)
+
+
+def unrecoverable(e):
+    """Whether a failure poisons the accelerator context: shedding and retrying cannot serve again, only a restart of
+    the process can (CUDA's sticky errors: after a launch failure every later CUDA call fails in-process).
+
+    Out-of-memory is NOT unrecoverable even when the message says "CUDA error: out of memory": kev.serve sheds and
+    retries those, and the eager path serves without the graphs. A plain RuntimeError is not either ("CUDA graphs are
+    off: ..." is one)."""
+    msg = str(e) or repr(e)
+    if out_of_memory(e) or "out of memory" in msg.lower(): return False
+    if _ACCELERATOR_ERROR is not None and isinstance(e, _ACCELERATOR_ERROR): return True
+    return bool(_UNRECOVERABLE.search(msg))

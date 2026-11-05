@@ -17,14 +17,14 @@ from kev.suite import read_json
 from chartstyle import JEV, KEV, body, display, heading, hbars, rule, stat, use_style
 
 ROOT = Path(__file__).resolve().parents[1]
-MODELS = [("kev-27b", "Qwen3.8-27B", "runs/release/kev-27b-v2/result.json"),
-          ("kev-9b", "Qwen3.5-9B", "runs/night2-9b-du/00-trial-0/result.json"),
+MODELS = [("kev-27b", "Qwen3.8-27B", "runs/r23-27b-k-w85-transfer4/report.json"),   # Kev-27B v2: round 23's raw transfer-v4 read
+          ("kev-9b", "Qwen3.5-9B", "runs/r18-9b/00-trial-0/result.json"),
           ("kev-4b", "Qwen3.5-4B", "runs/r10-skills/00-trial-0/result.json"),
           ("kev-0.8b", "Qwen3.5-0.8B", "runs/r15-08b/00-trial-0/result.json")]
 BASES = [("Qwen3.5-9B", "untrained base", "runs/probes/qwen35-9b-base-base-transfer-v4/report.json"),
          ("Qwen3.5-4B instruct", "untrained, SemIf prompt", "runs/probes/qwen35-4b-semif-transfer-v4/report.json")]
-LOCKED = [("kev-27b", "runs/locked/kev-27b-v2-ungated/summary.json"),
-          ("kev-9b", "runs/locked/kev-9b-night2-du-ungated/summary.json"),
+LOCKED = [("kev-27b", "runs/locked/kev-27b-r23-ungated/summary.json"),
+          ("kev-9b", "runs/locked/kev-9b-r27-ungated/summary.json"),
           ("kev-4b", "runs/locked/kev-4b-r10-ungated/summary.json"),
           ("kev-0.8b", "runs/locked/kev-08b-r15-ungated/summary.json")]
 JEV_T = "runs/jev-transfer-v4/report.json"
@@ -42,7 +42,7 @@ def main():
     use_style(dark=dark)
     fig = plt.figure(figsize=(16, 9))
     heading(fig, .05, .905, "Kev: open decision models, measured against Jev", size=30)
-    body(fig, .05, .855, "Typed questions in, probabilities out, one forward pass, no text generation. LoRA + pointer head on Qwen bases.", size=14)
+    body(fig, .05, .855, "Typed questions in, probabilities out, one forward pass, no text generation. Pointer head on Qwen bases: LoRA adapters, Kev-27B full weights.", size=14)
     rule(fig, .05, .95, .82)
 
     rows = [(n, sub, 100 * clean(p)["acc"], KEV[n]) for n, sub, p in MODELS]
@@ -55,7 +55,7 @@ def main():
     heading(fig, .05, .77, "Accuracy on data Kev never trained on", size=17)
     hbars(ax, [display(r[0]) for r in rows], [r[2] for r in rows], [r[3] for r in rows], xlim=(0, 100), fmt="{:.1f}%",
           emphasize=[i for i, r in enumerate(rows) if r[0].startswith("kev")], sublabels=[r[1] for r in rows], ticks=range(0, 101, 25), label_size=13, value_size=14)
-    n_records = read_json(ROOT / MODELS[0][2])["transfer"]["coverage"]["evaluated_records"]
+    first = read_json(ROOT / MODELS[0][2]); n_records = first.get("transfer", first)["coverage"]["evaluated_records"]
     body(fig, .05, .115, f"Bars: {n_records} frozen out-of-domain records from QNLI, SciQ, PAWS, MMLU, Emotion, TweetEval and held-out policy rules; the same development items for every row.\n"
          "Gray rows: zero-shot letter logits, no Kev fine-tuning. Right: locked tests, read once per release; Jev has not been evaluated on these partitions.", size=11)
 

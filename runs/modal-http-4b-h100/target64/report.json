@@ -1,0 +1,688 @@
+{
+  "direct": {
+    "url": "https://jp-1083--kev-http-pilot-direct-dev.us-east.modal.direct",
+    "levels": {
+      "1": {
+        "requests": 128,
+        "errors": [],
+        "rps": 20.01,
+        "p50_ms": 49.68,
+        "p99_ms": 51.87,
+        "process_p50_ms": 22.1,
+        "model_p50_ms": 18.4,
+        "graphs_before": {
+          "graphs": {
+            "captured": 7,
+            "kept": 7,
+            "pending": 0,
+            "failed": 0
+          },
+          "gpu": "NVIDIA H100 80GB HBM3",
+          "threads": 4
+        },
+        "graphs_after": {
+          "graphs": {
+            "captured": 7,
+            "kept": 7,
+            "pending": 0,
+            "failed": 0
+          },
+          "gpu": "NVIDIA H100 80GB HBM3",
+          "threads": 4
+        }
+      },
+      "8": {
+        "requests": 128,
+        "errors": [],
+        "rps": 41.23,
+        "p50_ms": 137.9,
+        "p99_ms": 432.28,
+        "process_p50_ms": 93.7,
+        "model_p50_ms": 68.0,
+        "graphs_before": {
+          "graphs": {
+            "captured": 17,
+            "kept": 17,
+            "pending": 0,
+            "failed": 0
+          },
+          "gpu": "NVIDIA H100 80GB HBM3",
+          "threads": 4
+        },
+        "graphs_after": {
+          "graphs": {
+            "captured": 20,
+            "kept": 20,
+            "pending": 0,
+            "failed": 0
+          },
+          "gpu": "NVIDIA H100 80GB HBM3",
+          "threads": 4
+        }
+      },
+      "32": {
+        "requests": 256,
+        "errors": [],
+        "rps": 80.94,
+        "p50_ms": 356.25,
+        "p99_ms": 774.75,
+        "process_p50_ms": 231.25,
+        "model_p50_ms": 158.8,
+        "graphs_before": {
+          "graphs": {
+            "captured": 30,
+            "kept": 30,
+            "pending": 0,
+            "failed": 0
+          },
+          "gpu": "NVIDIA H100 80GB HBM3",
+          "threads": 4
+        },
+        "graphs_after": {
+          "graphs": {
+            "captured": 32,
+            "kept": 32,
+            "pending": 0,
+            "failed": 0
+          },
+          "gpu": "NVIDIA H100 80GB HBM3",
+          "threads": 4
+        }
+      },
+      "64": {
+        "requests": 512,
+        "errors": [],
+        "rps": 76.84,
+        "p50_ms": 566.27,
+        "p99_ms": 2933.21,
+        "process_p50_ms": 78.9,
+        "model_p50_ms": 42.6,
+        "graphs_before": {
+          "graphs": {
+            "captured": 32,
+            "kept": 32,
+            "pending": 0,
+            "failed": 0
+          },
+          "gpu": "NVIDIA H100 80GB HBM3",
+          "threads": 4
+        },
+        "graphs_after": {
+          "graphs": {
+            "captured": 32,
+            "kept": 32,
+            "pending": 0,
+            "failed": 0
+          },
+          "gpu": "NVIDIA H100 80GB HBM3",
+          "threads": 4
+        }
+      },
+      "128": {
+        "requests": 1024,
+        "errors": [],
+        "rps": 53.78,
+        "p50_ms": 1682.1,
+        "p99_ms": 7911.99,
+        "process_p50_ms": 75.6,
+        "model_p50_ms": 29.6,
+        "graphs_before": {
+          "graphs": {
+            "captured": 32,
+            "kept": 32,
+            "pending": 0,
+            "failed": 0
+          },
+          "gpu": "NVIDIA H100 80GB HBM3",
+          "threads": 4
+        },
+        "graphs_after": {
+          "graphs": {
+            "captured": 32,
+            "kept": 32,
+            "pending": 0,
+            "failed": 0
+          },
+          "gpu": "NVIDIA H100 80GB HBM3",
+          "threads": 4
+        }
+      }
+    },
+    "settle": {
+      "graphs": {
+        "captured": 5,
+        "kept": 5,
+        "pending": 0,
+        "failed": 0
+      },
+      "gpu": "NVIDIA H100 80GB HBM3",
+      "threads": 4
+    },
+    "answers": {
+      "department": {
+        "type": "choice",
+        "choice": "returns",
+        "confidence": 0.2606,
+        "probabilities": {
+          "returns": 0.5071,
+          "shipping": 0.332,
+          "billing": 0.1609
+        }
+      },
+      "return_reason": {
+        "type": "choice",
+        "choice": "wrong_size",
+        "confidence": 0.7527,
+        "probabilities": {
+          "wrong_size": 0.8021,
+          "wrong_item": 0.04,
+          "damaged": 0.0087,
+          "changed_mind": 0.0209,
+          "other": 0.1283
+        }
+      },
+      "requested_resolution": {
+        "type": "choice",
+        "choice": "refund",
+        "confidence": 0.0758,
+        "probabilities": {
+          "exchange": 0.1771,
+          "refund": 0.3068,
+          "replacement": 0.2788,
+          "information": 0.2373
+        }
+      },
+      "tone": {
+        "type": "choice",
+        "choice": "frustrated",
+        "confidence": 0.3307,
+        "probabilities": {
+          "calm": 0.0653,
+          "frustrated": 0.5538,
+          "angry": 0.3809
+        }
+      },
+      "escalate": {
+        "type": "noul",
+        "noul": 0.7447
+      },
+      "frustration": {
+        "type": "score",
+        "score": 1.3393,
+        "legend": {
+          "0": "Calm",
+          "1": "Frustrated",
+          "2": "Very angry"
+        },
+        "probabilities": {
+          "0": 0.0438,
+          "1": 0.5731,
+          "2": 0.3831
+        },
+        "confidence": 0.3597
+      }
+    }
+  },
+  "asgi": {
+    "url": "https://jp-1083--kev-http-pilot-baseline-web-dev.modal.run",
+    "levels": {
+      "1": {
+        "requests": 128,
+        "errors": [],
+        "rps": 8.19,
+        "p50_ms": 101.76,
+        "p99_ms": 122.42,
+        "process_p50_ms": 39.25,
+        "model_p50_ms": 18.1,
+        "graphs_before": {
+          "graphs": {
+            "captured": 7,
+            "kept": 7,
+            "pending": 0,
+            "failed": 0
+          },
+          "gpu": "NVIDIA H100 80GB HBM3",
+          "threads": 4
+        },
+        "graphs_after": {
+          "graphs": {
+            "captured": 7,
+            "kept": 7,
+            "pending": 0,
+            "failed": 0
+          },
+          "gpu": "NVIDIA H100 80GB HBM3",
+          "threads": 4
+        }
+      },
+      "8": {
+        "requests": 128,
+        "errors": [],
+        "rps": 22.14,
+        "p50_ms": 210.22,
+        "p99_ms": 535.63,
+        "process_p50_ms": 91.95,
+        "model_p50_ms": 42.2,
+        "graphs_before": {
+          "graphs": {
+            "captured": 18,
+            "kept": 18,
+            "pending": 0,
+            "failed": 0
+          },
+          "gpu": "NVIDIA H100 80GB HBM3",
+          "threads": 4
+        },
+        "graphs_after": {
+          "graphs": {
+            "captured": 22,
+            "kept": 22,
+            "pending": 0,
+            "failed": 0
+          },
+          "gpu": "NVIDIA H100 80GB HBM3",
+          "threads": 4
+        }
+      },
+      "32": {
+        "requests": 256,
+        "errors": [],
+        "rps": 53.69,
+        "p50_ms": 555.39,
+        "p99_ms": 984.57,
+        "process_p50_ms": 236.75,
+        "model_p50_ms": 118.7,
+        "graphs_before": {
+          "graphs": {
+            "captured": 31,
+            "kept": 31,
+            "pending": 0,
+            "failed": 0
+          },
+          "gpu": "NVIDIA H100 80GB HBM3",
+          "threads": 4
+        },
+        "graphs_after": {
+          "graphs": {
+            "captured": 32,
+            "kept": 32,
+            "pending": 0,
+            "failed": 0
+          },
+          "gpu": "NVIDIA H100 80GB HBM3",
+          "threads": 4
+        }
+      },
+      "64": {
+        "requests": 512,
+        "errors": [],
+        "rps": 56.07,
+        "p50_ms": 934.43,
+        "p99_ms": 3619.35,
+        "process_p50_ms": 158.4,
+        "model_p50_ms": 85.85,
+        "graphs_before": {
+          "graphs": {
+            "captured": 32,
+            "kept": 32,
+            "pending": 0,
+            "failed": 0
+          },
+          "gpu": "NVIDIA H100 80GB HBM3",
+          "threads": 4
+        },
+        "graphs_after": {
+          "graphs": {
+            "captured": 32,
+            "kept": 32,
+            "pending": 0,
+            "failed": 0
+          },
+          "gpu": "NVIDIA H100 80GB HBM3",
+          "threads": 4
+        }
+      },
+      "128": {
+        "requests": 1024,
+        "errors": [],
+        "rps": 42.69,
+        "p50_ms": 2121.5,
+        "p99_ms": 9170.33,
+        "process_p50_ms": 128.45,
+        "model_p50_ms": 72.4,
+        "graphs_before": {
+          "graphs": {
+            "captured": 32,
+            "kept": 32,
+            "pending": 0,
+            "failed": 0
+          },
+          "gpu": "NVIDIA H100 80GB HBM3",
+          "threads": 4
+        },
+        "graphs_after": {
+          "graphs": {
+            "captured": 32,
+            "kept": 32,
+            "pending": 0,
+            "failed": 0
+          },
+          "gpu": "NVIDIA H100 80GB HBM3",
+          "threads": 4
+        }
+      }
+    },
+    "settle": {
+      "graphs": {
+        "captured": 5,
+        "kept": 5,
+        "pending": 0,
+        "failed": 0
+      },
+      "gpu": "NVIDIA H100 80GB HBM3",
+      "threads": 4
+    },
+    "answers": {
+      "department": {
+        "type": "choice",
+        "choice": "returns",
+        "confidence": 0.2606,
+        "probabilities": {
+          "returns": 0.5071,
+          "shipping": 0.332,
+          "billing": 0.1609
+        }
+      },
+      "return_reason": {
+        "type": "choice",
+        "choice": "wrong_size",
+        "confidence": 0.7527,
+        "probabilities": {
+          "wrong_size": 0.8021,
+          "wrong_item": 0.04,
+          "damaged": 0.0087,
+          "changed_mind": 0.0209,
+          "other": 0.1283
+        }
+      },
+      "requested_resolution": {
+        "type": "choice",
+        "choice": "refund",
+        "confidence": 0.0758,
+        "probabilities": {
+          "exchange": 0.1771,
+          "refund": 0.3068,
+          "replacement": 0.2788,
+          "information": 0.2373
+        }
+      },
+      "tone": {
+        "type": "choice",
+        "choice": "frustrated",
+        "confidence": 0.3307,
+        "probabilities": {
+          "calm": 0.0653,
+          "frustrated": 0.5538,
+          "angry": 0.3809
+        }
+      },
+      "escalate": {
+        "type": "noul",
+        "noul": 0.7447
+      },
+      "frustration": {
+        "type": "score",
+        "score": 1.3393,
+        "legend": {
+          "0": "Calm",
+          "1": "Frustrated",
+          "2": "Very angry"
+        },
+        "probabilities": {
+          "0": 0.0438,
+          "1": 0.5731,
+          "2": 0.3831
+        },
+        "confidence": 0.3597
+      }
+    }
+  },
+  "doubled": {
+    "url": "https://jp-1083--kev-http-pilot-doubled-web-dev.modal.run",
+    "levels": {
+      "1": {
+        "requests": 128,
+        "errors": [],
+        "rps": 9.57,
+        "p50_ms": 102.25,
+        "p99_ms": 122.17,
+        "process_p50_ms": 38.35,
+        "model_p50_ms": 18.4,
+        "graphs_before": {
+          "graphs": {
+            "captured": 7,
+            "kept": 7,
+            "pending": 0,
+            "failed": 0
+          },
+          "gpu": "NVIDIA H100 80GB HBM3",
+          "threads": 4
+        },
+        "graphs_after": {
+          "graphs": {
+            "captured": 7,
+            "kept": 7,
+            "pending": 0,
+            "failed": 0
+          },
+          "gpu": "NVIDIA H100 80GB HBM3",
+          "threads": 4
+        }
+      },
+      "8": {
+        "requests": 128,
+        "errors": [],
+        "rps": 25.38,
+        "p50_ms": 252.6,
+        "p99_ms": 736.78,
+        "process_p50_ms": 114.95,
+        "model_p50_ms": 51.15,
+        "graphs_before": {
+          "graphs": {
+            "captured": 19,
+            "kept": 19,
+            "pending": 0,
+            "failed": 0
+          },
+          "gpu": "NVIDIA H100 80GB HBM3",
+          "threads": 4
+        },
+        "graphs_after": {
+          "graphs": {
+            "captured": 21,
+            "kept": 21,
+            "pending": 0,
+            "failed": 0
+          },
+          "gpu": "NVIDIA H100 80GB HBM3",
+          "threads": 4
+        }
+      },
+      "32": {
+        "requests": 256,
+        "errors": [],
+        "rps": 36.13,
+        "p50_ms": 836.11,
+        "p99_ms": 1302.41,
+        "process_p50_ms": 222.5,
+        "model_p50_ms": 107.9,
+        "graphs_before": {
+          "graphs": {
+            "captured": 31,
+            "kept": 31,
+            "pending": 0,
+            "failed": 0
+          },
+          "gpu": "NVIDIA H100 80GB HBM3",
+          "threads": 4
+        },
+        "graphs_after": {
+          "graphs": {
+            "captured": 31,
+            "kept": 31,
+            "pending": 0,
+            "failed": 0
+          },
+          "gpu": "NVIDIA H100 80GB HBM3",
+          "threads": 4
+        }
+      },
+      "64": {
+        "requests": 512,
+        "errors": [],
+        "rps": 35.97,
+        "p50_ms": 1691.7,
+        "p99_ms": 2528.94,
+        "process_p50_ms": 214.3,
+        "model_p50_ms": 102.6,
+        "graphs_before": {
+          "graphs": {
+            "captured": 31,
+            "kept": 31,
+            "pending": 0,
+            "failed": 0
+          },
+          "gpu": "NVIDIA H100 80GB HBM3",
+          "threads": 4
+        },
+        "graphs_after": {
+          "graphs": {
+            "captured": 31,
+            "kept": 31,
+            "pending": 0,
+            "failed": 0
+          },
+          "gpu": "NVIDIA H100 80GB HBM3",
+          "threads": 4
+        }
+      },
+      "128": {
+        "requests": 1024,
+        "errors": [],
+        "rps": 34.74,
+        "p50_ms": 3463.88,
+        "p99_ms": 7055.02,
+        "process_p50_ms": 209.9,
+        "model_p50_ms": 98.4,
+        "graphs_before": {
+          "graphs": {
+            "captured": 31,
+            "kept": 31,
+            "pending": 0,
+            "failed": 0
+          },
+          "gpu": "NVIDIA H100 80GB HBM3",
+          "threads": 4
+        },
+        "graphs_after": {
+          "graphs": {
+            "captured": 31,
+            "kept": 31,
+            "pending": 0,
+            "failed": 0
+          },
+          "gpu": "NVIDIA H100 80GB HBM3",
+          "threads": 4
+        }
+      }
+    },
+    "settle": {
+      "graphs": {
+        "captured": 5,
+        "kept": 5,
+        "pending": 0,
+        "failed": 0
+      },
+      "gpu": "NVIDIA H100 80GB HBM3",
+      "threads": 4
+    },
+    "answers": {
+      "department": {
+        "type": "choice",
+        "choice": "returns",
+        "confidence": 0.2606,
+        "probabilities": {
+          "returns": 0.5071,
+          "shipping": 0.332,
+          "billing": 0.1609
+        }
+      },
+      "return_reason": {
+        "type": "choice",
+        "choice": "wrong_size",
+        "confidence": 0.7527,
+        "probabilities": {
+          "wrong_size": 0.8021,
+          "wrong_item": 0.04,
+          "damaged": 0.0087,
+          "changed_mind": 0.0209,
+          "other": 0.1283
+        }
+      },
+      "requested_resolution": {
+        "type": "choice",
+        "choice": "refund",
+        "confidence": 0.0758,
+        "probabilities": {
+          "exchange": 0.1771,
+          "refund": 0.3068,
+          "replacement": 0.2788,
+          "information": 0.2373
+        }
+      },
+      "tone": {
+        "type": "choice",
+        "choice": "frustrated",
+        "confidence": 0.3307,
+        "probabilities": {
+          "calm": 0.0653,
+          "frustrated": 0.5538,
+          "angry": 0.3809
+        }
+      },
+      "escalate": {
+        "type": "noul",
+        "noul": 0.7447
+      },
+      "frustration": {
+        "type": "score",
+        "score": 1.3393,
+        "legend": {
+          "0": "Calm",
+          "1": "Frustrated",
+          "2": "Very angry"
+        },
+        "probabilities": {
+          "0": 0.0438,
+          "1": 0.5731,
+          "2": 0.3831
+        },
+        "confidence": 0.3597
+      }
+    }
+  },
+  "answers_equal": true,
+  "configuration": {
+    "asgi": {
+      "max_inputs": 64,
+      "target_inputs": 32
+    },
+    "doubled": {
+      "max_inputs": 128,
+      "target_inputs": 64
+    },
+    "direct": {
+      "target_concurrency": 64
+    }
+  }
+}

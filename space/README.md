@@ -1,6 +1,6 @@
 ---
 title: Kev
-emoji: 🎚️
+emoji: ⚡
 colorFrom: gray
 colorTo: gray
 sdk: gradio

@@ -16,7 +16,8 @@ python3 scripts/convert_data.py workload.json tickets.csv \
 ```
 
 Columns default to the question id. Labels are matched case-insensitively to option names or option descriptions;
-yes/no/1/0 become noul booleans; score labels may be indices, 1-based ratings (`--score-offset 1`) or level texts.
+yes/no/1/0 become noul booleans; score labels may be whole-number indices, 1-based ratings (`--score-offset 1`) or level texts.
+A fraction such as 1.9 is skipped, not truncated to 1. A fraction that a JSON parser would round to a whole number, such as 0.99999999999999999, is skipped too.
 Skipped rows are counted by reason with an example value, so a missing `--map` is obvious. JSONL input supports dotted
 paths (`--label team=meta.team`).
 

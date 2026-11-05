@@ -1,0 +1,181 @@
+{
+  "run": "jaredpalmer/kev-4b@139fdd94f1b6a6ad80cc15e08fcb99cac885a101",
+  "path": "/Users/jared/.cache/huggingface/hub/models--jaredpalmer--kev-4b/snapshots/139fdd94f1b6a6ad80cc15e08fcb99cac885a101",
+  "machine": {
+    "chip": "Apple M5",
+    "memory_gb": 34.36,
+    "macos": "26.6.2",
+    "mlx": "0.32.2",
+    "mlx_lm": "0.31.3",
+    "torch": "2.8.0"
+  },
+  "precision": "fp32-cpu",
+  "dtype": "float32",
+  "device": "Device(cpu, 0)",
+  "layers": 8,
+  "weights_gb": 6.11,
+  "cases": {
+    "planted-3000": {
+      "state_tokens": 3000,
+      "chunks": {
+        "one pass": {
+          "seconds": 21.81,
+          "peak_above_weights_gb": 7.2,
+          "vs_one_pass": {
+            "max_dp": 0.0,
+            "argmax_flips": []
+          },
+          "cache": {
+            "array_rel": 0.0,
+            "element_rel": 0.0,
+            "kv_position_rel": {
+              "median": 0.0,
+              "max": 0.0,
+              "argmax": 0,
+              "max_at_pass_starts": null
+            },
+            "identical": true
+          }
+        },
+        "256": {
+          "seconds": 17.93,
+          "peak_above_weights_gb": 0.75,
+          "vs_one_pass": {
+            "max_dp": 0.0,
+            "argmax_flips": []
+          },
+          "cache": {
+            "array_rel": 2.4269920686492696e-06,
+            "element_rel": 3.2457269298902247e-06,
+            "kv_position_rel": {
+              "median": 2.3352596076049044e-06,
+              "max": 7.192156500828832e-06,
+              "argmax": 1429,
+              "max_at_pass_starts": 2.9533586930964177e-06
+            },
+            "identical": false
+          }
+        },
+        "1024": {
+          "seconds": 20.61,
+          "peak_above_weights_gb": 2.62,
+          "vs_one_pass": {
+            "max_dp": 0.0,
+            "argmax_flips": []
+          },
+          "cache": {
+            "array_rel": 2.0632487576222047e-06,
+            "element_rel": 2.6056227397930343e-06,
+            "kv_position_rel": {
+              "median": 0.0,
+              "max": 4.863486706512471e-06,
+              "argmax": 2164,
+              "max_at_pass_starts": 2.5686270436856984e-06
+            },
+            "identical": false
+          }
+        },
+        "2048": {
+          "seconds": 21.68,
+          "peak_above_weights_gb": 5.05,
+          "vs_one_pass": {
+            "max_dp": 0.0,
+            "argmax_flips": []
+          },
+          "cache": {
+            "array_rel": 2.0632487576222047e-06,
+            "element_rel": 2.6056227397930343e-06,
+            "kv_position_rel": {
+              "median": 0.0,
+              "max": 4.863486706512471e-06,
+              "argmax": 2164,
+              "max_at_pass_starts": 2.5686270436856984e-06
+            },
+            "identical": false
+          }
+        }
+      }
+    },
+    "hard-v1/long_policy/development/00024": {
+      "state_tokens": 4912,
+      "chunks": {
+        "one pass": {
+          "seconds": 43.48,
+          "peak_above_weights_gb": 11.89,
+          "vs_one_pass": {
+            "max_dp": 0.0,
+            "argmax_flips": []
+          },
+          "cache": {
+            "array_rel": 0.0,
+            "element_rel": 0.0,
+            "kv_position_rel": {
+              "median": 0.0,
+              "max": 0.0,
+              "argmax": 0,
+              "max_at_pass_starts": null
+            },
+            "identical": true
+          }
+        },
+        "256": {
+          "seconds": 29.85,
+          "peak_above_weights_gb": 0.82,
+          "vs_one_pass": {
+            "max_dp": 0.0,
+            "argmax_flips": []
+          },
+          "cache": {
+            "array_rel": 2.321921101611224e-06,
+            "element_rel": 6.8734530032088514e-06,
+            "kv_position_rel": {
+              "median": 2.270153203690828e-06,
+              "max": 1.0280178293198803e-05,
+              "argmax": 2664,
+              "max_at_pass_starts": 4.8936260078883335e-06
+            },
+            "identical": false
+          }
+        },
+        "1024": {
+          "seconds": 35.0,
+          "peak_above_weights_gb": 2.72,
+          "vs_one_pass": {
+            "max_dp": 0.0,
+            "argmax_flips": []
+          },
+          "cache": {
+            "array_rel": 1.974881797650596e-06,
+            "element_rel": 2.2954213818593416e-06,
+            "kv_position_rel": {
+              "median": 0.0,
+              "max": 5.678829451618033e-06,
+              "argmax": 4873,
+              "max_at_pass_starts": 1.7528805288804608e-06
+            },
+            "identical": false
+          }
+        },
+        "2048": {
+          "seconds": 34.48,
+          "peak_above_weights_gb": 5.15,
+          "vs_one_pass": {
+            "max_dp": 0.0,
+            "argmax_flips": []
+          },
+          "cache": {
+            "array_rel": 1.974881797650596e-06,
+            "element_rel": 2.2954213818593416e-06,
+            "kv_position_rel": {
+              "median": 0.0,
+              "max": 5.678829451618033e-06,
+              "argmax": 4873,
+              "max_at_pass_starts": 1.7528805288804608e-06
+            },
+            "identical": false
+          }
+        }
+      }
+    }
+  }
+}

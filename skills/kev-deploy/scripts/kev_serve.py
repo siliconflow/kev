@@ -1,7 +1,7 @@
 """Your own Kev endpoint on Modal: one file, one command. Speaks TypeSafe's System One protocol (POST /v1/systemone,
 GET /v1/models), so existing Jev / TypeSafe clients only change their base URL.
 
-    pip install modal && modal setup                                   # once: sign in to Modal (opens a browser)
+    pip install modal==1.5.5 && modal setup                            # once: sign in to Modal (opens a browser)
     modal deploy kev_serve.py                                          # Kev-4B on an L40S -> https://<workspace>--kev-api.modal.run
     KEV_MODEL=jaredpalmer/kev-9b modal deploy kev_serve.py             # another model; the GPU follows the model
     KEV_API_KEY=$(openssl rand -hex 24) modal deploy kev_serve.py      # require Authorization: Bearer <key> (recommended)
@@ -13,21 +13,21 @@ kev-4b), KEV_GPU (override the GPU list, comma-separated), KEV_API_KEY (bearer a
 secret), HF_TOKEN (only for a private checkpoint; if it is set in your shell it is uploaded as a Modal secret),
 KEV_MIN_CONTAINERS (1 keeps one container warm; default 0 scales to zero after 5 idle minutes), KEV_REGION (e.g. "us" or
 "us-east"; default anywhere with capacity, which can be another continent: Modal charges 1.15-1.75x for a pinned region),
-KEV_FLASH=1 (Modal's experimental direct HTTP server in KEV_REGION: about twice the requests per container and half the
-round trip; keeps one container up, since it cannot wake from zero quickly; the URL is
+KEV_FLASH=1 (direct HTTP through a Modal Server in KEV_REGION: bypasses the Function input plane and targets 64 concurrent
+requests per container; keeps one paid GPU container up, since it cannot wake from zero quickly; the URL is
 https://<workspace>--<app>-kev.<region>.modal.direct), KEV_APP_NAME (default "kev"; one app per
-endpoint). The image installs the kev package at KEV_REF; weights, compiled kernels and their autotuning
-results are cached on the `kev-hf-cache` volume, so only the first cold start downloads and compiles them. A request that
-waits longer than 150 s for a cold start gets an HTTP 303 to a result URL (Modal's web limit): follow redirects
-(`curl -L`) or warm the endpoint first.
+endpoint), KEV_TRUNCATE_STATES=1 (read the first 65,536 tokens of a longer state, and say so on every response, instead
+of refusing it with a 422). The image installs the kev package at
+KEV_REF; weights, compiled kernels and their autotuning results are cached on the `kev-hf-cache` volume, so only the first
+cold start downloads and compiles them. A request that waits longer than 150 s for a cold start gets an HTTP 303 to a
+result URL (Modal's web limit): follow redirects (`curl -L`) or warm the endpoint first.
 """
 import os
 import time
 
 import modal
-import modal.experimental
 
-KEV_REF = "f2bb629d670f5b746f712fc05550a098526c836b"   # github.com/jaredpalmer/kev commit whose kev package this endpoint runs
+KEV_REF = "fc4a17e194bca35a48c57211392ec49ea54a94ac"   # github.com/jaredpalmer/kev commit whose kev package this endpoint runs
 # GPU preference lists (Modal takes the first with capacity), from runs/serve-*/, runs/fused-27b-*/ and runs/serving-*/report.json in the repo.
 # An L4 is enough for the 0.8B but runs out of compute on the 4B; the L40S is the cheapest GPU that answers the 4B in tens
 # of milliseconds, the H100 the fastest for the 4B and 9B. The A100 is slower than the L40S here and costs more. Kev-27B
@@ -37,16 +37,17 @@ GPU_FOR = {"jaredpalmer/kev-0.8b": ["L4", "L40S"], "jaredpalmer/kev-4b": ["L40S"
            "jaredpalmer/kev-27b": ["B200", "H200", "H100"]}
 
 # Deploy-time settings travel in the image env, so the container evaluates this file with the same values.
-SETTINGS = {"KEV_MODEL": "jaredpalmer/kev-4b", "KEV_APP_NAME": "kev", "KEV_MIN_CONTAINERS": "0", "KEV_GPU": "", "KEV_REGION": "", "KEV_FLASH": "0"}
+SETTINGS = {"KEV_MODEL": "jaredpalmer/kev-4b", "KEV_APP_NAME": "kev", "KEV_MIN_CONTAINERS": "0", "KEV_GPU": "", "KEV_REGION": "", "KEV_FLASH": "0",
+            "KEV_TRUNCATE_STATES": "0"}   # read by kev.serve in the container (kev.serve.Server.truncate_states)
 SETTINGS = {k: os.environ.get(k, v) for k, v in SETTINGS.items()}
 MODEL = SETTINGS["KEV_MODEL"]
 GPU = SETTINGS["KEV_GPU"].split(",") if SETTINGS["KEV_GPU"] else GPU_FOR.get(MODEL.split("@")[0])
 if not GPU:
     raise SystemExit(f"no default GPU for {MODEL}; set KEV_GPU (e.g. KEV_GPU=H100)")
-FLASH = SETTINGS["KEV_FLASH"] == "1"   # Modal's experimental direct HTTP server: ~2x the requests per container, half the round trip
+FLASH = SETTINGS["KEV_FLASH"] == "1"   # direct HTTP through a Modal Server; retained setting name for existing deploys
 if FLASH and not SETTINGS["KEV_REGION"]:
     raise SystemExit("KEV_FLASH=1 serves through a regional proxy: set KEV_REGION (e.g. us-east) too")
-# Flash cannot wake a scaled-to-zero app quickly (its proxy answers 503 "no upstreams available" for minutes): keep one up
+# Direct servers reject requests with 503 while waking from zero: keep one up.
 MIN_CONTAINERS = max(int(SETTINGS["KEV_MIN_CONTAINERS"]), 1 if FLASH else 0)
 # Secret values never go into the image: they ride in a Modal secret (present in the container's env, so this stays equal there).
 SECRET = {k: os.environ[k] for k in ("KEV_API_KEY", "HF_TOKEN") if os.environ.get(k)}
@@ -72,16 +73,17 @@ WARMUP = [{"state": TICKET * n, "model": "kev-latest", "questions": QUESTIONS} f
 
 
 def with_serving(cls):
-    """Concurrency and the HTTP front: requests queue in the container, whose model thread batches them. Web endpoint
-    (default): ~40-50 requests/s per container through Modal's input plane, then more containers. Flash: Modal's direct
-    HTTP proxy in KEV_REGION to uvicorn in the container, ~100 requests/s per container at 64 concurrent (Kev-4B, H100)."""
+    """The web endpoint scales at 32; the direct server targets 64 requests per container."""
+    options = dict(image=image, gpu=GPU, cpu=4, memory=(16384, 131072), volumes={"/hf": cache},
+                   secrets=[modal.Secret.from_dict(SECRET)] if SECRET else [], min_containers=MIN_CONTAINERS,
+                   scaledown_window=300, startup_timeout=1200)
+    regions = SETTINGS["KEV_REGION"].split(",") if SETTINGS["KEV_REGION"] else None
     if FLASH:
-        return modal.experimental.http_server(port=8000, proxy_regions=[SETTINGS["KEV_REGION"].split(",")[0]], startup_timeout=1200)(modal.concurrent(target_inputs=32)(cls))
-    return modal.concurrent(max_inputs=64, target_inputs=32)(cls)
+        return app.server(**options, port=8000, routing_region=regions[0], compute_region=regions,
+                          target_concurrency=64, unauthenticated=True, exit_grace_period=120)(cls)
+    return app.cls(**options, region=regions, timeout=600)(modal.concurrent(max_inputs=64, target_inputs=32)(cls))
 
 
-@app.cls(image=image, gpu=GPU, region=SETTINGS["KEV_REGION"].split(",") if SETTINGS["KEV_REGION"] else None, cpu=4, memory=(16384, 131072), volumes={"/hf": cache}, secrets=[modal.Secret.from_dict(SECRET)] if SECRET else [],
-         min_containers=MIN_CONTAINERS, scaledown_window=300, timeout=600, startup_timeout=1200)
 @with_serving
 class Kev:
     @modal.enter()
@@ -99,7 +101,7 @@ class Kev:
         cache.commit()
         api.state.server = server
         print(f"serving {MODEL} on {torch.cuda.get_device_name(0)} (temperature {model.head.temperature:.2f}, {model.graphs.stats()['captured']} CUDA graphs, "
-              f"auth {'on' if os.environ.get('KEV_API_KEY') else 'off'}, {'flash' if FLASH else 'web endpoint'}), ready in {time.time() - started:.0f}s", flush=True)
+              f"auth {'on' if os.environ.get('KEV_API_KEY') else 'off'}, {'direct server' if FLASH else 'web endpoint'}), ready in {time.time() - started:.0f}s", flush=True)
         self.api = api
         if FLASH:
             import threading, uvicorn

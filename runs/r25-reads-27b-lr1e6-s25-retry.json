@@ -1,0 +1,20 @@
+{
+ "why": "the first 27b-lr1e6-s25 batch (runs/r25-reads-27b-lr1e6-s25.json, 00:52Z) failed these four jobs at load: the development partitions of four private suites (agents-ood-v1, guardrails-ood-v1, ood-v2, tasksource-heldout-v1) were absent from this checkout and the Modal container has no access to the private mirror. They were copied from /tmp/kev-r23run/evals (sha256 checked against each manifest) and the four jobs relaunched once under the same names; nothing had been written under those names on the volume.",
+ "launches": [
+  {
+   "at_utc": "2026-09-29T00:58Z",
+   "jobs": [
+    "/runs/r25-27b-lr1e6/00-trial-0/snapshots/step-0000089/checkpoint@evals/agents-ood-v1@r25-27b-lr1e6-s25-agentsood",
+    "/runs/r25-27b-lr1e6/00-trial-0/snapshots/step-0000089/checkpoint@evals/guardrails-ood-v1@r25-27b-lr1e6-s25-guardood",
+    "/runs/r25-27b-lr1e6/00-trial-0/snapshots/step-0000089/checkpoint@evals/ood-v2@r25-27b-lr1e6-s25-ood"
+   ]
+  },
+  {
+   "at_utc": "2026-09-29T01:21Z",
+   "jobs": [
+    "/runs/r25-27b-lr1e6/00-trial-0/snapshots/step-0000089/checkpoint@evals/tasksource-heldout-v1@r25-27b-lr1e6-s25-tsheld"
+   ]
+  }
+ ],
+ "command": "KEV_APP_NAME=kev-r25 KEV_GPU=H200 modal run --detach modal_app.py::benchmarks --jobs <jobs> --gpu H200 --timeout 14400"
+}

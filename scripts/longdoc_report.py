@@ -16,7 +16,9 @@ the synthetic detail questions, accuracy by depth (10 / 50 / 90 %). For CUAD als
 target contract contains no LEDGAR provision of the SFT corpus (overlap.json, cuad_targets.sft_v1_ledgar), the sensitivity
 read for that contamination. --parity NAME=OLD_DIR:NEW_DIR compares two reads of the same checkpoint question by question
 (max / mean |dp|, argmax flips, per bucket and part, and which rows carry `kernels: efficient`), e.g. one scored before and
-one after a change of scoring path. Writes report.json and report.md.
+one after a change of scoring path. --context-margin M adds each system's `validated_context` (round 28's registered rule,
+validated_context below: the largest bucket from 16k up whose CUAD paired difference from 8k, and every shorter one's, has a
+95 % lower bound >= M; round 28 registers M = -0.03). Writes report.json and report.md.
 """
 import argparse, json, sys
 from collections import defaultdict
@@ -86,6 +88,25 @@ def paired_ci(a_rows, b_rows, key):
     return {"questions": n, "delta": round(point, 4), "ci95": [round(float(lo), 4), round(float(hi), 4)], "falls": bool(hi < 0)}
 
 
+def validated_context(buckets, margin):
+    """Round 28's registered validated context length (PLAN.md, "Round 28 (registered)") from one system's `buckets`: a
+    bucket from 16k up is within tolerance when every record of it and of 8k was answered and the lower end of its
+    `cuad_paired_vs_8k` interval (the same CUAD questions about the same target contracts, 8k being the 4-8k-token bucket
+    the small family trained at) is at least `margin`; the validated length is the nominal size of the largest bucket such
+    that it and every bucket between it and 8k are within tolerance, else 8k itself (8,192: the trained length, not
+    extended). A bucket without an interval (unread, partly read, no pairs) is not within tolerance."""
+    complete = lambda b: bool(buckets.get(b)) and buckets[b]["coverage"]["answered"] == buckets[b]["coverage"]["records"] > 0
+    out, validated, first_failure = {}, "8k", None
+    for b in BUCKETS[2:]:
+        paired = (buckets.get(b) or {}).get("cuad_paired_vs_8k")
+        within = bool(paired) and complete(b) and complete("8k") and paired["ci95"][0] >= margin
+        out[b] = {"lower": paired["ci95"][0] if paired else None, "within": within}
+        if within and first_failure is None: validated = b
+        elif first_failure is None: first_failure = b
+    return {"margin": margin, "reference": "8k", "statistic": "cuad_paired_vs_8k lower bound (95 %)", "buckets": out,
+            "first_failure": first_failure, "validated_bucket": validated, "validated_tokens": int(validated[:-1]) * 1024}
+
+
 def parity(old_dir, new_dir):
     """Per bucket and part: questions, max and mean |dp|, argmax flips between two reads' rows (matched by id and question),
     and how many of the new rows took the long-row kernels."""
@@ -108,6 +129,8 @@ def main():
     ap.add_argument("--result", action="append", required=True)
     ap.add_argument("--out", required=True)
     ap.add_argument("--parity", action="append", default=[], help="NAME=OLD_DIR:NEW_DIR, two reads of one checkpoint to compare row by row")
+    ap.add_argument("--context-margin", type=float, default=None,
+                    help="also report each system's validated context length (validated_context: round 28 registers -0.03)")
     a = ap.parse_args()
     from kev.suite import load_split
     meta = {r["_meta"]["id"]: r["_meta"] for r in load_split(a.suite, "development")}
@@ -145,6 +168,7 @@ def main():
             sys_out["buckets"][b] = entry
         falls = [b for b in BUCKETS[1:] if (sys_out["buckets"][b].get("vs_4k") or {}).get("all") and sys_out["buckets"][b]["vs_4k"]["all"]["falls"]]
         sys_out["first_bucket_below_4k"] = falls[0] if falls else None
+        if a.context_margin is not None: sys_out["validated_context"] = validated_context(sys_out["buckets"], a.context_margin)
         out["systems"][name] = sys_out
     for spec in a.parity:
         name, _, dirs = spec.rpartition("=")
@@ -162,6 +186,9 @@ def main():
             lines.append(f"| {name} | {part} | " + " | ".join(cells) + " |")
     lines += ["", "accuracy / ECE / Brier per cell; first bucket whose accuracy is below the 4k control (95 % CI): " +
               "; ".join(f"{n}: {s['first_bucket_below_4k']}" for n, s in out["systems"].items())]
+    if a.context_margin is not None:
+        lines.append(f"validated context length (CUAD paired vs 8k, lower bound >= {a.context_margin:+.2f}): " +
+                     "; ".join(f"{n}: {s['validated_context']['validated_tokens']:,} tokens" for n, s in out["systems"].items()))
     (Path(a.out) / "report.md").write_text("\n".join(lines) + "\n", encoding="utf-8")
     print("\n".join(lines))
 

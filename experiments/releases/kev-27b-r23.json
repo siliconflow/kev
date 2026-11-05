@@ -1,0 +1,29 @@
+{
+  "release": "kev-27b-r23",
+  "note": "PLAN.md round 23: 27b-k-w85 = 0.85 x round 22's final full-weight SFT + 0.15 x Kev-27B merged in fp32, the SFT pointer head, served at the round's pool temperature (1.32); private candidate 'Kev-27B v2' (docs/model-cards/kev-27b-v2.md). The comparison column is the released Kev-27B (the round's parent), served at its shipped 1.38. Whole suites minus drop_ids; the registered panels with their exclusions are runs/r23-readout/round23.json and runs/r23-verdict/",
+  "drop_ids": ["codereviewer/cls-test/13657", "codereviewer/cls-test/19245"],
+  "candidate": {
+    "checkpoint": "/runs/release/kev-27b-r23/checkpoint",
+    "pool": {
+      "reads": {
+        "runs/r23-27b-k-w85-r3cal": ["composition_holdout", "emotion", "legacy_holdout", "mmlu", "paws", "qnli", "sciq", "tweet_offensive"],
+        "runs/r23-27b-k-w85-v9": ["mmlu_pro"]
+      },
+      "exclude": ["runs/r23-27b-k-w85-transfer4"]
+    },
+    "v9": "runs/r23-27b-k-w85-v9", "locked": "runs/locked/kev-27b-r23-ungated",
+    "transfer_dev": "runs/r23-27b-k-w85-transfer4", "r3test": "runs/r23-27b-k-w85-r3test", "breadth_dev": "runs/r23-27b-k-w85-breadth",
+    "docs1_dev": "runs/r23-27b-k-w85-docs", "hard_dev": "runs/r23-27b-k-w85-hard", "devtools_dev": "runs/r23-27b-k-w85-devtools",
+    "docs1_test": "runs/r23c-27b-cand-docs1test", "hard_test": "runs/r23c-27b-cand-hardtest", "devtools_test": "runs/r23c-27b-cand-devtest",
+    "semif": "runs/r23-27b-k-w85-semif", "wanli2": "runs/r23-27b-k-w85-wanli2", "typesafe": "runs/r23-27b-k-w85-typesafe"
+  },
+  "parent": {
+    "trial": "runs/r6-27b-v2/01-trial-1", "transfer_dev": "runs/r6-27b-v2/01-trial-1/transfer",
+    "v9": "runs/r6-27bv2-s2-v9", "locked": "runs/locked/kev-27b-v2-ungated",
+    "r3test": "runs/r19-P27-r3test", "breadth_dev": "runs/breadth-v1-kev-27b",
+    "docs1_dev": "runs/r6-27bv2-s2-docs", "hard_dev": "runs/hv1-27b", "devtools_dev": "runs/dt1-27b",
+    "docs1_test": "runs/r24c-27b-parent-docs1test", "hard_test": "runs/r24c-27b-parent-hardtest", "devtools_test": "runs/r24c-27b-parent-devtest",
+    "semif": "runs/r6-27bv2-s2-semif", "wanli2": "runs/r6-27bv2-s2-wanli2", "typesafe": "runs/r6-27bv2-s2-typesafe"
+  },
+  "paired_locked": true
+}

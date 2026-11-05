@@ -15,7 +15,7 @@ from kev.rounds import SAMPLES, served_clean, temperature  # noqa: E402
 from kev.suite import read_json, write_json  # noqa: E402
 
 ARMS = {"candidate": ("runs/r4-soft/00-trial-0", "cand"), "control": ("runs/r4-deltas/01-trial-1", "ctrl"), "parent": ("runs/night2-9b-du/00-trial-0", "parent")}
-EXTERNALS = ("semif", "scienthoon", "wanli", "typesafe")   # as registered 2026-09-22; scienthoon was removed as an eval on 2026-09-27, its committed reads stay
+EXTERNALS = ("semif", "scienthoon", "wanli", "typesafe")   # as registered 2026-09-22; scienthoon (2026-09-27), wanli and typesafe (2026-09-30) were removed as evals, their committed reads stay
 KEYS = ("n", "acc", "brier", "ece", "confident_error_rate", "coverage_at_5pct_error", "aurc")
 
 

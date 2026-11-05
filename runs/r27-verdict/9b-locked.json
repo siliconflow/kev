@@ -1,0 +1,89 @@
+{
+  "round": 27,
+  "stage": "locked",
+  "arm": "9b-r18a",
+  "trial": "runs/r18-9b/00-trial-0",
+  "parent": "runs/night2-9b-du/00-trial-0",
+  "temperature": 2.193649959389252,
+  "parent_temperature": 2.2973967099940698,
+  "panels": {
+    "locked": {
+      "n": 656,
+      "acc": {
+        "candidate": 0.8521341463414634,
+        "parent": 0.8521341463414634,
+        "delta": 0.0,
+        "ci95": [
+          -0.0167682926829269,
+          0.018292682926829285
+        ]
+      },
+      "brier": {
+        "candidate": 0.19903633675761395,
+        "parent": 0.22404392868087095,
+        "delta": -0.02500759192325705,
+        "ci95": [
+          -0.046728257202665345,
+          -0.007368816571473011
+        ]
+      }
+    }
+  },
+  "missing": [],
+  "temperature_fit": {
+    "reads": [
+      "runs/r27-9b-r18a-r3cal",
+      "runs/r18-9b-joint-lr2e5-v9"
+    ],
+    "sources": {
+      "runs/r18-9b-joint-lr2e5-v9": [
+        "mmlu_pro"
+      ],
+      "runs/r27-9b-r18a-r3cal": [
+        "composition_holdout",
+        "emotion",
+        "legacy_holdout",
+        "mmlu",
+        "paws",
+        "qnli",
+        "sciq",
+        "tweet_offensive"
+      ]
+    },
+    "exclude_reads": [
+      "runs/r18-9b/00-trial-0/transfer"
+    ],
+    "questions": 648,
+    "excluded_questions": 0
+  },
+  "temperature_ci": {
+    "level": 0.9,
+    "samples": 2000,
+    "seed": 0,
+    "lower": 2.04674778399355,
+    "upper": 2.406050072164233,
+    "questions": 648,
+    "resampled": "(source, group) clusters within each source (kev.metrics.cluster_resamples)"
+  },
+  "temperature_source": {
+    "kind": "pool",
+    "reads": [
+      "runs/r27-9b-r18a-r3cal",
+      "runs/r18-9b-joint-lr2e5-v9"
+    ],
+    "questions": 648
+  },
+  "parent_temperature_source": {
+    "kind": "trial development rows",
+    "rows": "runs/night2-9b-du/00-trial-0/development",
+    "suite": "evals/v7/decision-v7",
+    "training_corpus": true,
+    "shipped": 2.2973967099940698
+  },
+  "criteria": {
+    "locked_acc_at_least_parent_minus_1pp": true,
+    "served_brier_at_most_parent_plus_0.005": true
+  },
+  "complete": true,
+  "passed": true
+}

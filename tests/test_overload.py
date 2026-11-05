@@ -48,11 +48,11 @@ def test_submit_counts_refusals():
     import kev.serve as S
 
     class Model:
-        def encode(self, tok, rec, max_state=None, max_branch=None): return {"ids": [1], "seg": [0]}
+        def encode(self, tok, rec, **kw): return {"ids": [1], "seg": [0], "state_tokens": 1}
 
     s = object.__new__(S.Server)
     s.model, s.tok, s.stopping = Model(), None, threading.Event()
-    s.queue, s.refusals = queue.Queue(maxsize=1), 0
+    s.queue, s.refusals, s.truncate_states = queue.Queue(maxsize=1), 0, False
     s.queue.put_nowait("someone else's request")
     try:
         s.submit({"state": "x", "questions": {}})
@@ -163,7 +163,7 @@ def test_run_sheds_cache_then_graphs_then_serves_eagerly(monkeypatch):
         s.device, s.model = "cpu", Model(fails)
         s.prefix_cache, s.latency = S.PrefixCache(4, 0), S.LatencyView()
         s.batches = s.batched_requests = s.graph_sheds = 0
-        enc = {"ids": [1, 2, 3], "seg": [0, 0, 0]}
+        enc = {"ids": [1, 2, 3], "seg": [0, 0, 0], "state_tokens": 3}
         return s, s._run([enc])
 
     s, out = run(fails=2)                        # both sheds, then the retry serves
@@ -176,7 +176,7 @@ def test_run_sheds_cache_then_graphs_then_serves_eagerly(monkeypatch):
     s2.prefix_cache, s2.latency = S.PrefixCache(4, 0), S.LatencyView()
     s2.batches = s2.batched_requests = s2.graph_sheds = 0
     try:
-        s2._run([{"ids": [1], "seg": [0]}])
+        s2._run([{"ids": [1], "seg": [0], "state_tokens": 1}])
         raise AssertionError("a third OOM must reach the client")
     except torch.OutOfMemoryError:
         pass
@@ -334,7 +334,7 @@ def test_run_eases_pressure_before_the_batch(monkeypatch):
     s.prefix_cache, s.latency = S.PrefixCache(4, 0), S.LatencyView()
     s.batches = s.batched_requests = s.graph_sheds = 0
     s._ease_pressure = lambda graphs: order.append("ease")
-    s._run([{"ids": [1], "seg": [0]}])
+    s._run([{"ids": [1], "seg": [0], "state_tokens": 1}])
     assert order == ["ease", "batch"] and s.batches == 1
 
 
@@ -361,7 +361,7 @@ def test_run_clears_the_prefix_cache_first(monkeypatch):
     s.device, s.model = "cpu", Model()
     s.prefix_cache, s.latency = S.PrefixCache(4, 0), S.LatencyView()
     s.batches = s.batched_requests = s.graph_sheds = 0
-    enc = {"ids": [1, 2], "seg": [0, 0]}
+    enc = {"ids": [1, 2], "seg": [0, 0], "state_tokens": 2}
     s.prefix_cache.entries[((1, 2), False)] = "cached-prefix"
     out = s._run([enc])
     assert s.model.calls == 2 and len(out) == 1

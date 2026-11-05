@@ -1,0 +1,97 @@
+{
+  "full": "/tmp/kev-mlxfull-ckpts/kev-0.8b-full/checkpoint",
+  "weights_sha256": "024714fddf0442e0ba56c0dc70312e7a7ce22ca682377be4e39cbea62b2ec457",
+  "lora": "jaredpalmer/kev-0.8b@9a45d25eb2ab761841196625383fa1dff0e56c1e",
+  "suite": "evals/v7/decision-v7",
+  "records": 100,
+  "weights_gb": 1.504820888,
+  "weights_dtype": "bf16",
+  "machine": "Apple M5",
+  "memory_gb": 32.0,
+  "loads": {
+    "mlx-full": {
+      "mlx_peak_load_gb": 1.504788136,
+      "mlx_active_after_load_gb": 1.504786056,
+      "mlx_cache_after_load_gb": 2.048e-06,
+      "load_seconds": 1.1,
+      "rss_peak_after_load_gb": 2.195111936,
+      "backend": "mlx",
+      "dtype": "bfloat16",
+      "score_seconds": 32.5,
+      "rss_peak_gb": 2.208989184,
+      "mlx_peak_gb": 2.331280586
+    },
+    "mlx-lora": {
+      "mlx_peak_load_gb": 2.572572364,
+      "mlx_active_after_load_gb": 1.50479124,
+      "mlx_cache_after_load_gb": 0.00016384,
+      "load_seconds": 1.2,
+      "rss_peak_after_load_gb": 3.366912,
+      "backend": "mlx",
+      "dtype": "bfloat16",
+      "score_seconds": 31.6,
+      "rss_peak_gb": 3.366912,
+      "mlx_peak_gb": 2.572572364
+    },
+    "mlx-lora-bf16": {
+      "mlx_peak_load_gb": 2.572572364,
+      "mlx_active_after_load_gb": 1.504787848,
+      "mlx_cache_after_load_gb": 0.000172992,
+      "load_seconds": 1.3,
+      "rss_peak_after_load_gb": 3.367665664,
+      "backend": "mlx",
+      "dtype": "bfloat16",
+      "score_seconds": 10.7,
+      "rss_peak_gb": 3.367665664,
+      "mlx_peak_gb": 2.572572364
+    },
+    "torch-full": {
+      "load_seconds": 1.4,
+      "rss_peak_after_load_gb": 5.182488576,
+      "backend": "torch",
+      "dtype": "float32",
+      "score_seconds": 79.0,
+      "rss_peak_gb": 5.182488576
+    }
+  },
+  "parity": {
+    "mlx-full vs mlx-lora": {
+      "questions": 100,
+      "max_dp": 0.025019139051437378,
+      "mean_dp": 0.0036491141805890946,
+      "argmax_flips": 1,
+      "over_0.02": 1
+    },
+    "mlx-full vs mlx-lora-bf16": {
+      "questions": 100,
+      "max_dp": 0.0,
+      "mean_dp": 0.0,
+      "argmax_flips": 0,
+      "over_0.02": 0
+    },
+    "mlx-full vs torch-full": {
+      "questions": 100,
+      "max_dp": 0.02489408850669861,
+      "mean_dp": 0.004208011548034847,
+      "argmax_flips": 0,
+      "over_0.02": 1
+    },
+    "mlx-lora vs torch-full": {
+      "questions": 100,
+      "max_dp": 0.020308077335357666,
+      "mean_dp": 0.0039439960103482006,
+      "argmax_flips": 1,
+      "over_0.02": 1
+    }
+  },
+  "merge": {
+    "command": "scripts/merge_lora_checkpoint.py --lora jaredpalmer/kev-0.8b@9a45d25eb2ab761841196625383fa1dff0e56c1e --out /tmp/kev-mlxfull-ckpts/kev-0.8b-full --weights_dtype bf16",
+    "phases": {
+      "load_base_and_adapter": 2.2,
+      "merge": 1.6,
+      "write_backbone": 0.3,
+      "hash_output": 0.7
+    },
+    "tensors": 320
+  }
+}

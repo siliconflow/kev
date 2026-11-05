@@ -49,7 +49,12 @@ def rows_per_pass(rows, prefix_len=0, budget=ROW_PASS_TOKENS):
 
 class ContextOverflow(ValueError):
     """A record does not encode within its context (state, branch or packed limit). Serving turns it into a 422; the
-    benchmark counts it as a rejected record for suites scored as published (skip_overlong)."""
+    benchmark counts it as a rejected record for suites scored as published (skip_overlong). When the state is what
+    overflows, state_tokens (its count, the <state> token included) and max_state (the limit) say by how much."""
+
+    def __init__(self, message, state_tokens=None, max_state=None):
+        super().__init__(message)
+        self.state_tokens, self.max_state = state_tokens, max_state
 
 
 def load_tokenizer(name, revision=None):
@@ -89,10 +94,13 @@ def encode(tok, rec, max_state=MAX_STATE, max_branch=MAX_BRANCH, strict=False, o
     option_isolation=True: every option span is its own sub-branch (it sees state + instruction + itself only), all
     option spans share the same position ids, and <decide> sits at one fixed position after the longest span. Then the
     per-option representations and <decide>'s attention over them are permutation-invariant by construction.
+
+    Not strict, a state over max_state tokens is cut to its first max_state (state_truncated; state_tokens is the whole
+    state's count, the <state> token included, as the limit counts it). Strict, it raises ContextOverflow.
     """
     state_tokens = user_tokens(tok, rec["state"])
     if strict and len(state_tokens) + 1 > max_state:
-        raise ContextOverflow(f"state exceeds {max_state} tokens: {len(state_tokens) + 1}")
+        raise ContextOverflow(f"state exceeds {max_state} tokens: {len(state_tokens) + 1}", state_tokens=len(state_tokens) + 1, max_state=max_state)
     S = [tok.convert_tokens_to_ids(SPECIAL[0])] + state_tokens[: max_state - 1]
     ids, seg, pos, opt = list(S), [0] * len(S), list(range(len(S))), [OPT_NONE] * len(S)
     q_id, o_id, c_id, d_id = (tok.convert_tokens_to_ids(t) for t in SPECIAL[1:])
@@ -116,7 +124,22 @@ def encode(tok, rec, max_state=MAX_STATE, max_branch=MAX_BRANCH, strict=False, o
         ids += br; seg += [k] * len(br); pos += br_pos; opt += br_opt
         decide_idx.append(base + len(br) - 1); opt_idx.append([base + e for e in ends])
     return {"ids": ids, "seg": seg, "pos": pos, "opt": opt, "option_isolation": option_isolation, "decide_idx": decide_idx, "opt_idx": opt_idx,
-            "labels": [q["label"] for q in rec["questions"]], "state_truncated": len(state_tokens) + 1 > max_state}
+            "labels": [q["label"] for q in rec["questions"]], "state_tokens": len(state_tokens) + 1, "state_truncated": len(state_tokens) + 1 > max_state}
+
+
+def admit(model, tok, rec, truncate=False):
+    """The serving admission check (kev.serve and the Space; the torch and MLX models both encode through encode above):
+    -> rec encoded within the serving context. A state over SERVE_MAX_STATE tokens (the <state> token included) raises
+    ContextOverflow saying how long it is and how to fix it, unless truncate=True: then its first SERVE_MAX_STATE tokens
+    are read and the encoding says so (state_truncated, state_tokens). A question whose row (state + its branch) is over
+    SERVE_MAX_BRANCH raises ContextOverflow either way. Benchmarks do not truncate either: kev.predictors.LocalPredictor
+    encodes strictly within its suite's context."""
+    try:
+        return model.encode(tok, rec, max_state=SERVE_MAX_STATE, max_branch=SERVE_MAX_BRANCH, strict=not truncate)
+    except ContextOverflow as e:
+        if e.max_state is None: raise
+        raise ContextOverflow(f"state is {e.state_tokens:,} tokens, over the {e.max_state:,}-token limit (the <state> token included): "
+                              "shorten the document or split it across requests", state_tokens=e.state_tokens, max_state=e.max_state) from None
 
 
 def fits(rec, *tokenizers, max_state=MAX_STATE, max_branch=MAX_BRANCH, max_packed=MAX_PACKED):

@@ -1,0 +1,90 @@
+{
+  "run": "/runs/r22-27b-lr2e6/00-trial-0/checkpoint",
+  "gpu": "NVIDIA H200",
+  "lengths": {
+    "8192": {
+      "benchmark": {
+        "latency_ms": 10759.8,
+        "input_tokens": 8341,
+        "peak_allocated_gb": 68.2
+      },
+      "served": {
+        "tokens": 8341,
+        "state_tokens": 8192,
+        "first_ms": 1588.1,
+        "new_ms": 1365.1,
+        "cached_ms": 583.7,
+        "cache_hits": 3,
+        "peak_allocated_gb": 70.3,
+        "served_vs_benchmark": {
+          "max_dp": 0.008307993412017822,
+          "mean_dp": 0.0023687086999416352,
+          "argmax_flips": 0
+        }
+      }
+    },
+    "32768": {
+      "benchmark": {
+        "latency_ms": 4467.5,
+        "input_tokens": 33007,
+        "peak_allocated_gb": 58.7
+      },
+      "served": {
+        "tokens": 33007,
+        "state_tokens": 32768,
+        "first_ms": 4167.6,
+        "new_ms": 4166.6,
+        "cached_ms": 612.4,
+        "cache_hits": 2,
+        "peak_allocated_gb": 78.7,
+        "served_vs_benchmark": {
+          "max_dp": 0.007873237133026123,
+          "mean_dp": 0.004569107294082641,
+          "argmax_flips": 0
+        }
+      }
+    },
+    "65536": {
+      "benchmark": {
+        "latency_ms": 10226.1,
+        "input_tokens": 65687,
+        "peak_allocated_gb": 66.2
+      },
+      "served": {
+        "tokens": 65687,
+        "state_tokens": 65536,
+        "first_ms": 9515.7,
+        "new_ms": 9471.1,
+        "cached_ms": 724.9,
+        "cache_hits": 2,
+        "peak_allocated_gb": 87.1,
+        "served_vs_benchmark": {
+          "max_dp": 0.0024164915084838867,
+          "mean_dp": 0.0013623356819152832,
+          "argmax_flips": 0
+        }
+      }
+    }
+  },
+  "evaluate_records": {
+    "coverage": {
+      "requested_records": 3,
+      "requested_questions": 15,
+      "evaluated_records": 3,
+      "evaluated_questions": 15,
+      "rejected_records": 0,
+      "truncated_records": 0
+    },
+    "latency_ms": {
+      "median": 9127.617224999995,
+      "p95": 10038.892553699992
+    }
+  },
+  "resident_gb": 65.5,
+  "graphs": {
+    "captured": 1,
+    "kept": 1,
+    "pending": 0,
+    "failed": 0
+  }
+}

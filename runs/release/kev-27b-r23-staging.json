@@ -1,0 +1,194 @@
+{
+  "release": "kev-27b-r23",
+  "name": "Kev-27B v2 (release candidate, private)",
+  "note": "staging record of the private release candidate (PLAN.md 'Release candidate: Kev-27B v2'); nothing public",
+  "source": {
+    "checkpoint": "/runs/r23-wise/27b-k-w85/checkpoint",
+    "weights_sha256": "d27af6ab2be16824166ac639907b4dba40979ff338599c2872721aa6c5072022",
+    "head_sha256": "1a62fa3b0414e24ac1c90663c9979c66f6b1acbc9a36cd5dbf248a5d5cf8a1c7",
+    "head_temperature": 1.0,
+    "interpolation": "runs/r23-wise/27b-k-w85/interpolation.json",
+    "untouched": true
+  },
+  "copy": {
+    "command": "KEV_APP_NAME=kev-release uv run modal run modal_app.py::release_copy --src /runs/r23-wise/27b-k-w85/checkpoint --dst /runs/release/kev-27b-r23/checkpoint --expect d27af6ab2be16824166ac639907b4dba40979ff338599c2872721aa6c5072022",
+    "dst": "/runs/release/kev-27b-r23/checkpoint",
+    "weights_sha256": "d27af6ab2be16824166ac639907b4dba40979ff338599c2872721aa6c5072022",
+    "files": [
+      "chat_template.jinja",
+      "config.json",
+      "head.pt",
+      "model-00001-of-00011.safetensors",
+      "model-00002-of-00011.safetensors",
+      "model-00003-of-00011.safetensors",
+      "model-00004-of-00011.safetensors",
+      "model-00005-of-00011.safetensors",
+      "model-00006-of-00011.safetensors",
+      "model-00007-of-00011.safetensors",
+      "model-00008-of-00011.safetensors",
+      "model-00009-of-00011.safetensors",
+      "model-00010-of-00011.safetensors",
+      "model-00011-of-00011.safetensors",
+      "model.safetensors.index.json",
+      "tokenizer.json",
+      "tokenizer_config.json"
+    ],
+    "bytes": 51279854774,
+    "sidecars": [
+      "interpolation.json"
+    ],
+    "weights_equal_source": true
+  },
+  "temperature": {
+    "value": 1.319507910772894,
+    "command": "uv run python scripts/calibrate_checkpoint.py --run runs/release/kev-27b-r23/checkpoint --rows runs/r23-27b-k-w85-r3cal/rows.json:composition_holdout,emotion,legacy_holdout,mmlu,paws,qnli,sciq,tweet_offensive --rows runs/r23-27b-k-w85-v9/rows.json:mmlu_pro --exclude_rows runs/r23-27b-k-w85-transfer4/rows.json --transfer runs/r23-27b-k-w85-transfer4/rows.json (head.pt pulled from the copy, written, put back with modal volume put)",
+    "fit": {
+      "rows": [
+        "runs/r23-27b-k-w85-r3cal/rows.json:composition_holdout,emotion,legacy_holdout,mmlu,paws,qnli,sciq,tweet_offensive",
+        "runs/r23-27b-k-w85-v9/rows.json:mmlu_pro"
+      ],
+      "exclude_rows": [
+        "runs/r23-27b-k-w85-transfer4/rows.json"
+      ],
+      "n": 648,
+      "method": "min micro mean NLL over a 121-point log grid 0.25..4",
+      "cross_validation": {
+        "raw": {
+          "n": 648,
+          "ece": 0.04814156507387222,
+          "brier": 0.2909790650436873,
+          "nll": 0.6191997446263435,
+          "confident_error_rate": 0.043209876543209874,
+          "coverage_at_5pct_error": 0.5447530864197531
+        },
+        "out_of_fold": {
+          "n": 648,
+          "ece": 0.03828716447953347,
+          "brier": 0.28938602939494174,
+          "nll": 0.5990474029718854,
+          "confident_error_rate": 0.021604938271604937,
+          "coverage_at_5pct_error": 0.5154320987654321
+        },
+        "ece_ci95": {
+          "raw": [
+            0.04073460727239484,
+            0.08085159616742922
+          ],
+          "out_of_fold": [
+            0.028309916538034892,
+            0.06829671766152474
+          ],
+          "delta": [
+            -0.034078442122961634,
+            0.010845781720006739
+          ]
+        },
+        "separated": false,
+        "temperatures": [
+          1.35034994616819,
+          1.319507910772894,
+          1.319507910772894,
+          1.35034994616819,
+          1.2599210498948732
+        ],
+        "folds": 5,
+        "seed": 0,
+        "samples": 1000,
+        "groups": 592,
+        "unit": "source-stratified (source, group); sibling questions and variants stay together"
+      },
+      "fit_rows": [
+        {
+          "rows": "runs/r23-27b-k-w85-r3cal/rows.json",
+          "suite": "evals/round3/transfer-r3",
+          "split": "calibration",
+          "sources": [
+            "composition_holdout",
+            "emotion",
+            "legacy_holdout",
+            "mmlu",
+            "paws",
+            "qnli",
+            "sciq",
+            "tweet_offensive"
+          ],
+          "questions": 448
+        },
+        {
+          "rows": "runs/r23-27b-k-w85-v9/rows.json",
+          "suite": "evals/v9/transfer-v9",
+          "split": "development",
+          "sources": [
+            "mmlu_pro"
+          ],
+          "questions": 200
+        }
+      ],
+      "training_suites": [
+        "evals/devtools-v1",
+        "evals/documents-v1",
+        "evals/hard-v1",
+        "evals/round6/b1v2",
+        "evals/sft-v1",
+        "evals/sft-v2",
+        "evals/sft-v2-r22"
+      ]
+    },
+    "head_sha256": "7968f17b03479c1ef9d1c0f3ab8a15e31ecb441cf40691b07ee945ab554d45ad",
+    "equals_round_pool_fit": true,
+    "head_equals_monitor_copy": true
+  },
+  "hub": {
+    "repo": "jaredpalmer/kev-27b-v2-candidate",
+    "private": true,
+    "commit": "0dd33bcc0e7b7f2f23e887b12e7e8cbdd0838637",
+    "created_by": "modal_app.py::release_publish (kev.publish --private: kev.mirror.ensure_private)",
+    "files": [
+      ".gitattributes",
+      "README.md",
+      "chat_template.jinja",
+      "config.json",
+      "head.pt",
+      "interpolation.json",
+      "model-00001-of-00011.safetensors",
+      "model-00002-of-00011.safetensors",
+      "model-00003-of-00011.safetensors",
+      "model-00004-of-00011.safetensors",
+      "model-00005-of-00011.safetensors",
+      "model-00006-of-00011.safetensors",
+      "model-00007-of-00011.safetensors",
+      "model-00008-of-00011.safetensors",
+      "model-00009-of-00011.safetensors",
+      "model-00010-of-00011.safetensors",
+      "model-00011-of-00011.safetensors",
+      "model.safetensors.index.json",
+      "tokenizer.json",
+      "tokenizer_config.json"
+    ],
+    "weights_sha256_from_lfs": "d27af6ab2be16824166ac639907b4dba40979ff338599c2872721aa6c5072022",
+    "weights_equal_release": true,
+    "head_sha256_from_lfs": "7968f17b03479c1ef9d1c0f3ab8a15e31ecb441cf40691b07ee945ab554d45ad",
+    "head_equal_release": true,
+    "readme_commits": {
+      "7ee6653ee94fe6b5fdc145daff54c925c8dba8f1": "full card (longdoc test pending)",
+      "9c1a99b8ee53b523e5e053e773e8a7dd62b0958d": "card with the longdoc-v1 test read; weights unchanged since 0dd33bcc"
+    }
+  },
+  "verification": {
+    "command": "KEV_APP_NAME=kev-release KEV_HF_SECRET=huggingface-secret uv run modal run modal_app.py::benchmarks --jobs 'jaredpalmer/kev-27b-v2-candidate@0dd33bcc0e7b7f2f23e887b12e7e8cbdd0838637@evals/external/semif-v1@rel27-hub-semif' --gpu H200",
+    "loaded": "jaredpalmer/kev-27b-v2-candidate@0dd33bcc0e7b7f2f23e887b12e7e8cbdd0838637",
+    "gpu": "H200",
+    "suite": "evals/external/semif-v1 (development)",
+    "reference": "runs/r23-27b-k-w85-semif (round 23's read of the volume checkpoint, T 1.0)",
+    "rows": 252,
+    "inference_temperature": [
+      1.319507910772894
+    ],
+    "logits_exact": 252,
+    "logits_rule": "served logits == fp32(z_reference * fp32(1 / T)) bit for bit (PointerHead divides by T; torch divides by a scalar as a multiply by its reciprocal), so z is identical",
+    "max_abs_dp_vs_reference_at_T": 3.220016875360443e-08,
+    "argmax_equal": 252,
+    "acc": 0.9652777777777778,
+    "served_brier": 0.06259279482538739
+  }
+}

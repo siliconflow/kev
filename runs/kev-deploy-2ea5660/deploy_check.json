@@ -1,0 +1,236 @@
+{
+  "what": "skills/kev-deploy/scripts/kev_serve.py at KEV_REF 2ea566009d95763bbcea7cc03468140cc559cbfd (kev main after #191 and #193), KEV_MODEL=jaredpalmer/kev-27b, KEV_GPU=H200 (the reference read and the previous check, runs/kev-deploy-27b-v2, ran on an H200), bearer key on. Two Modal apps: kev-ref2ea5660-27b (default server) for (a) and (b), kev-ref2ea5660-27b-trunc (KEV_TRUNCATE_STATES=1) for (c); both stopped after the checks",
+  "date": "2026-09-30",
+  "kev_ref": "2ea566009d95763bbcea7cc03468140cc559cbfd",
+  "apps": {
+    "kev-ref2ea5660-27b": {
+      "window_utc": [
+        "2026-09-30T20:36:45Z",
+        "2026-09-30T20:40:05Z"
+      ],
+      "cold_start_seconds": 60,
+      "served": {
+        "run": "jaredpalmer/kev-27b",
+        "base": "Qwen/Qwen3.8-27B",
+        "lora": 0,
+        "device": "cuda",
+        "backend": "torch",
+        "dtype": "bfloat16",
+        "temperature": 1.319507910772894,
+        "max_state_tokens": 65536,
+        "truncate_states": false,
+        "cuda_graphs": {
+          "captured": 6,
+          "kept": 6,
+          "pending": 0,
+          "failed": 0
+        }
+      }
+    },
+    "kev-ref2ea5660-27b-trunc": {
+      "window_utc": [
+        "2026-09-30T20:40:11Z",
+        "2026-09-30T20:42:26Z"
+      ],
+      "cold_start_seconds": 100,
+      "served": {
+        "run": "jaredpalmer/kev-27b",
+        "base": "Qwen/Qwen3.8-27B",
+        "lora": 0,
+        "device": "cuda",
+        "backend": "torch",
+        "dtype": "bfloat16",
+        "temperature": 1.319507910772894,
+        "max_state_tokens": 65536,
+        "truncate_states": true,
+        "cuda_graphs": {
+          "captured": 6,
+          "kept": 6,
+          "pending": 0,
+          "failed": 0
+        }
+      }
+    }
+  },
+  "gpu": "NVIDIA H200",
+  "long_request": {
+    "built_by": "runs/kev-deploy-2ea5660/make_long_state.py jaredpalmer/kev-27b 70000 <out>: a one-line ticket (a duplicate charge) + docs/model-cards/*.md text at this commit cut to 70,000 tokens; the request (not committed) asks team (choice: returns/shipping/billing) and duplicate (noul)",
+    "request_sha256": "73bfb023039b89d385aa442a4c2c9fcc5fc39a3f6cf9d51a26cffcd4ad52f283",
+    "state_tokens_tokenizer": 70022
+  },
+  "a_short": {
+    "semif_parity": {
+      "served": "runs/kev-deploy-2ea5660/semif-v1 (kev.benchmark --remote <endpoint> --suite evals/external/semif-v1 --remote-concurrency 8; development, 252 rows)",
+      "reference": "runs/rel27-public/0-jaredpalmer_kev-27b (kev.benchmark, anonymous Hub load of the same checkpoint on an H200, LocalPredictor)",
+      "previous_deploy": "runs/kev-deploy-27b-v2/semif-v1 (KEV_REF 0a58b69)",
+      "vs_reference": {
+        "rows": 252,
+        "max_abs_dp": 0.012182530675943992,
+        "mean_abs_dp": 0.0007984542811159867,
+        "p99_abs_dp": 0.00729741890795739,
+        "argmax_flips": 0
+      },
+      "vs_previous_deploy": {
+        "rows": 252,
+        "max_abs_dp": 0.007900000000000018,
+        "mean_abs_dp": 0.0004873934445723518,
+        "p99_abs_dp": 0.0049000000000000155,
+        "argmax_flips": 0
+      },
+      "tolerance": 0.03,
+      "within_tolerance": true,
+      "coverage": {
+        "requested_records": 252,
+        "requested_questions": 252,
+        "evaluated_records": 252,
+        "evaluated_questions": 252,
+        "rejected_records": 0,
+        "truncated_records": 0
+      },
+      "clean": {
+        "n": {
+          "served": 144,
+          "reference": 144
+        },
+        "acc": {
+          "served": 0.9652777777777778,
+          "reference": 0.9652777777777778
+        },
+        "ece": {
+          "served": 0.057785207859748035,
+          "reference": 0.06049404849546461
+        },
+        "nll": {
+          "served": 0.12780394646893212,
+          "reference": 0.12745846257058913
+        }
+      }
+    },
+    "ticket": {
+      "request": "kev_serve.py's TICKET once with a department choice and an escalate noul",
+      "default_server": {
+        "model": "kev-latest",
+        "answers": {
+          "department": {
+            "type": "choice",
+            "choice": "billing",
+            "confidence": 0.2984,
+            "probabilities": {
+              "returns": 0.2521,
+              "shipping": 0.2157,
+              "billing": 0.5323
+            }
+          },
+          "escalate": {
+            "type": "noul",
+            "noul": 0.8144
+          }
+        },
+        "usage": {
+          "input_tokens": 68,
+          "output_tokens": 86
+        },
+        "latency_ms": 109.8
+      },
+      "truncating_server": {
+        "model": "kev-latest",
+        "answers": {
+          "department": {
+            "type": "choice",
+            "choice": "billing",
+            "confidence": 0.2984,
+            "probabilities": {
+              "returns": 0.2521,
+              "shipping": 0.2157,
+              "billing": 0.5323
+            }
+          },
+          "escalate": {
+            "type": "noul",
+            "noul": 0.8144
+          }
+        },
+        "usage": {
+          "input_tokens": 68,
+          "output_tokens": 86,
+          "state_tokens": 23,
+          "state_tokens_used": 23
+        },
+        "latency_ms": 153.3,
+        "truncated": false
+      },
+      "same_answers": true
+    }
+  },
+  "b_long_default": {
+    "http": 422,
+    "body": {
+      "detail": "state is 70,065 tokens, over the 65,536-token limit (the <state> token included): shorten the document or split it across requests; or start the server with KEV_TRUNCATE_STATES=1 to read only its first 65,536 tokens (responses then say truncated: true)"
+    },
+    "x-typesafe-request-id": "4770105c679645b1b20dfc1b0b450061",
+    "server-timing": "app;dur=514.8"
+  },
+  "c_long_truncating": {
+    "first": {
+      "http": 200,
+      "model": "kev-latest",
+      "answers": {
+        "team": {
+          "type": "choice",
+          "choice": "billing",
+          "confidence": 0.9991,
+          "probabilities": {
+            "returns": 0.0006,
+            "shipping": 0.0001,
+            "billing": 0.9994
+          }
+        },
+        "duplicate": {
+          "type": "noul",
+          "noul": 0.9995
+        }
+      },
+      "usage": {
+        "input_tokens": 65589,
+        "output_tokens": 85,
+        "state_tokens": 70065,
+        "state_tokens_used": 65536
+      },
+      "latency_ms": 12103.9,
+      "truncated": true
+    },
+    "repeat": {
+      "http": 200,
+      "model": "kev-latest",
+      "answers": {
+        "team": {
+          "type": "choice",
+          "choice": "billing",
+          "confidence": 0.9991,
+          "probabilities": {
+            "returns": 0.0006,
+            "shipping": 0.0001,
+            "billing": 0.9994
+          }
+        },
+        "duplicate": {
+          "type": "noul",
+          "noul": 0.9995
+        }
+      },
+      "usage": {
+        "input_tokens": 65589,
+        "output_tokens": 85,
+        "state_tokens": 70065,
+        "state_tokens_used": 65536
+      },
+      "latency_ms": 293.8,
+      "truncated": true
+    },
+    "correct": true
+  },
+  "spend": {
+    "estimate_usd": 0.6,
+    "basis": "upper bound from Modal rates (H200 $4.54/h, CPU $0.0473/core/h, memory $0.008/GiB/h) over the two app windows above (~5.6 min, 4 cores, <= 128 GiB); the hourly billing report had not closed the hour when this was written"
+  }
+}

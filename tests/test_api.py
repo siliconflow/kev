@@ -25,7 +25,7 @@ def test_choice_basic():
     assert a["type"] == "choice" and a["choice"] in DEPARTMENT and set(a["probabilities"]) == set(DEPARTMENT)
     assert math.isclose(sum(a["probabilities"].values()), 1.0, abs_tol=0.03) and 0 <= a["confidence"] <= 1
     assert a["choice"] == max(a["probabilities"], key=a["probabilities"].get)
-    assert set(r["usage"]) == {"input_tokens", "output_tokens"}
+    assert set(r["usage"]) == {"input_tokens", "output_tokens"} | ({"state_tokens", "state_tokens_used"} if card()["truncate_states"] else set())   # the counts only where the server may truncate
 
 
 def test_five_questions_and_null_descriptions():
@@ -121,3 +121,48 @@ def test_sdk_async_client():
             return await client.system_one(state="I was charged twice.", questions={"billing": Noul(instructions="Is this about billing?")})
 
     assert 0 <= asyncio.run(go()).nouls["billing"].noul <= 1
+
+
+def card():
+    return httpx.get(f"{BASE}/v1/models", timeout=30).json()["models"][0]
+
+
+def over_length():
+    """A request whose state is past the server's limit (/v1/models max_state_tokens): every word is at least one token."""
+    return {"state": "word " * (card()["max_state_tokens"] + 16), "model": "kev-latest",
+            "questions": {"billing": {"type": "noul", "instructions": "Is this about billing?"}}}
+
+
+def test_over_length_state_is_refused_not_truncated():
+    """The default server refuses a state past its limit with a 422 that names the count, the limit and the fixes; it
+    never answers from a silently cut document. (A KEV_TRUNCATE_STATES=1 server would run a full-length pass here, which
+    a CPU / MPS smoke server cannot hold, so this is checked on a default server only; tests/test_unit.py covers both.)"""
+    if card()["truncate_states"]: pytest.skip("server started with KEV_TRUNCATE_STATES=1")
+    limit = card()["max_state_tokens"]
+    code, body = post(over_length())
+    assert code == 422 and f"over the {limit:,}-token limit" in body["detail"] and "KEV_TRUNCATE_STATES=1" in body["detail"]
+
+
+def test_sdk_surfaces_the_over_length_refusal():
+    """The TypeSafe SDK raises the 422 as TypeSafeUnprocessableEntityError (no retry: 422 is not a retried status) whose
+    message is the server's detail, request id included."""
+    pytest.importorskip("typesafe_sdk")
+    from typesafe_sdk import Noul, TypeSafeClient, TypeSafeUnprocessableEntityError
+    if card()["truncate_states"]: pytest.skip("server started with KEV_TRUNCATE_STATES=1")
+    with TypeSafeClient(api_key="local", base_url=BASE, model="kev-latest") as client:
+        with pytest.raises(TypeSafeUnprocessableEntityError) as refused:
+            client.system_one(state=over_length()["state"], questions={"billing": Noul(instructions="Is this about billing?")})
+    assert refused.value.status == 422 and "tokens, over the" in str(refused.value) and refused.value.request_id
+
+
+def test_truncating_server_marks_every_response():
+    """A KEV_TRUNCATE_STATES=1 server says on every response whether it cut the state (`truncated`, usage.state_tokens /
+    state_tokens_used), and the TypeSafe SDK still parses those responses (it ignores fields it does not model)."""
+    if not card()["truncate_states"]: pytest.skip("server started without KEV_TRUNCATE_STATES=1")
+    pytest.importorskip("typesafe_sdk")
+    from typesafe_sdk import Noul, TypeSafeClient
+    code, body = post({"state": "I was charged twice.", "model": "kev-latest", "questions": {"billing": {"type": "noul", "instructions": "Is this about billing?"}}})
+    assert code == 200 and body["truncated"] is False and body["usage"]["state_tokens"] == body["usage"]["state_tokens_used"] > 1
+    with TypeSafeClient(api_key="local", base_url=BASE, model="kev-latest") as client:
+        resp = client.system_one(state="I was charged twice.", questions={"billing": Noul(instructions="Is this about billing?")})
+    assert 0 <= resp.nouls["billing"].noul <= 1 and resp.usage.input_tokens == body["usage"]["input_tokens"]

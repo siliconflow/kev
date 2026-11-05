@@ -6,7 +6,9 @@
 
 The workload spec supplies the questions (type, instructions, criteria); this script supplies the state and labels from
 your columns. Labels are matched to the question's options case-insensitively (`--map` handles renames); yes/no/1/0/
-true/false become noul labels; score labels may be level indices, 1-based ratings (`--score-offset 1`) or level texts.
+true/false become noul labels; score labels may be whole-number level indices, 1-based ratings (`--score-offset 1`) or level texts.
+A fractional or non-finite number is skipped, not truncated. That includes a fraction a JSON
+parser would round to a whole number, such as 0.99999999999999999.
 Rows whose label cannot be mapped are counted by reason and skipped. Standard library only. Next: split_data.py.
 """
 import argparse
@@ -14,6 +16,7 @@ import csv
 import json
 import sys
 from collections import Counter
+from decimal import Decimal, InvalidOperation
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -22,13 +25,26 @@ from split_data import check_question  # noqa: E402
 TRUE, FALSE = {"true", "t", "yes", "y", "1", "on"}, {"false", "f", "no", "n", "0", "off"}
 
 
+def loads(text):
+    """JSON text whose numbers stay Decimal. float rounds 0.99999999999999999 to 1.0."""
+    return json.loads(text, parse_float=Decimal)
+
+
+def json_value(value):
+    """A Decimal from loads back to float, so a non-score field is ordinary JSON."""
+    if isinstance(value, Decimal): return float(value)
+    if isinstance(value, list): return [json_value(v) for v in value]
+    if isinstance(value, dict): return {k: json_value(v) for k, v in value.items()}
+    return value
+
+
 def rows_from(path):
     path = Path(path)
     if path.suffix.lower() in (".jsonl", ".ndjson"):
         for line in path.read_text(encoding="utf-8").splitlines():
-            if line.strip(): yield json.loads(line)
+            if line.strip(): yield loads(line)
     elif path.suffix.lower() == ".json":
-        data = json.loads(path.read_text(encoding="utf-8"))
+        data = loads(path.read_text(encoding="utf-8"))
         yield from (data if isinstance(data, list) else data.get("rows") or data.get("data") or [])
     else:
         with path.open(encoding="utf-8", newline="") as f:
@@ -47,8 +63,13 @@ def get(row, column):
 def map_label(q, value, mapping, score_offset):
     """-> (label, None) or (None, reason); the reason names the kind of problem, not the value, so it can be counted."""
     if value is None or (isinstance(value, str) and not value.strip()): return None, "empty label"
-    text = str(value).strip()
-    if text in mapping: text = mapping[text]
+    # JSON floats are Decimal, so a score stays exact: 0.99999999999999999 is not level 1.
+    # --map and option names still see str(float), the spelling json.loads used (1e0 and 1.00 are both "1.0").
+    exact = value if isinstance(value, Decimal) else None
+    text = str(float(value) if exact is not None else value).strip()
+    if text in mapping:
+        text = mapping[text]
+        exact = None
     if q["type"] == "noul":
         if isinstance(value, bool): return value, None
         if text.lower() in TRUE: return True, None
@@ -60,11 +81,16 @@ def map_label(q, value, mapping, score_offset):
         return (hits[0], None) if len(hits) == 1 else (None, "not an option (use --map)")
     levels = q["criteria"]
     try:
-        index = int(float(text)) - score_offset
-        return (index, None) if 0 <= index < len(levels) else (None, f"level outside 0..{len(levels) - 1} after --score-offset {score_offset}")
-    except ValueError:
+        number = exact if exact is not None else Decimal(text)
+    except InvalidOperation:
         hits = [i for i, lvl in enumerate(levels) if str(lvl).casefold() == text.casefold() or str(lvl).casefold().startswith(text.casefold() + ":")]
         return (hits[0], None) if len(hits) == 1 else (None, "not a level (index or level text)")
+    if not number.is_finite() or number != number.to_integral_value():
+        return None, "score must be a finite integer index"
+    # Range first. int() of a finite integral Decimal such as 1e9999999 builds a multi-million-digit int.
+    if not score_offset <= number < score_offset + len(levels):
+        return None, f"level outside 0..{len(levels) - 1} after --score-offset {score_offset}"
+    return int(number) - score_offset, None
 
 
 def main():
@@ -98,7 +124,7 @@ def main():
     with out.open("w", encoding="utf-8", newline="\n") as f:
         for n, row in enumerate(rows_from(a.data), 1):
             if a.limit and n > a.limit: break
-            values = {c: get(row, c) for c in state_cols}
+            values = {c: json_value(get(row, c)) for c in state_cols}
             if all(v in (None, "") for v in values.values()): skipped["empty state"] += 1; continue
             state = str(values[state_cols[0]]) if len(state_cols) == 1 else {c: v for c, v in values.items() if v not in (None, "")}
             record = {"state": state, "questions": {}}

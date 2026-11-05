@@ -1,0 +1,2506 @@
+{
+  "suite": "evals/longdoc-v1",
+  "split": "development",
+  "systems": {
+    "Kev-4B": {
+      "dir": "runs/r28-4b-r10-longdoc",
+      "temperature": "as returned",
+      "buckets": {
+        "4k": {
+          "all": {
+            "questions": 923,
+            "acc": 0.922,
+            "ece": 0.0385,
+            "brier": 0.1193
+          },
+          "coverage": {
+            "records": 240,
+            "answered": 240,
+            "rejected": 0
+          },
+          "cuad": {
+            "questions": 443,
+            "acc": 0.8465,
+            "ece": 0.0846,
+            "brier": 0.2312
+          },
+          "cuad.category": {
+            "questions": 120,
+            "acc": 0.8667,
+            "ece": 0.0794,
+            "brier": 0.2271
+          },
+          "cuad.governing_law": {
+            "questions": 83,
+            "acc": 1.0,
+            "ece": 0.0,
+            "brier": 0.0
+          },
+          "cuad.presence": {
+            "questions": 240,
+            "acc": 0.7833,
+            "ece": 0.125,
+            "brier": 0.3132
+          },
+          "synthetic": {
+            "questions": 480,
+            "acc": 0.9917,
+            "ece": 0.0053,
+            "brier": 0.0159
+          },
+          "synthetic.absent": {
+            "questions": 120,
+            "acc": 0.9917,
+            "ece": 0.0192,
+            "brier": 0.016
+          },
+          "synthetic.detail": {
+            "questions": 120,
+            "acc": 1.0,
+            "ece": 0.0058,
+            "brier": 0.0011
+          },
+          "synthetic.locate": {
+            "questions": 120,
+            "acc": 1.0,
+            "ece": 0.0,
+            "brier": 0.0
+          },
+          "synthetic.multihop": {
+            "questions": 120,
+            "acc": 0.975,
+            "ece": 0.025,
+            "brier": 0.0467
+          },
+          "cuad.no_sft_ledgar": {
+            "questions": 403,
+            "acc": 0.8511,
+            "ece": 0.08,
+            "brier": 0.2239
+          },
+          "synthetic.detail_by_depth": {
+            "0.1": {
+              "questions": 40,
+              "acc": 1.0,
+              "ece": 0.0018,
+              "brier": 0.0
+            },
+            "0.5": {
+              "questions": 40,
+              "acc": 1.0,
+              "ece": 0.0142,
+              "brier": 0.0033
+            },
+            "0.9": {
+              "questions": 40,
+              "acc": 1.0,
+              "ece": 0.0014,
+              "brier": 0.0
+            }
+          }
+        },
+        "8k": {
+          "all": {
+            "questions": 933,
+            "acc": 0.9153,
+            "ece": 0.0351,
+            "brier": 0.1371
+          },
+          "coverage": {
+            "records": 240,
+            "answered": 240,
+            "rejected": 0
+          },
+          "cuad": {
+            "questions": 453,
+            "acc": 0.8366,
+            "ece": 0.0793,
+            "brier": 0.263
+          },
+          "cuad.category": {
+            "questions": 120,
+            "acc": 0.7417,
+            "ece": 0.1335,
+            "brier": 0.3828
+          },
+          "cuad.governing_law": {
+            "questions": 93,
+            "acc": 1.0,
+            "ece": 0.0001,
+            "brier": 0.0
+          },
+          "cuad.presence": {
+            "questions": 240,
+            "acc": 0.8208,
+            "ece": 0.1051,
+            "brier": 0.305
+          },
+          "synthetic": {
+            "questions": 480,
+            "acc": 0.9896,
+            "ece": 0.0083,
+            "brier": 0.0183
+          },
+          "synthetic.absent": {
+            "questions": 120,
+            "acc": 0.9917,
+            "ece": 0.024,
+            "brier": 0.011
+          },
+          "synthetic.detail": {
+            "questions": 120,
+            "acc": 1.0,
+            "ece": 0.0046,
+            "brier": 0.0006
+          },
+          "synthetic.locate": {
+            "questions": 120,
+            "acc": 1.0,
+            "ece": 0.0,
+            "brier": 0.0
+          },
+          "synthetic.multihop": {
+            "questions": 120,
+            "acc": 0.9667,
+            "ece": 0.0272,
+            "brier": 0.0616
+          },
+          "cuad.no_sft_ledgar": {
+            "questions": 380,
+            "acc": 0.8368,
+            "ece": 0.0829,
+            "brier": 0.2666
+          },
+          "vs_4k": {
+            "all": {
+              "delta": -0.0067,
+              "ci95": [
+                -0.0335,
+                0.0204
+              ],
+              "falls": false
+            },
+            "cuad": {
+              "delta": -0.0099,
+              "ci95": [
+                -0.0607,
+                0.0404
+              ],
+              "falls": false
+            },
+            "synthetic": {
+              "delta": -0.0021,
+              "ci95": [
+                -0.0146,
+                0.0104
+              ],
+              "falls": false
+            }
+          },
+          "synthetic.detail_by_depth": {
+            "0.1": {
+              "questions": 40,
+              "acc": 1.0,
+              "ece": 0.0045,
+              "brier": 0.0006
+            },
+            "0.5": {
+              "questions": 40,
+              "acc": 1.0,
+              "ece": 0.0081,
+              "brier": 0.0012
+            },
+            "0.9": {
+              "questions": 40,
+              "acc": 1.0,
+              "ece": 0.0012,
+              "brier": 0.0
+            }
+          }
+        },
+        "16k": {
+          "all": {
+            "questions": 932,
+            "acc": 0.8959,
+            "ece": 0.0497,
+            "brier": 0.1631
+          },
+          "coverage": {
+            "records": 240,
+            "answered": 240,
+            "rejected": 0
+          },
+          "cuad": {
+            "questions": 452,
+            "acc": 0.823,
+            "ece": 0.0961,
+            "brier": 0.2776
+          },
+          "cuad.category": {
+            "questions": 120,
+            "acc": 0.7667,
+            "ece": 0.0991,
+            "brier": 0.3655
+          },
+          "cuad.governing_law": {
+            "questions": 92,
+            "acc": 1.0,
+            "ece": 0.0001,
+            "brier": 0.0
+          },
+          "cuad.presence": {
+            "questions": 240,
+            "acc": 0.7833,
+            "ece": 0.133,
+            "brier": 0.34
+          },
+          "synthetic": {
+            "questions": 480,
+            "acc": 0.9646,
+            "ece": 0.0134,
+            "brier": 0.0553
+          },
+          "synthetic.absent": {
+            "questions": 120,
+            "acc": 0.9583,
+            "ece": 0.0411,
+            "brier": 0.0598
+          },
+          "synthetic.detail": {
+            "questions": 120,
+            "acc": 0.9917,
+            "ece": 0.0114,
+            "brier": 0.0101
+          },
+          "synthetic.locate": {
+            "questions": 120,
+            "acc": 1.0,
+            "ece": 0.0001,
+            "brier": 0.0
+          },
+          "synthetic.multihop": {
+            "questions": 120,
+            "acc": 0.9083,
+            "ece": 0.0477,
+            "brier": 0.1513
+          },
+          "cuad.no_sft_ledgar": {
+            "questions": 379,
+            "acc": 0.8179,
+            "ece": 0.1022,
+            "brier": 0.286
+          },
+          "vs_4k": {
+            "all": {
+              "delta": -0.0261,
+              "ci95": [
+                -0.0525,
+                0.0017
+              ],
+              "falls": false
+            },
+            "cuad": {
+              "delta": -0.0235,
+              "ci95": [
+                -0.0743,
+                0.027
+              ],
+              "falls": false
+            },
+            "synthetic": {
+              "delta": -0.0271,
+              "ci95": [
+                -0.0438,
+                -0.0104
+              ],
+              "falls": true
+            }
+          },
+          "cuad_paired_vs_8k": {
+            "questions": 445,
+            "delta": -0.0112,
+            "ci95": [
+              -0.0341,
+              0.0124
+            ],
+            "falls": false
+          },
+          "synthetic.detail_by_depth": {
+            "0.1": {
+              "questions": 40,
+              "acc": 1.0,
+              "ece": 0.0059,
+              "brier": 0.0007
+            },
+            "0.5": {
+              "questions": 40,
+              "acc": 0.975,
+              "ece": 0.0202,
+              "brier": 0.0262
+            },
+            "0.9": {
+              "questions": 40,
+              "acc": 1.0,
+              "ece": 0.008,
+              "brier": 0.0032
+            }
+          }
+        },
+        "32k": {
+          "all": {
+            "questions": 934,
+            "acc": 0.8683,
+            "ece": 0.0579,
+            "brier": 0.2036
+          },
+          "coverage": {
+            "records": 240,
+            "answered": 240,
+            "rejected": 0
+          },
+          "cuad": {
+            "questions": 454,
+            "acc": 0.7885,
+            "ece": 0.1123,
+            "brier": 0.3281
+          },
+          "cuad.category": {
+            "questions": 120,
+            "acc": 0.7,
+            "ece": 0.1164,
+            "brier": 0.4416
+          },
+          "cuad.governing_law": {
+            "questions": 94,
+            "acc": 1.0,
+            "ece": 0.0005,
+            "brier": 0.0
+          },
+          "cuad.presence": {
+            "questions": 240,
+            "acc": 0.75,
+            "ece": 0.1589,
+            "brier": 0.3999
+          },
+          "synthetic": {
+            "questions": 480,
+            "acc": 0.9437,
+            "ece": 0.0131,
+            "brier": 0.0859
+          },
+          "synthetic.absent": {
+            "questions": 120,
+            "acc": 0.9417,
+            "ece": 0.0126,
+            "brier": 0.0895
+          },
+          "synthetic.detail": {
+            "questions": 120,
+            "acc": 0.9917,
+            "ece": 0.011,
+            "brier": 0.0098
+          },
+          "synthetic.locate": {
+            "questions": 120,
+            "acc": 1.0,
+            "ece": 0.0002,
+            "brier": 0.0
+          },
+          "synthetic.multihop": {
+            "questions": 120,
+            "acc": 0.8417,
+            "ece": 0.048,
+            "brier": 0.2441
+          },
+          "cuad.no_sft_ledgar": {
+            "questions": 384,
+            "acc": 0.7839,
+            "ece": 0.1178,
+            "brier": 0.3398
+          },
+          "vs_4k": {
+            "all": {
+              "delta": -0.0537,
+              "ci95": [
+                -0.0818,
+                -0.0243
+              ],
+              "falls": true
+            },
+            "cuad": {
+              "delta": -0.058,
+              "ci95": [
+                -0.107,
+                -0.0064
+              ],
+              "falls": true
+            },
+            "synthetic": {
+              "delta": -0.0479,
+              "ci95": [
+                -0.0687,
+                -0.0271
+              ],
+              "falls": true
+            }
+          },
+          "cuad_paired_vs_8k": {
+            "questions": 447,
+            "delta": -0.0582,
+            "ci95": [
+              -0.0897,
+              -0.0278
+            ],
+            "falls": true
+          },
+          "synthetic.detail_by_depth": {
+            "0.1": {
+              "questions": 40,
+              "acc": 0.975,
+              "ece": 0.0252,
+              "brier": 0.0237
+            },
+            "0.5": {
+              "questions": 40,
+              "acc": 1.0,
+              "ece": 0.0187,
+              "brier": 0.0054
+            },
+            "0.9": {
+              "questions": 40,
+              "acc": 1.0,
+              "ece": 0.0061,
+              "brier": 0.0003
+            }
+          }
+        },
+        "64k": {
+          "all": {
+            "questions": 932,
+            "acc": 0.8337,
+            "ece": 0.0702,
+            "brier": 0.2575
+          },
+          "coverage": {
+            "records": 240,
+            "answered": 240,
+            "rejected": 0
+          },
+          "cuad": {
+            "questions": 452,
+            "acc": 0.781,
+            "ece": 0.112,
+            "brier": 0.3426
+          },
+          "cuad.category": {
+            "questions": 120,
+            "acc": 0.6917,
+            "ece": 0.1512,
+            "brier": 0.4812
+          },
+          "cuad.governing_law": {
+            "questions": 92,
+            "acc": 1.0,
+            "ece": 0.0007,
+            "brier": 0.0
+          },
+          "cuad.presence": {
+            "questions": 240,
+            "acc": 0.7417,
+            "ece": 0.1502,
+            "brier": 0.4045
+          },
+          "synthetic": {
+            "questions": 480,
+            "acc": 0.8833,
+            "ece": 0.0382,
+            "brier": 0.1774
+          },
+          "synthetic.absent": {
+            "questions": 120,
+            "acc": 0.9167,
+            "ece": 0.0349,
+            "brier": 0.1333
+          },
+          "synthetic.detail": {
+            "questions": 120,
+            "acc": 0.9333,
+            "ece": 0.0326,
+            "brier": 0.1077
+          },
+          "synthetic.locate": {
+            "questions": 120,
+            "acc": 1.0,
+            "ece": 0.0027,
+            "brier": 0.0006
+          },
+          "synthetic.multihop": {
+            "questions": 120,
+            "acc": 0.6833,
+            "ece": 0.1587,
+            "brier": 0.468
+          },
+          "cuad.no_sft_ledgar": {
+            "questions": 379,
+            "acc": 0.7784,
+            "ece": 0.1082,
+            "brier": 0.3431
+          },
+          "vs_4k": {
+            "all": {
+              "delta": -0.0883,
+              "ci95": [
+                -0.1187,
+                -0.0582
+              ],
+              "falls": true
+            },
+            "cuad": {
+              "delta": -0.0655,
+              "ci95": [
+                -0.1205,
+                -0.0146
+              ],
+              "falls": true
+            },
+            "synthetic": {
+              "delta": -0.1083,
+              "ci95": [
+                -0.1375,
+                -0.0792
+              ],
+              "falls": true
+            }
+          },
+          "cuad_paired_vs_8k": {
+            "questions": 445,
+            "delta": -0.0517,
+            "ci95": [
+              -0.0824,
+              -0.0198
+            ],
+            "falls": true
+          },
+          "synthetic.detail_by_depth": {
+            "0.1": {
+              "questions": 40,
+              "acc": 0.9,
+              "ece": 0.0619,
+              "brier": 0.1506
+            },
+            "0.5": {
+              "questions": 40,
+              "acc": 0.95,
+              "ece": 0.0382,
+              "brier": 0.0698
+            },
+            "0.9": {
+              "questions": 40,
+              "acc": 0.95,
+              "ece": 0.0714,
+              "brier": 0.1026
+            }
+          }
+        }
+      },
+      "first_bucket_below_4k": "32k",
+      "validated_context": {
+        "margin": -0.03,
+        "reference": "8k",
+        "statistic": "cuad_paired_vs_8k lower bound (95 %)",
+        "buckets": {
+          "16k": {
+            "lower": -0.0341,
+            "within": false
+          },
+          "32k": {
+            "lower": -0.0897,
+            "within": false
+          },
+          "64k": {
+            "lower": -0.0824,
+            "within": false
+          }
+        },
+        "first_failure": "16k",
+        "validated_bucket": "8k",
+        "validated_tokens": 8192
+      }
+    },
+    "Kev-0.8B": {
+      "dir": "runs/r28-08b-r15-longdoc",
+      "temperature": "as returned",
+      "buckets": {
+        "4k": {
+          "all": {
+            "questions": 923,
+            "acc": 0.7205,
+            "ece": 0.0377,
+            "brier": 0.3959
+          },
+          "coverage": {
+            "records": 240,
+            "answered": 240,
+            "rejected": 0
+          },
+          "cuad": {
+            "questions": 443,
+            "acc": 0.7788,
+            "ece": 0.0587,
+            "brier": 0.3129
+          },
+          "cuad.category": {
+            "questions": 120,
+            "acc": 0.625,
+            "ece": 0.1425,
+            "brier": 0.4631
+          },
+          "cuad.governing_law": {
+            "questions": 83,
+            "acc": 1.0,
+            "ece": 0.007,
+            "brier": 0.0008
+          },
+          "cuad.presence": {
+            "questions": 240,
+            "acc": 0.7792,
+            "ece": 0.1059,
+            "brier": 0.3456
+          },
+          "synthetic": {
+            "questions": 480,
+            "acc": 0.6667,
+            "ece": 0.0319,
+            "brier": 0.4725
+          },
+          "synthetic.absent": {
+            "questions": 120,
+            "acc": 0.5667,
+            "ece": 0.1053,
+            "brier": 0.5645
+          },
+          "synthetic.detail": {
+            "questions": 120,
+            "acc": 0.7667,
+            "ece": 0.0772,
+            "brier": 0.3418
+          },
+          "synthetic.locate": {
+            "questions": 120,
+            "acc": 0.9333,
+            "ece": 0.1996,
+            "brier": 0.1556
+          },
+          "synthetic.multihop": {
+            "questions": 120,
+            "acc": 0.4,
+            "ece": 0.2121,
+            "brier": 0.8283
+          },
+          "cuad.no_sft_ledgar": {
+            "questions": 403,
+            "acc": 0.7816,
+            "ece": 0.0463,
+            "brier": 0.3043
+          },
+          "synthetic.detail_by_depth": {
+            "0.1": {
+              "questions": 40,
+              "acc": 0.85,
+              "ece": 0.1372,
+              "brier": 0.2774
+            },
+            "0.5": {
+              "questions": 40,
+              "acc": 0.675,
+              "ece": 0.0821,
+              "brier": 0.4593
+            },
+            "0.9": {
+              "questions": 40,
+              "acc": 0.775,
+              "ece": 0.1098,
+              "brier": 0.2888
+            }
+          }
+        },
+        "8k": {
+          "all": {
+            "questions": 933,
+            "acc": 0.6442,
+            "ece": 0.058,
+            "brier": 0.4912
+          },
+          "coverage": {
+            "records": 240,
+            "answered": 240,
+            "rejected": 0
+          },
+          "cuad": {
+            "questions": 453,
+            "acc": 0.7108,
+            "ece": 0.1082,
+            "brier": 0.4298
+          },
+          "cuad.category": {
+            "questions": 120,
+            "acc": 0.4833,
+            "ece": 0.2664,
+            "brier": 0.7711
+          },
+          "cuad.governing_law": {
+            "questions": 93,
+            "acc": 1.0,
+            "ece": 0.016,
+            "brier": 0.0026
+          },
+          "cuad.presence": {
+            "questions": 240,
+            "acc": 0.7125,
+            "ece": 0.1085,
+            "brier": 0.4246
+          },
+          "synthetic": {
+            "questions": 480,
+            "acc": 0.5813,
+            "ece": 0.0374,
+            "brier": 0.5492
+          },
+          "synthetic.absent": {
+            "questions": 120,
+            "acc": 0.6333,
+            "ece": 0.0784,
+            "brier": 0.5061
+          },
+          "synthetic.detail": {
+            "questions": 120,
+            "acc": 0.5667,
+            "ece": 0.1203,
+            "brier": 0.5288
+          },
+          "synthetic.locate": {
+            "questions": 120,
+            "acc": 0.8417,
+            "ece": 0.2064,
+            "brier": 0.2855
+          },
+          "synthetic.multihop": {
+            "questions": 120,
+            "acc": 0.2833,
+            "ece": 0.2326,
+            "brier": 0.8763
+          },
+          "cuad.no_sft_ledgar": {
+            "questions": 380,
+            "acc": 0.7132,
+            "ece": 0.0961,
+            "brier": 0.4165
+          },
+          "vs_4k": {
+            "all": {
+              "delta": -0.0763,
+              "ci95": [
+                -0.1166,
+                -0.0375
+              ],
+              "falls": true
+            },
+            "cuad": {
+              "delta": -0.068,
+              "ci95": [
+                -0.1218,
+                -0.011
+              ],
+              "falls": true
+            },
+            "synthetic": {
+              "delta": -0.0854,
+              "ci95": [
+                -0.1376,
+                -0.0312
+              ],
+              "falls": true
+            }
+          },
+          "synthetic.detail_by_depth": {
+            "0.1": {
+              "questions": 40,
+              "acc": 0.5,
+              "ece": 0.229,
+              "brier": 0.6156
+            },
+            "0.5": {
+              "questions": 40,
+              "acc": 0.425,
+              "ece": 0.1707,
+              "brier": 0.6894
+            },
+            "0.9": {
+              "questions": 40,
+              "acc": 0.775,
+              "ece": 0.1161,
+              "brier": 0.2814
+            }
+          }
+        },
+        "16k": {
+          "all": {
+            "questions": 932,
+            "acc": 0.5676,
+            "ece": 0.1107,
+            "brier": 0.5791
+          },
+          "coverage": {
+            "records": 240,
+            "answered": 240,
+            "rejected": 0
+          },
+          "cuad": {
+            "questions": 452,
+            "acc": 0.6593,
+            "ece": 0.1501,
+            "brier": 0.47
+          },
+          "cuad.category": {
+            "questions": 120,
+            "acc": 0.4417,
+            "ece": 0.3212,
+            "brier": 0.8073
+          },
+          "cuad.governing_law": {
+            "questions": 92,
+            "acc": 1.0,
+            "ece": 0.0138,
+            "brier": 0.0016
+          },
+          "cuad.presence": {
+            "questions": 240,
+            "acc": 0.6375,
+            "ece": 0.1273,
+            "brier": 0.4809
+          },
+          "synthetic": {
+            "questions": 480,
+            "acc": 0.4813,
+            "ece": 0.0737,
+            "brier": 0.6819
+          },
+          "synthetic.absent": {
+            "questions": 120,
+            "acc": 0.5417,
+            "ece": 0.0911,
+            "brier": 0.6002
+          },
+          "synthetic.detail": {
+            "questions": 120,
+            "acc": 0.5083,
+            "ece": 0.1054,
+            "brier": 0.6695
+          },
+          "synthetic.locate": {
+            "questions": 120,
+            "acc": 0.6667,
+            "ece": 0.1343,
+            "brier": 0.4951
+          },
+          "synthetic.multihop": {
+            "questions": 120,
+            "acc": 0.2083,
+            "ece": 0.3058,
+            "brier": 0.9628
+          },
+          "cuad.no_sft_ledgar": {
+            "questions": 379,
+            "acc": 0.657,
+            "ece": 0.1494,
+            "brier": 0.4592
+          },
+          "vs_4k": {
+            "all": {
+              "delta": -0.1529,
+              "ci95": [
+                -0.1943,
+                -0.1114
+              ],
+              "falls": true
+            },
+            "cuad": {
+              "delta": -0.1195,
+              "ci95": [
+                -0.1768,
+                -0.0613
+              ],
+              "falls": true
+            },
+            "synthetic": {
+              "delta": -0.1854,
+              "ci95": [
+                -0.2396,
+                -0.1313
+              ],
+              "falls": true
+            }
+          },
+          "cuad_paired_vs_8k": {
+            "questions": 445,
+            "delta": -0.0517,
+            "ci95": [
+              -0.0854,
+              -0.0205
+            ],
+            "falls": true
+          },
+          "synthetic.detail_by_depth": {
+            "0.1": {
+              "questions": 40,
+              "acc": 0.475,
+              "ece": 0.1101,
+              "brier": 0.6895
+            },
+            "0.5": {
+              "questions": 40,
+              "acc": 0.35,
+              "ece": 0.19,
+              "brier": 0.8397
+            },
+            "0.9": {
+              "questions": 40,
+              "acc": 0.7,
+              "ece": 0.1339,
+              "brier": 0.4792
+            }
+          }
+        },
+        "32k": {
+          "all": {
+            "questions": 934,
+            "acc": 0.5482,
+            "ece": 0.1119,
+            "brier": 0.6051
+          },
+          "coverage": {
+            "records": 240,
+            "answered": 240,
+            "rejected": 0
+          },
+          "cuad": {
+            "questions": 454,
+            "acc": 0.663,
+            "ece": 0.1643,
+            "brier": 0.4975
+          },
+          "cuad.category": {
+            "questions": 120,
+            "acc": 0.4583,
+            "ece": 0.2769,
+            "brier": 0.7872
+          },
+          "cuad.governing_law": {
+            "questions": 94,
+            "acc": 0.9681,
+            "ece": 0.0316,
+            "brier": 0.0407
+          },
+          "cuad.presence": {
+            "questions": 240,
+            "acc": 0.6458,
+            "ece": 0.1896,
+            "brier": 0.5315
+          },
+          "synthetic": {
+            "questions": 480,
+            "acc": 0.4396,
+            "ece": 0.0951,
+            "brier": 0.7069
+          },
+          "synthetic.absent": {
+            "questions": 120,
+            "acc": 0.4,
+            "ece": 0.1605,
+            "brier": 0.7509
+          },
+          "synthetic.detail": {
+            "questions": 120,
+            "acc": 0.4167,
+            "ece": 0.1217,
+            "brier": 0.7291
+          },
+          "synthetic.locate": {
+            "questions": 120,
+            "acc": 0.675,
+            "ece": 0.1116,
+            "brier": 0.4594
+          },
+          "synthetic.multihop": {
+            "questions": 120,
+            "acc": 0.2667,
+            "ece": 0.2357,
+            "brier": 0.8882
+          },
+          "cuad.no_sft_ledgar": {
+            "questions": 384,
+            "acc": 0.6589,
+            "ece": 0.1598,
+            "brier": 0.4922
+          },
+          "vs_4k": {
+            "all": {
+              "delta": -0.1723,
+              "ci95": [
+                -0.2122,
+                -0.1312
+              ],
+              "falls": true
+            },
+            "cuad": {
+              "delta": -0.1158,
+              "ci95": [
+                -0.1699,
+                -0.0619
+              ],
+              "falls": true
+            },
+            "synthetic": {
+              "delta": -0.2271,
+              "ci95": [
+                -0.2833,
+                -0.1729
+              ],
+              "falls": true
+            }
+          },
+          "cuad_paired_vs_8k": {
+            "questions": 447,
+            "delta": -0.0604,
+            "ci95": [
+              -0.0947,
+              -0.0254
+            ],
+            "falls": true
+          },
+          "synthetic.detail_by_depth": {
+            "0.1": {
+              "questions": 40,
+              "acc": 0.475,
+              "ece": 0.113,
+              "brier": 0.6319
+            },
+            "0.5": {
+              "questions": 40,
+              "acc": 0.325,
+              "ece": 0.2247,
+              "brier": 0.8512
+            },
+            "0.9": {
+              "questions": 40,
+              "acc": 0.45,
+              "ece": 0.1519,
+              "brier": 0.7041
+            }
+          }
+        },
+        "64k": {
+          "all": {
+            "questions": 932,
+            "acc": 0.5086,
+            "ece": 0.1298,
+            "brier": 0.6351
+          },
+          "coverage": {
+            "records": 240,
+            "answered": 240,
+            "rejected": 0
+          },
+          "cuad": {
+            "questions": 452,
+            "acc": 0.6372,
+            "ece": 0.133,
+            "brier": 0.4974
+          },
+          "cuad.category": {
+            "questions": 120,
+            "acc": 0.4083,
+            "ece": 0.3286,
+            "brier": 0.8379
+          },
+          "cuad.governing_law": {
+            "questions": 92,
+            "acc": 0.9783,
+            "ece": 0.0688,
+            "brier": 0.0553
+          },
+          "cuad.presence": {
+            "questions": 240,
+            "acc": 0.6208,
+            "ece": 0.1125,
+            "brier": 0.4966
+          },
+          "synthetic": {
+            "questions": 480,
+            "acc": 0.3875,
+            "ece": 0.1328,
+            "brier": 0.7648
+          },
+          "synthetic.absent": {
+            "questions": 120,
+            "acc": 0.4167,
+            "ece": 0.1219,
+            "brier": 0.7405
+          },
+          "synthetic.detail": {
+            "questions": 120,
+            "acc": 0.1667,
+            "ece": 0.3728,
+            "brier": 0.9606
+          },
+          "synthetic.locate": {
+            "questions": 120,
+            "acc": 0.6583,
+            "ece": 0.1402,
+            "brier": 0.4932
+          },
+          "synthetic.multihop": {
+            "questions": 120,
+            "acc": 0.3083,
+            "ece": 0.161,
+            "brier": 0.8649
+          },
+          "cuad.no_sft_ledgar": {
+            "questions": 379,
+            "acc": 0.6385,
+            "ece": 0.1282,
+            "brier": 0.4883
+          },
+          "vs_4k": {
+            "all": {
+              "delta": -0.2119,
+              "ci95": [
+                -0.254,
+                -0.169
+              ],
+              "falls": true
+            },
+            "cuad": {
+              "delta": -0.1416,
+              "ci95": [
+                -0.1932,
+                -0.0845
+              ],
+              "falls": true
+            },
+            "synthetic": {
+              "delta": -0.2792,
+              "ci95": [
+                -0.3333,
+                -0.2208
+              ],
+              "falls": true
+            }
+          },
+          "cuad_paired_vs_8k": {
+            "questions": 445,
+            "delta": -0.0787,
+            "ci95": [
+              -0.1177,
+              -0.0415
+            ],
+            "falls": true
+          },
+          "synthetic.detail_by_depth": {
+            "0.1": {
+              "questions": 40,
+              "acc": 0.2,
+              "ece": 0.3341,
+              "brier": 0.9335
+            },
+            "0.5": {
+              "questions": 40,
+              "acc": 0.075,
+              "ece": 0.476,
+              "brier": 1.0562
+            },
+            "0.9": {
+              "questions": 40,
+              "acc": 0.225,
+              "ece": 0.316,
+              "brier": 0.8923
+            }
+          }
+        }
+      },
+      "first_bucket_below_4k": "8k",
+      "validated_context": {
+        "margin": -0.03,
+        "reference": "8k",
+        "statistic": "cuad_paired_vs_8k lower bound (95 %)",
+        "buckets": {
+          "16k": {
+            "lower": -0.0854,
+            "within": false
+          },
+          "32k": {
+            "lower": -0.0947,
+            "within": false
+          },
+          "64k": {
+            "lower": -0.1177,
+            "within": false
+          }
+        },
+        "first_failure": "16k",
+        "validated_bucket": "8k",
+        "validated_tokens": 8192
+      }
+    },
+    "Kev-9B v2": {
+      "dir": "runs/r29-9b-r18a-longdoc",
+      "temperature": "as returned",
+      "buckets": {
+        "4k": {
+          "all": {
+            "questions": 923,
+            "acc": 0.9339,
+            "ece": 0.0293,
+            "brier": 0.0996
+          },
+          "coverage": {
+            "records": 240,
+            "answered": 240,
+            "rejected": 0
+          },
+          "cuad": {
+            "questions": 443,
+            "acc": 0.8758,
+            "ece": 0.0582,
+            "brier": 0.1944
+          },
+          "cuad.category": {
+            "questions": 120,
+            "acc": 0.8667,
+            "ece": 0.0988,
+            "brier": 0.2118
+          },
+          "cuad.governing_law": {
+            "questions": 83,
+            "acc": 1.0,
+            "ece": 0.0,
+            "brier": 0.0
+          },
+          "cuad.presence": {
+            "questions": 240,
+            "acc": 0.8375,
+            "ece": 0.0681,
+            "brier": 0.2528
+          },
+          "synthetic": {
+            "questions": 480,
+            "acc": 0.9875,
+            "ece": 0.0091,
+            "brier": 0.0122
+          },
+          "synthetic.absent": {
+            "questions": 120,
+            "acc": 0.9833,
+            "ece": 0.015,
+            "brier": 0.0139
+          },
+          "synthetic.detail": {
+            "questions": 120,
+            "acc": 1.0,
+            "ece": 0.0008,
+            "brier": 0.0
+          },
+          "synthetic.locate": {
+            "questions": 120,
+            "acc": 1.0,
+            "ece": 0.0,
+            "brier": 0.0
+          },
+          "synthetic.multihop": {
+            "questions": 120,
+            "acc": 0.9667,
+            "ece": 0.0247,
+            "brier": 0.035
+          },
+          "cuad.no_sft_ledgar": {
+            "questions": 403,
+            "acc": 0.8809,
+            "ece": 0.0544,
+            "brier": 0.1828
+          },
+          "synthetic.detail_by_depth": {
+            "0.1": {
+              "questions": 40,
+              "acc": 1.0,
+              "ece": 0.0005,
+              "brier": 0.0
+            },
+            "0.5": {
+              "questions": 40,
+              "acc": 1.0,
+              "ece": 0.0013,
+              "brier": 0.0001
+            },
+            "0.9": {
+              "questions": 40,
+              "acc": 1.0,
+              "ece": 0.0006,
+              "brier": 0.0
+            }
+          }
+        },
+        "8k": {
+          "all": {
+            "questions": 933,
+            "acc": 0.9207,
+            "ece": 0.0468,
+            "brier": 0.1342
+          },
+          "coverage": {
+            "records": 240,
+            "answered": 240,
+            "rejected": 0
+          },
+          "cuad": {
+            "questions": 453,
+            "acc": 0.8499,
+            "ece": 0.0863,
+            "brier": 0.2548
+          },
+          "cuad.category": {
+            "questions": 120,
+            "acc": 0.7833,
+            "ece": 0.1461,
+            "brier": 0.3384
+          },
+          "cuad.governing_law": {
+            "questions": 93,
+            "acc": 1.0,
+            "ece": 0.0,
+            "brier": 0.0
+          },
+          "cuad.presence": {
+            "questions": 240,
+            "acc": 0.825,
+            "ece": 0.1182,
+            "brier": 0.3117
+          },
+          "synthetic": {
+            "questions": 480,
+            "acc": 0.9875,
+            "ece": 0.0135,
+            "brier": 0.0204
+          },
+          "synthetic.absent": {
+            "questions": 120,
+            "acc": 0.9917,
+            "ece": 0.0237,
+            "brier": 0.0167
+          },
+          "synthetic.detail": {
+            "questions": 120,
+            "acc": 1.0,
+            "ece": 0.0027,
+            "brier": 0.0006
+          },
+          "synthetic.locate": {
+            "questions": 120,
+            "acc": 1.0,
+            "ece": 0.0,
+            "brier": 0.0
+          },
+          "synthetic.multihop": {
+            "questions": 120,
+            "acc": 0.9583,
+            "ece": 0.0409,
+            "brier": 0.0642
+          },
+          "cuad.no_sft_ledgar": {
+            "questions": 380,
+            "acc": 0.85,
+            "ece": 0.0893,
+            "brier": 0.2574
+          },
+          "vs_4k": {
+            "all": {
+              "delta": -0.0132,
+              "ci95": [
+                -0.0367,
+                0.0109
+              ],
+              "falls": false
+            },
+            "cuad": {
+              "delta": -0.026,
+              "ci95": [
+                -0.07,
+                0.0183
+              ],
+              "falls": false
+            },
+            "synthetic": {
+              "delta": 0.0,
+              "ci95": [
+                -0.0125,
+                0.0125
+              ],
+              "falls": false
+            }
+          },
+          "synthetic.detail_by_depth": {
+            "0.1": {
+              "questions": 40,
+              "acc": 1.0,
+              "ece": 0.0007,
+              "brier": 0.0
+            },
+            "0.5": {
+              "questions": 40,
+              "acc": 1.0,
+              "ece": 0.0067,
+              "brier": 0.0017
+            },
+            "0.9": {
+              "questions": 40,
+              "acc": 1.0,
+              "ece": 0.0008,
+              "brier": 0.0
+            }
+          }
+        },
+        "16k": {
+          "all": {
+            "questions": 932,
+            "acc": 0.9013,
+            "ece": 0.0573,
+            "brier": 0.1627
+          },
+          "coverage": {
+            "records": 240,
+            "answered": 240,
+            "rejected": 0
+          },
+          "cuad": {
+            "questions": 452,
+            "acc": 0.8385,
+            "ece": 0.0982,
+            "brier": 0.2658
+          },
+          "cuad.category": {
+            "questions": 120,
+            "acc": 0.7917,
+            "ece": 0.1369,
+            "brier": 0.3486
+          },
+          "cuad.governing_law": {
+            "questions": 92,
+            "acc": 1.0,
+            "ece": 0.0,
+            "brier": 0.0
+          },
+          "cuad.presence": {
+            "questions": 240,
+            "acc": 0.8,
+            "ece": 0.1252,
+            "brier": 0.3262
+          },
+          "synthetic": {
+            "questions": 480,
+            "acc": 0.9604,
+            "ece": 0.0274,
+            "brier": 0.0657
+          },
+          "synthetic.absent": {
+            "questions": 120,
+            "acc": 0.9333,
+            "ece": 0.0451,
+            "brier": 0.1021
+          },
+          "synthetic.detail": {
+            "questions": 120,
+            "acc": 1.0,
+            "ece": 0.0029,
+            "brier": 0.0003
+          },
+          "synthetic.locate": {
+            "questions": 120,
+            "acc": 1.0,
+            "ece": 0.0,
+            "brier": 0.0
+          },
+          "synthetic.multihop": {
+            "questions": 120,
+            "acc": 0.9083,
+            "ece": 0.0716,
+            "brier": 0.1606
+          },
+          "cuad.no_sft_ledgar": {
+            "questions": 379,
+            "acc": 0.8443,
+            "ece": 0.0993,
+            "brier": 0.2689
+          },
+          "vs_4k": {
+            "all": {
+              "delta": -0.0326,
+              "ci95": [
+                -0.0589,
+                -0.0068
+              ],
+              "falls": true
+            },
+            "cuad": {
+              "delta": -0.0374,
+              "ci95": [
+                -0.0837,
+                0.008
+              ],
+              "falls": false
+            },
+            "synthetic": {
+              "delta": -0.0271,
+              "ci95": [
+                -0.0458,
+                -0.0083
+              ],
+              "falls": true
+            }
+          },
+          "cuad_paired_vs_8k": {
+            "questions": 445,
+            "delta": -0.0135,
+            "ci95": [
+              -0.037,
+              0.0093
+            ],
+            "falls": false
+          },
+          "synthetic.detail_by_depth": {
+            "0.1": {
+              "questions": 40,
+              "acc": 1.0,
+              "ece": 0.0046,
+              "brier": 0.0007
+            },
+            "0.5": {
+              "questions": 40,
+              "acc": 1.0,
+              "ece": 0.0026,
+              "brier": 0.0001
+            },
+            "0.9": {
+              "questions": 40,
+              "acc": 1.0,
+              "ece": 0.0015,
+              "brier": 0.0001
+            }
+          }
+        },
+        "32k": {
+          "all": {
+            "questions": 934,
+            "acc": 0.8961,
+            "ece": 0.0642,
+            "brier": 0.1683
+          },
+          "coverage": {
+            "records": 240,
+            "answered": 240,
+            "rejected": 0
+          },
+          "cuad": {
+            "questions": 454,
+            "acc": 0.8194,
+            "ece": 0.1205,
+            "brier": 0.2913
+          },
+          "cuad.category": {
+            "questions": 120,
+            "acc": 0.775,
+            "ece": 0.1756,
+            "brier": 0.3727
+          },
+          "cuad.governing_law": {
+            "questions": 94,
+            "acc": 1.0,
+            "ece": 0.0,
+            "brier": 0.0
+          },
+          "cuad.presence": {
+            "questions": 240,
+            "acc": 0.7708,
+            "ece": 0.1433,
+            "brier": 0.3646
+          },
+          "synthetic": {
+            "questions": 480,
+            "acc": 0.9688,
+            "ece": 0.0151,
+            "brier": 0.052
+          },
+          "synthetic.absent": {
+            "questions": 120,
+            "acc": 0.9583,
+            "ece": 0.0333,
+            "brier": 0.0725
+          },
+          "synthetic.detail": {
+            "questions": 120,
+            "acc": 1.0,
+            "ece": 0.0047,
+            "brier": 0.0012
+          },
+          "synthetic.locate": {
+            "questions": 120,
+            "acc": 1.0,
+            "ece": 0.0,
+            "brier": 0.0
+          },
+          "synthetic.multihop": {
+            "questions": 120,
+            "acc": 0.9167,
+            "ece": 0.0528,
+            "brier": 0.1344
+          },
+          "cuad.no_sft_ledgar": {
+            "questions": 384,
+            "acc": 0.8177,
+            "ece": 0.1251,
+            "brier": 0.2994
+          },
+          "vs_4k": {
+            "all": {
+              "delta": -0.0378,
+              "ci95": [
+                -0.0644,
+                -0.0109
+              ],
+              "falls": true
+            },
+            "cuad": {
+              "delta": -0.0565,
+              "ci95": [
+                -0.1024,
+                -0.012
+              ],
+              "falls": true
+            },
+            "synthetic": {
+              "delta": -0.0188,
+              "ci95": [
+                -0.0375,
+                0.0
+              ],
+              "falls": false
+            }
+          },
+          "cuad_paired_vs_8k": {
+            "questions": 447,
+            "delta": -0.0358,
+            "ci95": [
+              -0.0636,
+              -0.0095
+            ],
+            "falls": true
+          },
+          "synthetic.detail_by_depth": {
+            "0.1": {
+              "questions": 40,
+              "acc": 1.0,
+              "ece": 0.0033,
+              "brier": 0.0003
+            },
+            "0.5": {
+              "questions": 40,
+              "acc": 1.0,
+              "ece": 0.0021,
+              "brier": 0.0001
+            },
+            "0.9": {
+              "questions": 40,
+              "acc": 1.0,
+              "ece": 0.0087,
+              "brier": 0.0031
+            }
+          }
+        },
+        "64k": {
+          "all": {
+            "questions": 932,
+            "acc": 0.882,
+            "ece": 0.0576,
+            "brier": 0.1827
+          },
+          "coverage": {
+            "records": 240,
+            "answered": 240,
+            "rejected": 0
+          },
+          "cuad": {
+            "questions": 452,
+            "acc": 0.8009,
+            "ece": 0.1153,
+            "brier": 0.3038
+          },
+          "cuad.category": {
+            "questions": 120,
+            "acc": 0.7333,
+            "ece": 0.1343,
+            "brier": 0.3767
+          },
+          "cuad.governing_law": {
+            "questions": 92,
+            "acc": 1.0,
+            "ece": 0.0,
+            "brier": 0.0
+          },
+          "cuad.presence": {
+            "questions": 240,
+            "acc": 0.7583,
+            "ece": 0.15,
+            "brier": 0.3838
+          },
+          "synthetic": {
+            "questions": 480,
+            "acc": 0.9583,
+            "ece": 0.012,
+            "brier": 0.0686
+          },
+          "synthetic.absent": {
+            "questions": 120,
+            "acc": 0.9583,
+            "ece": 0.0407,
+            "brier": 0.0608
+          },
+          "synthetic.detail": {
+            "questions": 120,
+            "acc": 0.9917,
+            "ece": 0.013,
+            "brier": 0.0061
+          },
+          "synthetic.locate": {
+            "questions": 120,
+            "acc": 1.0,
+            "ece": 0.0003,
+            "brier": 0.0
+          },
+          "synthetic.multihop": {
+            "questions": 120,
+            "acc": 0.8833,
+            "ece": 0.0583,
+            "brier": 0.2076
+          },
+          "cuad.no_sft_ledgar": {
+            "questions": 379,
+            "acc": 0.7942,
+            "ece": 0.1187,
+            "brier": 0.316
+          },
+          "vs_4k": {
+            "all": {
+              "delta": -0.0519,
+              "ci95": [
+                -0.0785,
+                -0.0247
+              ],
+              "falls": true
+            },
+            "cuad": {
+              "delta": -0.075,
+              "ci95": [
+                -0.1211,
+                -0.0281
+              ],
+              "falls": true
+            },
+            "synthetic": {
+              "delta": -0.0292,
+              "ci95": [
+                -0.0521,
+                -0.0083
+              ],
+              "falls": true
+            }
+          },
+          "cuad_paired_vs_8k": {
+            "questions": 445,
+            "delta": -0.0517,
+            "ci95": [
+              -0.0788,
+              -0.0245
+            ],
+            "falls": true
+          },
+          "synthetic.detail_by_depth": {
+            "0.1": {
+              "questions": 40,
+              "acc": 0.975,
+              "ece": 0.0217,
+              "brier": 0.0151
+            },
+            "0.5": {
+              "questions": 40,
+              "acc": 1.0,
+              "ece": 0.0098,
+              "brier": 0.0016
+            },
+            "0.9": {
+              "questions": 40,
+              "acc": 1.0,
+              "ece": 0.0076,
+              "brier": 0.0017
+            }
+          }
+        }
+      },
+      "first_bucket_below_4k": "16k",
+      "validated_context": {
+        "margin": -0.03,
+        "reference": "8k",
+        "statistic": "cuad_paired_vs_8k lower bound (95 %)",
+        "buckets": {
+          "16k": {
+            "lower": -0.037,
+            "within": false
+          },
+          "32k": {
+            "lower": -0.0636,
+            "within": false
+          },
+          "64k": {
+            "lower": -0.0788,
+            "within": false
+          }
+        },
+        "first_failure": "16k",
+        "validated_bucket": "8k",
+        "validated_tokens": 8192
+      }
+    },
+    "Kev-27B v2": {
+      "dir": "runs/r23-27b-k-w85-longdoc",
+      "temperature": "as returned",
+      "buckets": {
+        "4k": {
+          "all": {
+            "questions": 923,
+            "acc": 0.9372,
+            "ece": 0.0488,
+            "brier": 0.1149
+          },
+          "coverage": {
+            "records": 240,
+            "answered": 240,
+            "rejected": 0
+          },
+          "cuad": {
+            "questions": 443,
+            "acc": 0.8691,
+            "ece": 0.1019,
+            "brier": 0.2394
+          },
+          "cuad.category": {
+            "questions": 120,
+            "acc": 0.85,
+            "ece": 0.1253,
+            "brier": 0.2587
+          },
+          "cuad.governing_law": {
+            "questions": 83,
+            "acc": 1.0,
+            "ece": 0.0,
+            "brier": 0.0
+          },
+          "cuad.presence": {
+            "questions": 240,
+            "acc": 0.8333,
+            "ece": 0.1474,
+            "brier": 0.3125
+          },
+          "synthetic": {
+            "questions": 480,
+            "acc": 1.0,
+            "ece": 0.0002,
+            "brier": 0.0
+          },
+          "synthetic.absent": {
+            "questions": 120,
+            "acc": 1.0,
+            "ece": 0.0006,
+            "brier": 0.0
+          },
+          "synthetic.detail": {
+            "questions": 120,
+            "acc": 1.0,
+            "ece": 0.0001,
+            "brier": 0.0
+          },
+          "synthetic.locate": {
+            "questions": 120,
+            "acc": 1.0,
+            "ece": 0.0,
+            "brier": 0.0
+          },
+          "synthetic.multihop": {
+            "questions": 120,
+            "acc": 1.0,
+            "ece": 0.0,
+            "brier": 0.0
+          },
+          "cuad.no_sft_ledgar": {
+            "questions": 403,
+            "acc": 0.8759,
+            "ece": 0.0935,
+            "brier": 0.2264
+          },
+          "synthetic.detail_by_depth": {
+            "0.1": {
+              "questions": 40,
+              "acc": 1.0,
+              "ece": 0.0,
+              "brier": 0.0
+            },
+            "0.5": {
+              "questions": 40,
+              "acc": 1.0,
+              "ece": 0.0,
+              "brier": 0.0
+            },
+            "0.9": {
+              "questions": 40,
+              "acc": 1.0,
+              "ece": 0.0002,
+              "brier": 0.0
+            }
+          }
+        },
+        "8k": {
+          "all": {
+            "questions": 933,
+            "acc": 0.9239,
+            "ece": 0.0613,
+            "brier": 0.137
+          },
+          "coverage": {
+            "records": 240,
+            "answered": 240,
+            "rejected": 0
+          },
+          "cuad": {
+            "questions": 453,
+            "acc": 0.8433,
+            "ece": 0.1266,
+            "brier": 0.282
+          },
+          "cuad.category": {
+            "questions": 120,
+            "acc": 0.8083,
+            "ece": 0.1438,
+            "brier": 0.3233
+          },
+          "cuad.governing_law": {
+            "questions": 93,
+            "acc": 1.0,
+            "ece": 0.0,
+            "brier": 0.0
+          },
+          "cuad.presence": {
+            "questions": 240,
+            "acc": 0.8,
+            "ece": 0.1733,
+            "brier": 0.3707
+          },
+          "synthetic": {
+            "questions": 480,
+            "acc": 1.0,
+            "ece": 0.0004,
+            "brier": 0.0
+          },
+          "synthetic.absent": {
+            "questions": 120,
+            "acc": 1.0,
+            "ece": 0.0004,
+            "brier": 0.0
+          },
+          "synthetic.detail": {
+            "questions": 120,
+            "acc": 1.0,
+            "ece": 0.0009,
+            "brier": 0.0001
+          },
+          "synthetic.locate": {
+            "questions": 120,
+            "acc": 1.0,
+            "ece": 0.0,
+            "brier": 0.0
+          },
+          "synthetic.multihop": {
+            "questions": 120,
+            "acc": 1.0,
+            "ece": 0.0,
+            "brier": 0.0
+          },
+          "cuad.no_sft_ledgar": {
+            "questions": 380,
+            "acc": 0.8421,
+            "ece": 0.126,
+            "brier": 0.2806
+          },
+          "vs_4k": {
+            "all": {
+              "delta": -0.0133,
+              "ci95": [
+                -0.0369,
+                0.0102
+              ],
+              "falls": false
+            },
+            "cuad": {
+              "delta": -0.0258,
+              "ci95": [
+                -0.0673,
+                0.0172
+              ],
+              "falls": false
+            },
+            "synthetic": {
+              "delta": 0.0,
+              "ci95": [
+                0.0,
+                0.0
+              ],
+              "falls": false
+            }
+          },
+          "synthetic.detail_by_depth": {
+            "0.1": {
+              "questions": 40,
+              "acc": 1.0,
+              "ece": 0.0001,
+              "brier": 0.0
+            },
+            "0.5": {
+              "questions": 40,
+              "acc": 1.0,
+              "ece": 0.0002,
+              "brier": 0.0
+            },
+            "0.9": {
+              "questions": 40,
+              "acc": 1.0,
+              "ece": 0.0026,
+              "brier": 0.0004
+            }
+          }
+        },
+        "16k": {
+          "all": {
+            "questions": 932,
+            "acc": 0.9249,
+            "ece": 0.0619,
+            "brier": 0.1338
+          },
+          "coverage": {
+            "records": 240,
+            "answered": 240,
+            "rejected": 0
+          },
+          "cuad": {
+            "questions": 452,
+            "acc": 0.8451,
+            "ece": 0.1278,
+            "brier": 0.2759
+          },
+          "cuad.category": {
+            "questions": 120,
+            "acc": 0.8,
+            "ece": 0.1339,
+            "brier": 0.3162
+          },
+          "cuad.governing_law": {
+            "questions": 92,
+            "acc": 1.0,
+            "ece": 0.0,
+            "brier": 0.0
+          },
+          "cuad.presence": {
+            "questions": 240,
+            "acc": 0.8083,
+            "ece": 0.1737,
+            "brier": 0.3614
+          },
+          "synthetic": {
+            "questions": 480,
+            "acc": 1.0,
+            "ece": 0.0001,
+            "brier": 0.0
+          },
+          "synthetic.absent": {
+            "questions": 120,
+            "acc": 1.0,
+            "ece": 0.0003,
+            "brier": 0.0
+          },
+          "synthetic.detail": {
+            "questions": 120,
+            "acc": 1.0,
+            "ece": 0.0002,
+            "brier": 0.0
+          },
+          "synthetic.locate": {
+            "questions": 120,
+            "acc": 1.0,
+            "ece": 0.0,
+            "brier": 0.0
+          },
+          "synthetic.multihop": {
+            "questions": 120,
+            "acc": 1.0,
+            "ece": 0.0001,
+            "brier": 0.0
+          },
+          "cuad.no_sft_ledgar": {
+            "questions": 379,
+            "acc": 0.8417,
+            "ece": 0.1269,
+            "brier": 0.275
+          },
+          "vs_4k": {
+            "all": {
+              "delta": -0.0123,
+              "ci95": [
+                -0.0369,
+                0.0124
+              ],
+              "falls": false
+            },
+            "cuad": {
+              "delta": -0.0239,
+              "ci95": [
+                -0.0698,
+                0.0199
+              ],
+              "falls": false
+            },
+            "synthetic": {
+              "delta": 0.0,
+              "ci95": [
+                0.0,
+                0.0
+              ],
+              "falls": false
+            }
+          },
+          "cuad_paired_vs_8k": {
+            "questions": 445,
+            "delta": 0.0022,
+            "ci95": [
+              -0.0069,
+              0.0119
+            ],
+            "falls": false
+          },
+          "synthetic.detail_by_depth": {
+            "0.1": {
+              "questions": 40,
+              "acc": 1.0,
+              "ece": 0.0002,
+              "brier": 0.0
+            },
+            "0.5": {
+              "questions": 40,
+              "acc": 1.0,
+              "ece": 0.0001,
+              "brier": 0.0
+            },
+            "0.9": {
+              "questions": 40,
+              "acc": 1.0,
+              "ece": 0.0002,
+              "brier": 0.0
+            }
+          }
+        },
+        "32k": {
+          "all": {
+            "questions": 934,
+            "acc": 0.9251,
+            "ece": 0.0583,
+            "brier": 0.1339
+          },
+          "coverage": {
+            "records": 240,
+            "answered": 240,
+            "rejected": 0
+          },
+          "cuad": {
+            "questions": 454,
+            "acc": 0.8458,
+            "ece": 0.1206,
+            "brier": 0.2753
+          },
+          "cuad.category": {
+            "questions": 120,
+            "acc": 0.8167,
+            "ece": 0.1218,
+            "brier": 0.3062
+          },
+          "cuad.governing_law": {
+            "questions": 94,
+            "acc": 1.0,
+            "ece": 0.0,
+            "brier": 0.0
+          },
+          "cuad.presence": {
+            "questions": 240,
+            "acc": 0.8,
+            "ece": 0.1693,
+            "brier": 0.3677
+          },
+          "synthetic": {
+            "questions": 480,
+            "acc": 1.0,
+            "ece": 0.0005,
+            "brier": 0.0001
+          },
+          "synthetic.absent": {
+            "questions": 120,
+            "acc": 1.0,
+            "ece": 0.0003,
+            "brier": 0.0
+          },
+          "synthetic.detail": {
+            "questions": 120,
+            "acc": 1.0,
+            "ece": 0.0017,
+            "brier": 0.0002
+          },
+          "synthetic.locate": {
+            "questions": 120,
+            "acc": 1.0,
+            "ece": 0.0,
+            "brier": 0.0
+          },
+          "synthetic.multihop": {
+            "questions": 120,
+            "acc": 1.0,
+            "ece": 0.0001,
+            "brier": 0.0
+          },
+          "cuad.no_sft_ledgar": {
+            "questions": 384,
+            "acc": 0.8411,
+            "ece": 0.1249,
+            "brier": 0.2792
+          },
+          "vs_4k": {
+            "all": {
+              "delta": -0.0121,
+              "ci95": [
+                -0.0357,
+                0.0112
+              ],
+              "falls": false
+            },
+            "cuad": {
+              "delta": -0.0233,
+              "ci95": [
+                -0.0654,
+                0.0186
+              ],
+              "falls": false
+            },
+            "synthetic": {
+              "delta": 0.0,
+              "ci95": [
+                0.0,
+                0.0
+              ],
+              "falls": false
+            }
+          },
+          "cuad_paired_vs_8k": {
+            "questions": 447,
+            "delta": -0.0022,
+            "ci95": [
+              -0.0119,
+              0.0068
+            ],
+            "falls": false
+          },
+          "synthetic.detail_by_depth": {
+            "0.1": {
+              "questions": 40,
+              "acc": 1.0,
+              "ece": 0.0008,
+              "brier": 0.0
+            },
+            "0.5": {
+              "questions": 40,
+              "acc": 1.0,
+              "ece": 0.002,
+              "brier": 0.0003
+            },
+            "0.9": {
+              "questions": 40,
+              "acc": 1.0,
+              "ece": 0.0025,
+              "brier": 0.0004
+            }
+          }
+        },
+        "64k": {
+          "all": {
+            "questions": 932,
+            "acc": 0.9185,
+            "ece": 0.0617,
+            "brier": 0.1387
+          },
+          "coverage": {
+            "records": 240,
+            "answered": 240,
+            "rejected": 0
+          },
+          "cuad": {
+            "questions": 452,
+            "acc": 0.8319,
+            "ece": 0.1276,
+            "brier": 0.286
+          },
+          "cuad.category": {
+            "questions": 120,
+            "acc": 0.7833,
+            "ece": 0.151,
+            "brier": 0.3375
+          },
+          "cuad.governing_law": {
+            "questions": 92,
+            "acc": 1.0,
+            "ece": 0.0,
+            "brier": 0.0
+          },
+          "cuad.presence": {
+            "questions": 240,
+            "acc": 0.7917,
+            "ece": 0.1648,
+            "brier": 0.3699
+          },
+          "synthetic": {
+            "questions": 480,
+            "acc": 1.0,
+            "ece": 0.0005,
+            "brier": 0.0
+          },
+          "synthetic.absent": {
+            "questions": 120,
+            "acc": 1.0,
+            "ece": 0.0009,
+            "brier": 0.0001
+          },
+          "synthetic.detail": {
+            "questions": 120,
+            "acc": 1.0,
+            "ece": 0.0008,
+            "brier": 0.0001
+          },
+          "synthetic.locate": {
+            "questions": 120,
+            "acc": 1.0,
+            "ece": 0.0,
+            "brier": 0.0
+          },
+          "synthetic.multihop": {
+            "questions": 120,
+            "acc": 1.0,
+            "ece": 0.0002,
+            "brier": 0.0
+          },
+          "cuad.no_sft_ledgar": {
+            "questions": 379,
+            "acc": 0.8311,
+            "ece": 0.1275,
+            "brier": 0.2873
+          },
+          "vs_4k": {
+            "all": {
+              "delta": -0.0187,
+              "ci95": [
+                -0.0426,
+                0.0056
+              ],
+              "falls": false
+            },
+            "cuad": {
+              "delta": -0.0372,
+              "ci95": [
+                -0.0819,
+                0.0081
+              ],
+              "falls": false
+            },
+            "synthetic": {
+              "delta": 0.0,
+              "ci95": [
+                0.0,
+                0.0
+              ],
+              "falls": false
+            }
+          },
+          "cuad_paired_vs_8k": {
+            "questions": 445,
+            "delta": -0.0112,
+            "ci95": [
+              -0.0241,
+              0.0
+            ],
+            "falls": false
+          },
+          "synthetic.detail_by_depth": {
+            "0.1": {
+              "questions": 40,
+              "acc": 1.0,
+              "ece": 0.0001,
+              "brier": 0.0
+            },
+            "0.5": {
+              "questions": 40,
+              "acc": 1.0,
+              "ece": 0.0019,
+              "brier": 0.0002
+            },
+            "0.9": {
+              "questions": 40,
+              "acc": 1.0,
+              "ece": 0.0003,
+              "brier": 0.0
+            }
+          }
+        }
+      },
+      "first_bucket_below_4k": null,
+      "validated_context": {
+        "margin": -0.03,
+        "reference": "8k",
+        "statistic": "cuad_paired_vs_8k lower bound (95 %)",
+        "buckets": {
+          "16k": {
+            "lower": -0.0069,
+            "within": true
+          },
+          "32k": {
+            "lower": -0.0119,
+            "within": true
+          },
+          "64k": {
+            "lower": -0.0241,
+            "within": true
+          }
+        },
+        "first_failure": null,
+        "validated_bucket": "64k",
+        "validated_tokens": 65536
+      }
+    }
+  }
+}

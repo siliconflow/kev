@@ -1,0 +1,166 @@
+{
+  "run": "jaredpalmer/kev-4b",
+  "gpu": "NVIDIA H200",
+  "total_memory_gib": 139.8,
+  "resident_gib": 15.7,
+  "temperature": 2.406050072164233,
+  "environment": {
+    "packages": {
+      "torch": "2.8.0+cu128",
+      "transformers": "5.17.0",
+      "peft": "0.21.0",
+      "flash-linear-attention": "0.5.2",
+      "triton": "3.8.0",
+      "causal-conv1d": "1.7.0",
+      "mlx": null,
+      "mlx-lm": null
+    },
+    "device": "cuda",
+    "gpu": "NVIDIA H200",
+    "backend": "torch",
+    "dtype": "float32",
+    "triton_f32_default": null,
+    "attention": "sdpa",
+    "deltanet": {
+      "forward": "transformers.models.qwen3_5.modeling_qwen3_5.Qwen3_5GatedDeltaNet.forward",
+      "causal_conv1d_fn": "causal_conv1d.causal_conv1d_interface.causal_conv1d_fn",
+      "torch_chunk_gated_delta_rule": "fla.ops.gated_delta_rule.chunk.chunk_gated_delta_rule"
+    }
+  },
+  "config": {
+    "num_attention_heads": 16,
+    "num_key_value_heads": 4,
+    "head_dim": 256,
+    "hidden_size": 2560,
+    "num_hidden_layers": 32
+  },
+  "kernels_4k": {
+    "math": {
+      "void cutlass::Kernel2<cutlass_80_simt_sgemm_256x128_8x4_nn_align1>(cutlass_80_simt_sgemm_256x128_8x4_nn_align1::Params)": 19.26,
+      "void at::native::(anonymous namespace)::cunn_SoftMaxForwardReg<float, float, float, at::native::(anonymous namespace)::S": 7.25,
+      "void cutlass::Kernel2<cutlass_80_simt_sgemm_64x64_8x5_tn_align1>(cutlass_80_simt_sgemm_64x64_8x5_tn_align1::Params)": 0.48
+    },
+    "legacy": {
+      "void cutlass::Kernel2<cutlass_80_simt_sgemm_256x128_8x4_nn_align1>(cutlass_80_simt_sgemm_256x128_8x4_nn_align1::Params)": 19.22,
+      "fmha_cutlassF_f32_aligned_32x128_gmem_sm80(PyTorchMemEffAttention::AttentionKernel<float, cutlass::arch::Sm80, true, 32,": 7.49,
+      "void at::native::(anonymous namespace)::cunn_SoftMaxForwardReg<float, float, float, at::native::(anonymous namespace)::S": 6.56,
+      "void cutlass::Kernel2<cutlass_80_simt_sgemm_64x64_8x5_tn_align1>(cutlass_80_simt_sgemm_64x64_8x5_tn_align1::Params)": 0.48
+    },
+    "long": {
+      "fmha_cutlassF_f32_aligned_32x128_gmem_sm80(PyTorchMemEffAttention::AttentionKernel<float, cutlass::arch::Sm80, true, 32,": 30.28,
+      "void cutlass::Kernel2<cutlass_80_simt_sgemm_64x64_8x5_tn_align1>(cutlass_80_simt_sgemm_64x64_8x5_tn_align1::Params)": 0.48
+    }
+  },
+  "memory": {
+    "16k": {
+      "state_tokens": 15231,
+      "questions": 4,
+      "longest_row": 15337,
+      "math": {
+        "seconds": 3.57,
+        "peak_over_resident_gib": 33.57,
+        "oom": false
+      },
+      "legacy": {
+        "seconds": 3.57,
+        "peak_over_resident_gib": 33.57,
+        "oom": false
+      },
+      "long": {
+        "seconds": 2.94,
+        "peak_over_resident_gib": 4.3,
+        "oom": false
+      },
+      "long_vs_math": {
+        "questions": 4,
+        "max_dp_raw": 5.482323467731476e-05,
+        "max_dp_shipped": 0.00030177831649780273,
+        "max_dlogit": 0.007744789123535156,
+        "flips": 0
+      }
+    },
+    "32k": {
+      "state_tokens": 30468,
+      "questions": 4,
+      "longest_row": 30568,
+      "math": {
+        "seconds": 0.88,
+        "peak_over_resident_gib": 117.29,
+        "oom": true
+      },
+      "legacy": {
+        "seconds": 0.87,
+        "peak_over_resident_gib": 117.29,
+        "oom": true
+      },
+      "long": {
+        "seconds": 6.67,
+        "peak_over_resident_gib": 8.6,
+        "oom": false
+      }
+    },
+    "64k": {
+      "state_tokens": 60926,
+      "questions": 4,
+      "longest_row": 61023,
+      "math": {
+        "seconds": 2.3,
+        "peak_over_resident_gib": 21.76,
+        "oom": true
+      },
+      "legacy": {
+        "seconds": 1.1,
+        "peak_over_resident_gib": 21.76,
+        "oom": true
+      },
+      "long": {
+        "seconds": 16.63,
+        "peak_over_resident_gib": 17.19,
+        "oom": false
+      }
+    }
+  },
+  "parity": {
+    "8k": {
+      "records": 4,
+      "legacy_vs_math": {
+        "questions": 16,
+        "max_dp_raw": 0.00013759732246398926,
+        "max_dp_shipped": 0.0003839731216430664,
+        "max_dlogit": 0.00775301456451416,
+        "flips": 0
+      },
+      "long_vs_math": {
+        "questions": 16,
+        "max_dp_raw": 0.00010150671005249023,
+        "max_dp_shipped": 0.00022125244140625,
+        "max_dlogit": 0.0042171478271484375,
+        "flips": 0
+      },
+      "rows_vs_math": {
+        "questions": 16,
+        "max_dp_raw": 0.0007420778274536133,
+        "max_dp_shipped": 0.0007830262184143066,
+        "max_dlogit": 0.02382946014404297,
+        "flips": 0
+      }
+    },
+    "16k": {
+      "records": 4,
+      "legacy_vs_math": {
+        "questions": 16,
+        "max_dp_raw": 0.00012105703353881836,
+        "max_dp_shipped": 0.00021764636039733887,
+        "max_dlogit": 0.006539344787597656,
+        "flips": 0
+      },
+      "long_vs_math": {
+        "questions": 16,
+        "max_dp_raw": 0.00029534101486206055,
+        "max_dp_shipped": 0.00018543004989624023,
+        "max_dlogit": 0.004481077194213867,
+        "flips": 0
+      }
+    }
+  }
+}

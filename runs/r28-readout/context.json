@@ -1,0 +1,356 @@
+{
+ "rule": "PLAN.md > Round 28 (registered) > Validated context length (report only, gates nothing): scripts/longdoc_report.py --context-margin -0.03 (validated_context); the largest bucket from 16k up such that it and every bucket between it and 8k has a CUAD cuad_paired_vs_8k 95 % lower bound >= -0.03 with every record answered, else 8,192",
+ "suite": "evals/longdoc-v1",
+ "split": "development",
+ "sources": {
+  "raw": "runs/r28-context/report.json",
+  "served": "runs/r28-context-served/report.json"
+ },
+ "commands": [
+  "uv run python scripts/longdoc_report.py --suite evals/longdoc-v1 --out runs/r28-context --context-margin -0.03 --result 'Kev-4B=runs/r28-4b-r10-longdoc' --result 'Kev-0.8B=runs/r28-08b-r15-longdoc' --result 'Kev-9B v2=runs/r29-9b-r18a-longdoc' --result 'Kev-27B v2=runs/r23-27b-k-w85-longdoc'  (r28.json context.command plus Kev-27B v2)",
+  "the same at each shipped T (NAME=DIR@T) -> runs/r28-context-served"
+ ],
+ "note": "Accuracy, the paired intervals and the validated length do not depend on T (identical in both reports); ECE is at the shipped T.",
+ "sizes": {
+  "08b": {
+   "name": "Kev-0.8B",
+   "read": "runs/r28-08b-r15-longdoc",
+   "checkpoint": "r15-08b/00-trial-0 (Hub 9a45d25e)",
+   "shipped_temperature": 2.3510958125672174,
+   "validated_tokens": 8192,
+   "validated_bucket": "8k",
+   "first_failure": "16k",
+   "buckets": [
+    {
+     "bucket": "4k",
+     "questions": 443,
+     "acc": 0.7788,
+     "ece_shipped_t": 0.1278,
+     "records": 240,
+     "answered": 240,
+     "paired_vs_8k": null,
+     "within": null
+    },
+    {
+     "bucket": "8k",
+     "questions": 453,
+     "acc": 0.7108,
+     "ece_shipped_t": 0.0661,
+     "records": 240,
+     "answered": 240,
+     "paired_vs_8k": null,
+     "within": null
+    },
+    {
+     "bucket": "16k",
+     "questions": 452,
+     "acc": 0.6593,
+     "ece_shipped_t": 0.0471,
+     "records": 240,
+     "answered": 240,
+     "paired_vs_8k": {
+      "questions": 445,
+      "delta": -0.0517,
+      "ci95": [
+       -0.0854,
+       -0.0205
+      ],
+      "falls": true
+     },
+     "within": false
+    },
+    {
+     "bucket": "32k",
+     "questions": 454,
+     "acc": 0.663,
+     "ece_shipped_t": 0.0551,
+     "records": 240,
+     "answered": 240,
+     "paired_vs_8k": {
+      "questions": 447,
+      "delta": -0.0604,
+      "ci95": [
+       -0.0947,
+       -0.0254
+      ],
+      "falls": true
+     },
+     "within": false
+    },
+    {
+     "bucket": "64k",
+     "questions": 452,
+     "acc": 0.6372,
+     "ece_shipped_t": 0.0384,
+     "records": 240,
+     "answered": 240,
+     "paired_vs_8k": {
+      "questions": 445,
+      "delta": -0.0787,
+      "ci95": [
+       -0.1177,
+       -0.0415
+      ],
+      "falls": true
+     },
+     "within": false
+    }
+   ]
+  },
+  "4b": {
+   "name": "Kev-4B",
+   "read": "runs/r28-4b-r10-longdoc",
+   "checkpoint": "r10-skills/00-trial-0 (Hub 139fdd94)",
+   "shipped_temperature": 2.406050072164233,
+   "validated_tokens": 8192,
+   "validated_bucket": "8k",
+   "first_failure": "16k",
+   "buckets": [
+    {
+     "bucket": "4k",
+     "questions": 443,
+     "acc": 0.8465,
+     "ece_shipped_t": 0.0469,
+     "records": 240,
+     "answered": 240,
+     "paired_vs_8k": null,
+     "within": null
+    },
+    {
+     "bucket": "8k",
+     "questions": 453,
+     "acc": 0.8366,
+     "ece_shipped_t": 0.0482,
+     "records": 240,
+     "answered": 240,
+     "paired_vs_8k": null,
+     "within": null
+    },
+    {
+     "bucket": "16k",
+     "questions": 452,
+     "acc": 0.823,
+     "ece_shipped_t": 0.0569,
+     "records": 240,
+     "answered": 240,
+     "paired_vs_8k": {
+      "questions": 445,
+      "delta": -0.0112,
+      "ci95": [
+       -0.0341,
+       0.0124
+      ],
+      "falls": false
+     },
+     "within": false
+    },
+    {
+     "bucket": "32k",
+     "questions": 454,
+     "acc": 0.7885,
+     "ece_shipped_t": 0.022,
+     "records": 240,
+     "answered": 240,
+     "paired_vs_8k": {
+      "questions": 447,
+      "delta": -0.0582,
+      "ci95": [
+       -0.0897,
+       -0.0278
+      ],
+      "falls": true
+     },
+     "within": false
+    },
+    {
+     "bucket": "64k",
+     "questions": 452,
+     "acc": 0.781,
+     "ece_shipped_t": 0.0345,
+     "records": 240,
+     "answered": 240,
+     "paired_vs_8k": {
+      "questions": 445,
+      "delta": -0.0517,
+      "ci95": [
+       -0.0824,
+       -0.0198
+      ],
+      "falls": true
+     },
+     "within": false
+    }
+   ]
+  },
+  "9b": {
+   "name": "Kev-9B v2",
+   "read": "runs/r29-9b-r18a-longdoc",
+   "checkpoint": "r18-9b/00-trial-0 = round 27 9b-r18a (Hub b5d8c18e)",
+   "shipped_temperature": 2.193649959389252,
+   "validated_tokens": 8192,
+   "validated_bucket": "8k",
+   "first_failure": "16k",
+   "buckets": [
+    {
+     "bucket": "4k",
+     "questions": 443,
+     "acc": 0.8758,
+     "ece_shipped_t": 0.0485,
+     "records": 240,
+     "answered": 240,
+     "paired_vs_8k": null,
+     "within": null
+    },
+    {
+     "bucket": "8k",
+     "questions": 453,
+     "acc": 0.8499,
+     "ece_shipped_t": 0.0514,
+     "records": 240,
+     "answered": 240,
+     "paired_vs_8k": null,
+     "within": null
+    },
+    {
+     "bucket": "16k",
+     "questions": 452,
+     "acc": 0.8385,
+     "ece_shipped_t": 0.0326,
+     "records": 240,
+     "answered": 240,
+     "paired_vs_8k": {
+      "questions": 445,
+      "delta": -0.0135,
+      "ci95": [
+       -0.037,
+       0.0093
+      ],
+      "falls": false
+     },
+     "within": false
+    },
+    {
+     "bucket": "32k",
+     "questions": 454,
+     "acc": 0.8194,
+     "ece_shipped_t": 0.0412,
+     "records": 240,
+     "answered": 240,
+     "paired_vs_8k": {
+      "questions": 447,
+      "delta": -0.0358,
+      "ci95": [
+       -0.0636,
+       -0.0095
+      ],
+      "falls": true
+     },
+     "within": false
+    },
+    {
+     "bucket": "64k",
+     "questions": 452,
+     "acc": 0.8009,
+     "ece_shipped_t": 0.0557,
+     "records": 240,
+     "answered": 240,
+     "paired_vs_8k": {
+      "questions": 445,
+      "delta": -0.0517,
+      "ci95": [
+       -0.0788,
+       -0.0245
+      ],
+      "falls": true
+     },
+     "within": false
+    }
+   ]
+  },
+  "27b": {
+   "name": "Kev-27B v2",
+   "read": "runs/r23-27b-k-w85-longdoc",
+   "checkpoint": "round 23 27b-k-w85 (Hub 28be62e9)",
+   "shipped_temperature": 1.319507910772894,
+   "validated_tokens": 65536,
+   "validated_bucket": "64k",
+   "first_failure": null,
+   "buckets": [
+    {
+     "bucket": "4k",
+     "questions": 443,
+     "acc": 0.8691,
+     "ece_shipped_t": 0.0946,
+     "records": 240,
+     "answered": 240,
+     "paired_vs_8k": null,
+     "within": null
+    },
+    {
+     "bucket": "8k",
+     "questions": 453,
+     "acc": 0.8433,
+     "ece_shipped_t": 0.1098,
+     "records": 240,
+     "answered": 240,
+     "paired_vs_8k": null,
+     "within": null
+    },
+    {
+     "bucket": "16k",
+     "questions": 452,
+     "acc": 0.8451,
+     "ece_shipped_t": 0.1065,
+     "records": 240,
+     "answered": 240,
+     "paired_vs_8k": {
+      "questions": 445,
+      "delta": 0.0022,
+      "ci95": [
+       -0.0069,
+       0.0119
+      ],
+      "falls": false
+     },
+     "within": true
+    },
+    {
+     "bucket": "32k",
+     "questions": 454,
+     "acc": 0.8458,
+     "ece_shipped_t": 0.1021,
+     "records": 240,
+     "answered": 240,
+     "paired_vs_8k": {
+      "questions": 447,
+      "delta": -0.0022,
+      "ci95": [
+       -0.0119,
+       0.0068
+      ],
+      "falls": false
+     },
+     "within": true
+    },
+    {
+     "bucket": "64k",
+     "questions": 452,
+     "acc": 0.8319,
+     "ece_shipped_t": 0.1063,
+     "records": 240,
+     "answered": 240,
+     "paired_vs_8k": {
+      "questions": 445,
+      "delta": -0.0112,
+      "ci95": [
+       -0.0241,
+       0.0
+      ],
+      "falls": false
+     },
+     "within": true
+    }
+   ]
+  }
+ }
+}

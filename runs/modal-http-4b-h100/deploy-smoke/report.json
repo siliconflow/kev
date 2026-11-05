@@ -1,0 +1,107 @@
+{
+  "script": "skills/kev-deploy/scripts/kev_serve.py",
+  "model": "jaredpalmer/kev-4b",
+  "gpu": "NVIDIA H100 80GB HBM3",
+  "region": "us-east",
+  "mode": "direct",
+  "client": "session VM; not in-region; not comparable to the paired benchmark RTT",
+  "settings": {
+    "KEV_FLASH": "1",
+    "KEV_MIN_CONTAINERS": "0",
+    "effective_min_containers": 1,
+    "target_concurrency": 64
+  },
+  "protocol": {
+    "models": 200,
+    "invalid_bearer": 401,
+    "invalid_question": 422,
+    "sdk": true
+  },
+  "answers_equal_to_paired_benchmark": true,
+  "image_versions": {
+    "torch": "2.8.0",
+    "transformers": "5.19.0",
+    "peft": "0.21.2",
+    "flash-linear-attention": "0.5.2",
+    "triton": "3.8.0"
+  },
+  "warm_serial_requests": 20,
+  "p50": {
+    "ms": 99.66,
+    "process_ms": 23.15,
+    "model_ms": 18.4
+  },
+  "model_card": {
+    "models": [
+      {
+        "name": "kev-latest",
+        "description": "Kev pointer head on Qwen/Qwen3.5-4B-Base, serving jaredpalmer/kev-4b at temperature 2.41",
+        "release_date": "2026-10-01",
+        "run": "jaredpalmer/kev-4b",
+        "base": "Qwen/Qwen3.5-4B-Base",
+        "lora": 16,
+        "device": "cuda",
+        "backend": "torch",
+        "dtype": "bfloat16",
+        "temperature": 2.406050072164233,
+        "max_state_tokens": 65536,
+        "truncate_states": false,
+        "cuda_graphs": {
+          "captured": 6,
+          "kept": 6,
+          "pending": 0,
+          "failed": 0
+        },
+        "prefix_cache": {
+          "size": 4,
+          "min_state_tokens": 0,
+          "max_tokens": 65536,
+          "hits": 0,
+          "misses": 3,
+          "cached_states": 3,
+          "oom_retries": 0
+        },
+        "batches": {
+          "count": 3,
+          "requests": 3,
+          "queued": 0
+        }
+      },
+      {
+        "name": "jev-latest",
+        "description": "Kev pointer head on Qwen/Qwen3.5-4B-Base, serving jaredpalmer/kev-4b at temperature 2.41",
+        "release_date": "2026-10-01",
+        "run": "jaredpalmer/kev-4b",
+        "base": "Qwen/Qwen3.5-4B-Base",
+        "lora": 16,
+        "device": "cuda",
+        "backend": "torch",
+        "dtype": "bfloat16",
+        "temperature": 2.406050072164233,
+        "max_state_tokens": 65536,
+        "truncate_states": false,
+        "cuda_graphs": {
+          "captured": 6,
+          "kept": 6,
+          "pending": 0,
+          "failed": 0
+        },
+        "prefix_cache": {
+          "size": 4,
+          "min_state_tokens": 0,
+          "max_tokens": 65536,
+          "hits": 0,
+          "misses": 3,
+          "cached_states": 3,
+          "oom_retries": 0
+        },
+        "batches": {
+          "count": 3,
+          "requests": 3,
+          "queued": 0
+        }
+      }
+    ]
+  },
+  "image_versions_source": "Cached base image layers, whose package versions are recorded in their earlier build log; no causal-conv1d installation in the final deployment image."
+}

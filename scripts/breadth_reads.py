@@ -1,7 +1,9 @@
-"""The two remote baseline reads of evals/breadth-v1 (development only), as kev.benchmark result directories.
+"""The two remote baseline reads of evals/breadth-v1, as kev.benchmark result directories: the development partition, or
+the locked test with --allow-test (a registered confirmation stage only: round 24's report-only Jev / AutoJev test reads).
 
     AI_GATEWAY_API_KEY=... uv run python scripts/breadth_reads.py jev --out runs/breadth-v1-jev
     KEV_REMOTE_API_KEY=... uv run python scripts/breadth_reads.py autojev --url https://<workspace>--autojev-breadth-api.modal.run --out runs/breadth-v1-autojev
+    AI_GATEWAY_API_KEY=... uv run python scripts/breadth_reads.py jev --allow-test --out runs/r24c-jev-breadthtest
 
 Both use kev.benchmark.evaluate_records with skip_overlong, so a record a server will not answer is counted in
 coverage["rejected_records"], listed in rejected.json and scored wrong by scripts/breadth_report.py (the Decision Index
@@ -87,10 +89,12 @@ def main():
     ap.add_argument("--out", required=True)
     ap.add_argument("--url", help="AutoJev server base URL")
     ap.add_argument("--budget", type=float, default=3.0, help="Jev spend cap in USD (list price x input tokens)")
+    ap.add_argument("--allow-test", action="store_true", help="read the locked test partition instead of development (a registered confirmation stage only)")
     a = ap.parse_args()
     if Path(a.out).exists(): ap.error("output directory already exists")
     try:
-        records, manifest = load_split(SUITE, "development"), read_manifest(SUITE)
+        split = "test" if a.allow_test else "development"
+        records, manifest = load_split(SUITE, split, allow_test=a.allow_test), read_manifest(SUITE)
     except PermissionError as error:
         raise SystemExit(f"cannot read without the suite's partitions: {error}") from None
     extra = {}
@@ -103,7 +107,7 @@ def main():
         predictor = AutoJev(a.url, "jev-latest", key, timeout=300)
     try:
         report, _ = evaluate_records(records, predictor, a.out, heldout_sources=tuple(manifest["holdout_sources"]), skip_overlong=True)
-        report.update(suite_sha256=digest(Path(SUITE) / "manifest.json"), split="development", run=a.system)
+        report.update(suite_sha256=digest(Path(SUITE) / "manifest.json"), split=split, run=a.system)
         if a.system == "jev":
             report["provider"] = predictor.accounting()
         else:

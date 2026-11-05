@@ -1,0 +1,1480 @@
+{
+  "direct": {
+    "url": "https://jp-1083--kev-http-bench-direct-dev.us-east.modal.direct",
+    "levels": {
+      "1": {
+        "requests": 128,
+        "errors": [],
+        "rps": 28.71,
+        "p50_ms": 34.06,
+        "p99_ms": 39.75,
+        "process_p50_ms": 22.9,
+        "model_p50_ms": 18.3,
+        "graphs_before": {
+          "graphs": {
+            "captured": 9,
+            "kept": 9,
+            "pending": 0,
+            "failed": 0
+          },
+          "gpu": "NVIDIA H100 80GB HBM3",
+          "threads": 4,
+          "checkpoint": "6cfce5c2fa4b4bd64026336ab649c5ca78857d52",
+          "environment": {
+            "packages": {
+              "torch": "2.8.0+cu128",
+              "transformers": "5.17.0",
+              "peft": "0.21.0",
+              "flash-linear-attention": "0.5.2",
+              "triton": "3.8.0",
+              "causal-conv1d": "1.7.0",
+              "mlx": null,
+              "mlx-lm": null
+            },
+            "device": "cuda",
+            "gpu": "NVIDIA H100 80GB HBM3",
+            "backend": "torch",
+            "dtype": "bfloat16",
+            "triton_f32_default": null,
+            "attention": "sdpa",
+            "deltanet": {
+              "forward": "kev.fused_qwen35.deltanet_forward",
+              "causal_conv1d_fn": "causal_conv1d.causal_conv1d_interface.causal_conv1d_fn",
+              "torch_chunk_gated_delta_rule": "fla.ops.gated_delta_rule.chunk.chunk_gated_delta_rule"
+            }
+          }
+        },
+        "graphs_after": {
+          "graphs": {
+            "captured": 9,
+            "kept": 9,
+            "pending": 0,
+            "failed": 0
+          },
+          "gpu": "NVIDIA H100 80GB HBM3",
+          "threads": 4,
+          "checkpoint": "6cfce5c2fa4b4bd64026336ab649c5ca78857d52",
+          "environment": {
+            "packages": {
+              "torch": "2.8.0+cu128",
+              "transformers": "5.17.0",
+              "peft": "0.21.0",
+              "flash-linear-attention": "0.5.2",
+              "triton": "3.8.0",
+              "causal-conv1d": "1.7.0",
+              "mlx": null,
+              "mlx-lm": null
+            },
+            "device": "cuda",
+            "gpu": "NVIDIA H100 80GB HBM3",
+            "backend": "torch",
+            "dtype": "bfloat16",
+            "triton_f32_default": null,
+            "attention": "sdpa",
+            "deltanet": {
+              "forward": "kev.fused_qwen35.deltanet_forward",
+              "causal_conv1d_fn": "causal_conv1d.causal_conv1d_interface.causal_conv1d_fn",
+              "torch_chunk_gated_delta_rule": "fla.ops.gated_delta_rule.chunk.chunk_gated_delta_rule"
+            }
+          }
+        }
+      },
+      "32": {
+        "requests": 256,
+        "errors": [],
+        "rps": 55.29,
+        "p50_ms": 554.59,
+        "p99_ms": 1006.32,
+        "process_p50_ms": 323.45,
+        "model_p50_ms": 171.6,
+        "graphs_before": {
+          "graphs": {
+            "captured": 31,
+            "kept": 31,
+            "pending": 0,
+            "failed": 0
+          },
+          "gpu": "NVIDIA H100 80GB HBM3",
+          "threads": 4,
+          "checkpoint": "6cfce5c2fa4b4bd64026336ab649c5ca78857d52",
+          "environment": {
+            "packages": {
+              "torch": "2.8.0+cu128",
+              "transformers": "5.17.0",
+              "peft": "0.21.0",
+              "flash-linear-attention": "0.5.2",
+              "triton": "3.8.0",
+              "causal-conv1d": "1.7.0",
+              "mlx": null,
+              "mlx-lm": null
+            },
+            "device": "cuda",
+            "gpu": "NVIDIA H100 80GB HBM3",
+            "backend": "torch",
+            "dtype": "bfloat16",
+            "triton_f32_default": null,
+            "attention": "sdpa",
+            "deltanet": {
+              "forward": "kev.fused_qwen35.deltanet_forward",
+              "causal_conv1d_fn": "causal_conv1d.causal_conv1d_interface.causal_conv1d_fn",
+              "torch_chunk_gated_delta_rule": "fla.ops.gated_delta_rule.chunk.chunk_gated_delta_rule"
+            }
+          }
+        },
+        "graphs_after": {
+          "graphs": {
+            "captured": 34,
+            "kept": 34,
+            "pending": 0,
+            "failed": 0
+          },
+          "gpu": "NVIDIA H100 80GB HBM3",
+          "threads": 4,
+          "checkpoint": "6cfce5c2fa4b4bd64026336ab649c5ca78857d52",
+          "environment": {
+            "packages": {
+              "torch": "2.8.0+cu128",
+              "transformers": "5.17.0",
+              "peft": "0.21.0",
+              "flash-linear-attention": "0.5.2",
+              "triton": "3.8.0",
+              "causal-conv1d": "1.7.0",
+              "mlx": null,
+              "mlx-lm": null
+            },
+            "device": "cuda",
+            "gpu": "NVIDIA H100 80GB HBM3",
+            "backend": "torch",
+            "dtype": "bfloat16",
+            "triton_f32_default": null,
+            "attention": "sdpa",
+            "deltanet": {
+              "forward": "kev.fused_qwen35.deltanet_forward",
+              "causal_conv1d_fn": "causal_conv1d.causal_conv1d_interface.causal_conv1d_fn",
+              "torch_chunk_gated_delta_rule": "fla.ops.gated_delta_rule.chunk.chunk_gated_delta_rule"
+            }
+          }
+        }
+      },
+      "64": {
+        "requests": 512,
+        "errors": [],
+        "rps": 65.54,
+        "p50_ms": 652.04,
+        "p99_ms": 3982.03,
+        "process_p50_ms": 68.95,
+        "model_p50_ms": 34.05,
+        "graphs_before": {
+          "graphs": {
+            "captured": 34,
+            "kept": 34,
+            "pending": 0,
+            "failed": 0
+          },
+          "gpu": "NVIDIA H100 80GB HBM3",
+          "threads": 4,
+          "checkpoint": "6cfce5c2fa4b4bd64026336ab649c5ca78857d52",
+          "environment": {
+            "packages": {
+              "torch": "2.8.0+cu128",
+              "transformers": "5.17.0",
+              "peft": "0.21.0",
+              "flash-linear-attention": "0.5.2",
+              "triton": "3.8.0",
+              "causal-conv1d": "1.7.0",
+              "mlx": null,
+              "mlx-lm": null
+            },
+            "device": "cuda",
+            "gpu": "NVIDIA H100 80GB HBM3",
+            "backend": "torch",
+            "dtype": "bfloat16",
+            "triton_f32_default": null,
+            "attention": "sdpa",
+            "deltanet": {
+              "forward": "kev.fused_qwen35.deltanet_forward",
+              "causal_conv1d_fn": "causal_conv1d.causal_conv1d_interface.causal_conv1d_fn",
+              "torch_chunk_gated_delta_rule": "fla.ops.gated_delta_rule.chunk.chunk_gated_delta_rule"
+            }
+          }
+        },
+        "graphs_after": {
+          "graphs": {
+            "captured": 34,
+            "kept": 34,
+            "pending": 0,
+            "failed": 0
+          },
+          "gpu": "NVIDIA H100 80GB HBM3",
+          "threads": 4,
+          "checkpoint": "6cfce5c2fa4b4bd64026336ab649c5ca78857d52",
+          "environment": {
+            "packages": {
+              "torch": "2.8.0+cu128",
+              "transformers": "5.17.0",
+              "peft": "0.21.0",
+              "flash-linear-attention": "0.5.2",
+              "triton": "3.8.0",
+              "causal-conv1d": "1.7.0",
+              "mlx": null,
+              "mlx-lm": null
+            },
+            "device": "cuda",
+            "gpu": "NVIDIA H100 80GB HBM3",
+            "backend": "torch",
+            "dtype": "bfloat16",
+            "triton_f32_default": null,
+            "attention": "sdpa",
+            "deltanet": {
+              "forward": "kev.fused_qwen35.deltanet_forward",
+              "causal_conv1d_fn": "causal_conv1d.causal_conv1d_interface.causal_conv1d_fn",
+              "torch_chunk_gated_delta_rule": "fla.ops.gated_delta_rule.chunk.chunk_gated_delta_rule"
+            }
+          }
+        }
+      },
+      "128": {
+        "requests": 1024,
+        "errors": [],
+        "rps": 60.45,
+        "p50_ms": 1535.3,
+        "p99_ms": 8092.08,
+        "process_p50_ms": 81.4,
+        "model_p50_ms": 40.55,
+        "graphs_before": {
+          "graphs": {
+            "captured": 34,
+            "kept": 34,
+            "pending": 0,
+            "failed": 0
+          },
+          "gpu": "NVIDIA H100 80GB HBM3",
+          "threads": 4,
+          "checkpoint": "6cfce5c2fa4b4bd64026336ab649c5ca78857d52",
+          "environment": {
+            "packages": {
+              "torch": "2.8.0+cu128",
+              "transformers": "5.17.0",
+              "peft": "0.21.0",
+              "flash-linear-attention": "0.5.2",
+              "triton": "3.8.0",
+              "causal-conv1d": "1.7.0",
+              "mlx": null,
+              "mlx-lm": null
+            },
+            "device": "cuda",
+            "gpu": "NVIDIA H100 80GB HBM3",
+            "backend": "torch",
+            "dtype": "bfloat16",
+            "triton_f32_default": null,
+            "attention": "sdpa",
+            "deltanet": {
+              "forward": "kev.fused_qwen35.deltanet_forward",
+              "causal_conv1d_fn": "causal_conv1d.causal_conv1d_interface.causal_conv1d_fn",
+              "torch_chunk_gated_delta_rule": "fla.ops.gated_delta_rule.chunk.chunk_gated_delta_rule"
+            }
+          }
+        },
+        "graphs_after": {
+          "graphs": {
+            "captured": 34,
+            "kept": 34,
+            "pending": 0,
+            "failed": 0
+          },
+          "gpu": "NVIDIA H100 80GB HBM3",
+          "threads": 4,
+          "checkpoint": "6cfce5c2fa4b4bd64026336ab649c5ca78857d52",
+          "environment": {
+            "packages": {
+              "torch": "2.8.0+cu128",
+              "transformers": "5.17.0",
+              "peft": "0.21.0",
+              "flash-linear-attention": "0.5.2",
+              "triton": "3.8.0",
+              "causal-conv1d": "1.7.0",
+              "mlx": null,
+              "mlx-lm": null
+            },
+            "device": "cuda",
+            "gpu": "NVIDIA H100 80GB HBM3",
+            "backend": "torch",
+            "dtype": "bfloat16",
+            "triton_f32_default": null,
+            "attention": "sdpa",
+            "deltanet": {
+              "forward": "kev.fused_qwen35.deltanet_forward",
+              "causal_conv1d_fn": "causal_conv1d.causal_conv1d_interface.causal_conv1d_fn",
+              "torch_chunk_gated_delta_rule": "fla.ops.gated_delta_rule.chunk.chunk_gated_delta_rule"
+            }
+          }
+        }
+      }
+    },
+    "model_card": {
+      "models": [
+        {
+          "name": "kev-latest",
+          "description": "Kev pointer head on Qwen/Qwen3.5-4B-Base, serving jaredpalmer/kev-4b at temperature 2.41",
+          "release_date": "2026-10-01",
+          "run": "jaredpalmer/kev-4b",
+          "base": "Qwen/Qwen3.5-4B-Base",
+          "lora": 16,
+          "device": "cuda",
+          "backend": "torch",
+          "dtype": "bfloat16",
+          "temperature": 2.406050072164233,
+          "max_state_tokens": 65536,
+          "truncate_states": false,
+          "cuda_graphs": {
+            "captured": 5,
+            "kept": 5,
+            "pending": 0,
+            "failed": 0
+          },
+          "prefix_cache": {
+            "size": 4,
+            "min_state_tokens": 0,
+            "max_tokens": 65536,
+            "hits": 1,
+            "misses": 2,
+            "cached_states": 2,
+            "oom_retries": 0
+          },
+          "batches": {
+            "count": 3,
+            "requests": 3,
+            "queued": 0
+          }
+        },
+        {
+          "name": "jev-latest",
+          "description": "Kev pointer head on Qwen/Qwen3.5-4B-Base, serving jaredpalmer/kev-4b at temperature 2.41",
+          "release_date": "2026-10-01",
+          "run": "jaredpalmer/kev-4b",
+          "base": "Qwen/Qwen3.5-4B-Base",
+          "lora": 16,
+          "device": "cuda",
+          "backend": "torch",
+          "dtype": "bfloat16",
+          "temperature": 2.406050072164233,
+          "max_state_tokens": 65536,
+          "truncate_states": false,
+          "cuda_graphs": {
+            "captured": 5,
+            "kept": 5,
+            "pending": 0,
+            "failed": 0
+          },
+          "prefix_cache": {
+            "size": 4,
+            "min_state_tokens": 0,
+            "max_tokens": 65536,
+            "hits": 1,
+            "misses": 2,
+            "cached_states": 2,
+            "oom_retries": 0
+          },
+          "batches": {
+            "count": 3,
+            "requests": 3,
+            "queued": 0
+          }
+        }
+      ]
+    },
+    "protocol": {
+      "invalid_bearer": 401,
+      "invalid_question": 422,
+      "sdk": true
+    },
+    "settle": {
+      "graphs": {
+        "captured": 7,
+        "kept": 7,
+        "pending": 0,
+        "failed": 0
+      },
+      "gpu": "NVIDIA H100 80GB HBM3",
+      "threads": 4,
+      "checkpoint": "6cfce5c2fa4b4bd64026336ab649c5ca78857d52",
+      "environment": {
+        "packages": {
+          "torch": "2.8.0+cu128",
+          "transformers": "5.17.0",
+          "peft": "0.21.0",
+          "flash-linear-attention": "0.5.2",
+          "triton": "3.8.0",
+          "causal-conv1d": "1.7.0",
+          "mlx": null,
+          "mlx-lm": null
+        },
+        "device": "cuda",
+        "gpu": "NVIDIA H100 80GB HBM3",
+        "backend": "torch",
+        "dtype": "bfloat16",
+        "triton_f32_default": null,
+        "attention": "sdpa",
+        "deltanet": {
+          "forward": "kev.fused_qwen35.deltanet_forward",
+          "causal_conv1d_fn": "causal_conv1d.causal_conv1d_interface.causal_conv1d_fn",
+          "torch_chunk_gated_delta_rule": "fla.ops.gated_delta_rule.chunk.chunk_gated_delta_rule"
+        }
+      }
+    },
+    "answers": {
+      "department": {
+        "type": "choice",
+        "choice": "returns",
+        "confidence": 0.2606,
+        "probabilities": {
+          "returns": 0.5071,
+          "shipping": 0.332,
+          "billing": 0.1609
+        }
+      },
+      "return_reason": {
+        "type": "choice",
+        "choice": "wrong_size",
+        "confidence": 0.7527,
+        "probabilities": {
+          "wrong_size": 0.8021,
+          "wrong_item": 0.04,
+          "damaged": 0.0087,
+          "changed_mind": 0.0209,
+          "other": 0.1283
+        }
+      },
+      "requested_resolution": {
+        "type": "choice",
+        "choice": "refund",
+        "confidence": 0.0758,
+        "probabilities": {
+          "exchange": 0.1771,
+          "refund": 0.3068,
+          "replacement": 0.2788,
+          "information": 0.2373
+        }
+      },
+      "tone": {
+        "type": "choice",
+        "choice": "frustrated",
+        "confidence": 0.3307,
+        "probabilities": {
+          "calm": 0.0653,
+          "frustrated": 0.5538,
+          "angry": 0.3809
+        }
+      },
+      "escalate": {
+        "type": "noul",
+        "noul": 0.7447
+      },
+      "frustration": {
+        "type": "score",
+        "score": 1.3393,
+        "legend": {
+          "0": "Calm",
+          "1": "Frustrated",
+          "2": "Very angry"
+        },
+        "probabilities": {
+          "0": 0.0438,
+          "1": 0.5731,
+          "2": 0.3831
+        },
+        "confidence": 0.3597
+      }
+    }
+  },
+  "asgi": {
+    "url": "https://jp-1083--kev-http-bench-baseline-web-dev.modal.run",
+    "levels": {
+      "1": {
+        "requests": 128,
+        "errors": [],
+        "rps": 12.15,
+        "p50_ms": 81.44,
+        "p99_ms": 91.91,
+        "process_p50_ms": 32.6,
+        "model_p50_ms": 18.4,
+        "graphs_before": {
+          "graphs": {
+            "captured": 9,
+            "kept": 9,
+            "pending": 0,
+            "failed": 0
+          },
+          "gpu": "NVIDIA H100 80GB HBM3",
+          "threads": 4,
+          "checkpoint": "6cfce5c2fa4b4bd64026336ab649c5ca78857d52",
+          "environment": {
+            "packages": {
+              "torch": "2.8.0+cu128",
+              "transformers": "5.17.0",
+              "peft": "0.21.0",
+              "flash-linear-attention": "0.5.2",
+              "triton": "3.8.0",
+              "causal-conv1d": "1.7.0",
+              "mlx": null,
+              "mlx-lm": null
+            },
+            "device": "cuda",
+            "gpu": "NVIDIA H100 80GB HBM3",
+            "backend": "torch",
+            "dtype": "bfloat16",
+            "triton_f32_default": null,
+            "attention": "sdpa",
+            "deltanet": {
+              "forward": "kev.fused_qwen35.deltanet_forward",
+              "causal_conv1d_fn": "causal_conv1d.causal_conv1d_interface.causal_conv1d_fn",
+              "torch_chunk_gated_delta_rule": "fla.ops.gated_delta_rule.chunk.chunk_gated_delta_rule"
+            }
+          }
+        },
+        "graphs_after": {
+          "graphs": {
+            "captured": 9,
+            "kept": 9,
+            "pending": 0,
+            "failed": 0
+          },
+          "gpu": "NVIDIA H100 80GB HBM3",
+          "threads": 4,
+          "checkpoint": "6cfce5c2fa4b4bd64026336ab649c5ca78857d52",
+          "environment": {
+            "packages": {
+              "torch": "2.8.0+cu128",
+              "transformers": "5.17.0",
+              "peft": "0.21.0",
+              "flash-linear-attention": "0.5.2",
+              "triton": "3.8.0",
+              "causal-conv1d": "1.7.0",
+              "mlx": null,
+              "mlx-lm": null
+            },
+            "device": "cuda",
+            "gpu": "NVIDIA H100 80GB HBM3",
+            "backend": "torch",
+            "dtype": "bfloat16",
+            "triton_f32_default": null,
+            "attention": "sdpa",
+            "deltanet": {
+              "forward": "kev.fused_qwen35.deltanet_forward",
+              "causal_conv1d_fn": "causal_conv1d.causal_conv1d_interface.causal_conv1d_fn",
+              "torch_chunk_gated_delta_rule": "fla.ops.gated_delta_rule.chunk.chunk_gated_delta_rule"
+            }
+          }
+        }
+      },
+      "32": {
+        "requests": 256,
+        "errors": [],
+        "rps": 31.34,
+        "p50_ms": 1036.99,
+        "p99_ms": 1392.46,
+        "process_p50_ms": 557.9,
+        "model_p50_ms": 222.8,
+        "graphs_before": {
+          "graphs": {
+            "captured": 29,
+            "kept": 29,
+            "pending": 0,
+            "failed": 0
+          },
+          "gpu": "NVIDIA H100 80GB HBM3",
+          "threads": 4,
+          "checkpoint": "6cfce5c2fa4b4bd64026336ab649c5ca78857d52",
+          "environment": {
+            "packages": {
+              "torch": "2.8.0+cu128",
+              "transformers": "5.17.0",
+              "peft": "0.21.0",
+              "flash-linear-attention": "0.5.2",
+              "triton": "3.8.0",
+              "causal-conv1d": "1.7.0",
+              "mlx": null,
+              "mlx-lm": null
+            },
+            "device": "cuda",
+            "gpu": "NVIDIA H100 80GB HBM3",
+            "backend": "torch",
+            "dtype": "bfloat16",
+            "triton_f32_default": null,
+            "attention": "sdpa",
+            "deltanet": {
+              "forward": "kev.fused_qwen35.deltanet_forward",
+              "causal_conv1d_fn": "causal_conv1d.causal_conv1d_interface.causal_conv1d_fn",
+              "torch_chunk_gated_delta_rule": "fla.ops.gated_delta_rule.chunk.chunk_gated_delta_rule"
+            }
+          }
+        },
+        "graphs_after": {
+          "graphs": {
+            "captured": 33,
+            "kept": 33,
+            "pending": 0,
+            "failed": 0
+          },
+          "gpu": "NVIDIA H100 80GB HBM3",
+          "threads": 4,
+          "checkpoint": "6cfce5c2fa4b4bd64026336ab649c5ca78857d52",
+          "environment": {
+            "packages": {
+              "torch": "2.8.0+cu128",
+              "transformers": "5.17.0",
+              "peft": "0.21.0",
+              "flash-linear-attention": "0.5.2",
+              "triton": "3.8.0",
+              "causal-conv1d": "1.7.0",
+              "mlx": null,
+              "mlx-lm": null
+            },
+            "device": "cuda",
+            "gpu": "NVIDIA H100 80GB HBM3",
+            "backend": "torch",
+            "dtype": "bfloat16",
+            "triton_f32_default": null,
+            "attention": "sdpa",
+            "deltanet": {
+              "forward": "kev.fused_qwen35.deltanet_forward",
+              "causal_conv1d_fn": "causal_conv1d.causal_conv1d_interface.causal_conv1d_fn",
+              "torch_chunk_gated_delta_rule": "fla.ops.gated_delta_rule.chunk.chunk_gated_delta_rule"
+            }
+          }
+        }
+      },
+      "64": {
+        "requests": 512,
+        "errors": [],
+        "rps": 43.82,
+        "p50_ms": 1236.21,
+        "p99_ms": 4502.11,
+        "process_p50_ms": 192.5,
+        "model_p50_ms": 103.4,
+        "graphs_before": {
+          "graphs": {
+            "captured": 34,
+            "kept": 34,
+            "pending": 0,
+            "failed": 0
+          },
+          "gpu": "NVIDIA H100 80GB HBM3",
+          "threads": 4,
+          "checkpoint": "6cfce5c2fa4b4bd64026336ab649c5ca78857d52",
+          "environment": {
+            "packages": {
+              "torch": "2.8.0+cu128",
+              "transformers": "5.17.0",
+              "peft": "0.21.0",
+              "flash-linear-attention": "0.5.2",
+              "triton": "3.8.0",
+              "causal-conv1d": "1.7.0",
+              "mlx": null,
+              "mlx-lm": null
+            },
+            "device": "cuda",
+            "gpu": "NVIDIA H100 80GB HBM3",
+            "backend": "torch",
+            "dtype": "bfloat16",
+            "triton_f32_default": null,
+            "attention": "sdpa",
+            "deltanet": {
+              "forward": "kev.fused_qwen35.deltanet_forward",
+              "causal_conv1d_fn": "causal_conv1d.causal_conv1d_interface.causal_conv1d_fn",
+              "torch_chunk_gated_delta_rule": "fla.ops.gated_delta_rule.chunk.chunk_gated_delta_rule"
+            }
+          }
+        },
+        "graphs_after": {
+          "graphs": {
+            "captured": 34,
+            "kept": 34,
+            "pending": 0,
+            "failed": 0
+          },
+          "gpu": "NVIDIA H100 80GB HBM3",
+          "threads": 4,
+          "checkpoint": "6cfce5c2fa4b4bd64026336ab649c5ca78857d52",
+          "environment": {
+            "packages": {
+              "torch": "2.8.0+cu128",
+              "transformers": "5.17.0",
+              "peft": "0.21.0",
+              "flash-linear-attention": "0.5.2",
+              "triton": "3.8.0",
+              "causal-conv1d": "1.7.0",
+              "mlx": null,
+              "mlx-lm": null
+            },
+            "device": "cuda",
+            "gpu": "NVIDIA H100 80GB HBM3",
+            "backend": "torch",
+            "dtype": "bfloat16",
+            "triton_f32_default": null,
+            "attention": "sdpa",
+            "deltanet": {
+              "forward": "kev.fused_qwen35.deltanet_forward",
+              "causal_conv1d_fn": "causal_conv1d.causal_conv1d_interface.causal_conv1d_fn",
+              "torch_chunk_gated_delta_rule": "fla.ops.gated_delta_rule.chunk.chunk_gated_delta_rule"
+            }
+          }
+        }
+      },
+      "128": {
+        "requests": 1024,
+        "errors": [],
+        "rps": 35.86,
+        "p50_ms": 2719.71,
+        "p99_ms": 10054.94,
+        "process_p50_ms": 150.45,
+        "model_p50_ms": 93.3,
+        "graphs_before": {
+          "graphs": {
+            "captured": 34,
+            "kept": 34,
+            "pending": 0,
+            "failed": 0
+          },
+          "gpu": "NVIDIA H100 80GB HBM3",
+          "threads": 4,
+          "checkpoint": "6cfce5c2fa4b4bd64026336ab649c5ca78857d52",
+          "environment": {
+            "packages": {
+              "torch": "2.8.0+cu128",
+              "transformers": "5.17.0",
+              "peft": "0.21.0",
+              "flash-linear-attention": "0.5.2",
+              "triton": "3.8.0",
+              "causal-conv1d": "1.7.0",
+              "mlx": null,
+              "mlx-lm": null
+            },
+            "device": "cuda",
+            "gpu": "NVIDIA H100 80GB HBM3",
+            "backend": "torch",
+            "dtype": "bfloat16",
+            "triton_f32_default": null,
+            "attention": "sdpa",
+            "deltanet": {
+              "forward": "kev.fused_qwen35.deltanet_forward",
+              "causal_conv1d_fn": "causal_conv1d.causal_conv1d_interface.causal_conv1d_fn",
+              "torch_chunk_gated_delta_rule": "fla.ops.gated_delta_rule.chunk.chunk_gated_delta_rule"
+            }
+          }
+        },
+        "graphs_after": {
+          "graphs": {
+            "captured": 34,
+            "kept": 34,
+            "pending": 0,
+            "failed": 0
+          },
+          "gpu": "NVIDIA H100 80GB HBM3",
+          "threads": 4,
+          "checkpoint": "6cfce5c2fa4b4bd64026336ab649c5ca78857d52",
+          "environment": {
+            "packages": {
+              "torch": "2.8.0+cu128",
+              "transformers": "5.17.0",
+              "peft": "0.21.0",
+              "flash-linear-attention": "0.5.2",
+              "triton": "3.8.0",
+              "causal-conv1d": "1.7.0",
+              "mlx": null,
+              "mlx-lm": null
+            },
+            "device": "cuda",
+            "gpu": "NVIDIA H100 80GB HBM3",
+            "backend": "torch",
+            "dtype": "bfloat16",
+            "triton_f32_default": null,
+            "attention": "sdpa",
+            "deltanet": {
+              "forward": "kev.fused_qwen35.deltanet_forward",
+              "causal_conv1d_fn": "causal_conv1d.causal_conv1d_interface.causal_conv1d_fn",
+              "torch_chunk_gated_delta_rule": "fla.ops.gated_delta_rule.chunk.chunk_gated_delta_rule"
+            }
+          }
+        }
+      }
+    },
+    "model_card": {
+      "models": [
+        {
+          "name": "kev-latest",
+          "description": "Kev pointer head on Qwen/Qwen3.5-4B-Base, serving jaredpalmer/kev-4b at temperature 2.41",
+          "release_date": "2026-10-01",
+          "run": "jaredpalmer/kev-4b",
+          "base": "Qwen/Qwen3.5-4B-Base",
+          "lora": 16,
+          "device": "cuda",
+          "backend": "torch",
+          "dtype": "bfloat16",
+          "temperature": 2.406050072164233,
+          "max_state_tokens": 65536,
+          "truncate_states": false,
+          "cuda_graphs": {
+            "captured": 5,
+            "kept": 5,
+            "pending": 0,
+            "failed": 0
+          },
+          "prefix_cache": {
+            "size": 4,
+            "min_state_tokens": 0,
+            "max_tokens": 65536,
+            "hits": 1,
+            "misses": 2,
+            "cached_states": 2,
+            "oom_retries": 0
+          },
+          "batches": {
+            "count": 3,
+            "requests": 3,
+            "queued": 0
+          }
+        },
+        {
+          "name": "jev-latest",
+          "description": "Kev pointer head on Qwen/Qwen3.5-4B-Base, serving jaredpalmer/kev-4b at temperature 2.41",
+          "release_date": "2026-10-01",
+          "run": "jaredpalmer/kev-4b",
+          "base": "Qwen/Qwen3.5-4B-Base",
+          "lora": 16,
+          "device": "cuda",
+          "backend": "torch",
+          "dtype": "bfloat16",
+          "temperature": 2.406050072164233,
+          "max_state_tokens": 65536,
+          "truncate_states": false,
+          "cuda_graphs": {
+            "captured": 5,
+            "kept": 5,
+            "pending": 0,
+            "failed": 0
+          },
+          "prefix_cache": {
+            "size": 4,
+            "min_state_tokens": 0,
+            "max_tokens": 65536,
+            "hits": 1,
+            "misses": 2,
+            "cached_states": 2,
+            "oom_retries": 0
+          },
+          "batches": {
+            "count": 3,
+            "requests": 3,
+            "queued": 0
+          }
+        }
+      ]
+    },
+    "protocol": {
+      "invalid_bearer": 401,
+      "invalid_question": 422,
+      "sdk": true
+    },
+    "settle": {
+      "graphs": {
+        "captured": 7,
+        "kept": 7,
+        "pending": 0,
+        "failed": 0
+      },
+      "gpu": "NVIDIA H100 80GB HBM3",
+      "threads": 4,
+      "checkpoint": "6cfce5c2fa4b4bd64026336ab649c5ca78857d52",
+      "environment": {
+        "packages": {
+          "torch": "2.8.0+cu128",
+          "transformers": "5.17.0",
+          "peft": "0.21.0",
+          "flash-linear-attention": "0.5.2",
+          "triton": "3.8.0",
+          "causal-conv1d": "1.7.0",
+          "mlx": null,
+          "mlx-lm": null
+        },
+        "device": "cuda",
+        "gpu": "NVIDIA H100 80GB HBM3",
+        "backend": "torch",
+        "dtype": "bfloat16",
+        "triton_f32_default": null,
+        "attention": "sdpa",
+        "deltanet": {
+          "forward": "kev.fused_qwen35.deltanet_forward",
+          "causal_conv1d_fn": "causal_conv1d.causal_conv1d_interface.causal_conv1d_fn",
+          "torch_chunk_gated_delta_rule": "fla.ops.gated_delta_rule.chunk.chunk_gated_delta_rule"
+        }
+      }
+    },
+    "answers": {
+      "department": {
+        "type": "choice",
+        "choice": "returns",
+        "confidence": 0.2606,
+        "probabilities": {
+          "returns": 0.5071,
+          "shipping": 0.332,
+          "billing": 0.1609
+        }
+      },
+      "return_reason": {
+        "type": "choice",
+        "choice": "wrong_size",
+        "confidence": 0.7527,
+        "probabilities": {
+          "wrong_size": 0.8021,
+          "wrong_item": 0.04,
+          "damaged": 0.0087,
+          "changed_mind": 0.0209,
+          "other": 0.1283
+        }
+      },
+      "requested_resolution": {
+        "type": "choice",
+        "choice": "refund",
+        "confidence": 0.0758,
+        "probabilities": {
+          "exchange": 0.1771,
+          "refund": 0.3068,
+          "replacement": 0.2788,
+          "information": 0.2373
+        }
+      },
+      "tone": {
+        "type": "choice",
+        "choice": "frustrated",
+        "confidence": 0.3307,
+        "probabilities": {
+          "calm": 0.0653,
+          "frustrated": 0.5538,
+          "angry": 0.3809
+        }
+      },
+      "escalate": {
+        "type": "noul",
+        "noul": 0.7447
+      },
+      "frustration": {
+        "type": "score",
+        "score": 1.3393,
+        "legend": {
+          "0": "Calm",
+          "1": "Frustrated",
+          "2": "Very angry"
+        },
+        "probabilities": {
+          "0": 0.0438,
+          "1": 0.5731,
+          "2": 0.3831
+        },
+        "confidence": 0.3597
+      }
+    }
+  },
+  "doubled": {
+    "url": "https://jp-1083--kev-http-bench-doubled-web-dev.modal.run",
+    "levels": {
+      "1": {
+        "requests": 128,
+        "errors": [],
+        "rps": 10.18,
+        "p50_ms": 97.22,
+        "p99_ms": 112.99,
+        "process_p50_ms": 37.95,
+        "model_p50_ms": 18.3,
+        "graphs_before": {
+          "graphs": {
+            "captured": 9,
+            "kept": 9,
+            "pending": 0,
+            "failed": 0
+          },
+          "gpu": "NVIDIA H100 80GB HBM3",
+          "threads": 4,
+          "checkpoint": "6cfce5c2fa4b4bd64026336ab649c5ca78857d52",
+          "environment": {
+            "packages": {
+              "torch": "2.8.0+cu128",
+              "transformers": "5.17.0",
+              "peft": "0.21.0",
+              "flash-linear-attention": "0.5.2",
+              "triton": "3.8.0",
+              "causal-conv1d": "1.7.0",
+              "mlx": null,
+              "mlx-lm": null
+            },
+            "device": "cuda",
+            "gpu": "NVIDIA H100 80GB HBM3",
+            "backend": "torch",
+            "dtype": "bfloat16",
+            "triton_f32_default": null,
+            "attention": "sdpa",
+            "deltanet": {
+              "forward": "kev.fused_qwen35.deltanet_forward",
+              "causal_conv1d_fn": "causal_conv1d.causal_conv1d_interface.causal_conv1d_fn",
+              "torch_chunk_gated_delta_rule": "fla.ops.gated_delta_rule.chunk.chunk_gated_delta_rule"
+            }
+          }
+        },
+        "graphs_after": {
+          "graphs": {
+            "captured": 9,
+            "kept": 9,
+            "pending": 0,
+            "failed": 0
+          },
+          "gpu": "NVIDIA H100 80GB HBM3",
+          "threads": 4,
+          "checkpoint": "6cfce5c2fa4b4bd64026336ab649c5ca78857d52",
+          "environment": {
+            "packages": {
+              "torch": "2.8.0+cu128",
+              "transformers": "5.17.0",
+              "peft": "0.21.0",
+              "flash-linear-attention": "0.5.2",
+              "triton": "3.8.0",
+              "causal-conv1d": "1.7.0",
+              "mlx": null,
+              "mlx-lm": null
+            },
+            "device": "cuda",
+            "gpu": "NVIDIA H100 80GB HBM3",
+            "backend": "torch",
+            "dtype": "bfloat16",
+            "triton_f32_default": null,
+            "attention": "sdpa",
+            "deltanet": {
+              "forward": "kev.fused_qwen35.deltanet_forward",
+              "causal_conv1d_fn": "causal_conv1d.causal_conv1d_interface.causal_conv1d_fn",
+              "torch_chunk_gated_delta_rule": "fla.ops.gated_delta_rule.chunk.chunk_gated_delta_rule"
+            }
+          }
+        }
+      },
+      "32": {
+        "requests": 256,
+        "errors": [],
+        "rps": 29.7,
+        "p50_ms": 931.92,
+        "p99_ms": 2285.27,
+        "process_p50_ms": 335.15,
+        "model_p50_ms": 163.5,
+        "graphs_before": {
+          "graphs": {
+            "captured": 31,
+            "kept": 31,
+            "pending": 0,
+            "failed": 0
+          },
+          "gpu": "NVIDIA H100 80GB HBM3",
+          "threads": 4,
+          "checkpoint": "6cfce5c2fa4b4bd64026336ab649c5ca78857d52",
+          "environment": {
+            "packages": {
+              "torch": "2.8.0+cu128",
+              "transformers": "5.17.0",
+              "peft": "0.21.0",
+              "flash-linear-attention": "0.5.2",
+              "triton": "3.8.0",
+              "causal-conv1d": "1.7.0",
+              "mlx": null,
+              "mlx-lm": null
+            },
+            "device": "cuda",
+            "gpu": "NVIDIA H100 80GB HBM3",
+            "backend": "torch",
+            "dtype": "bfloat16",
+            "triton_f32_default": null,
+            "attention": "sdpa",
+            "deltanet": {
+              "forward": "kev.fused_qwen35.deltanet_forward",
+              "causal_conv1d_fn": "causal_conv1d.causal_conv1d_interface.causal_conv1d_fn",
+              "torch_chunk_gated_delta_rule": "fla.ops.gated_delta_rule.chunk.chunk_gated_delta_rule"
+            }
+          }
+        },
+        "graphs_after": {
+          "graphs": {
+            "captured": 33,
+            "kept": 33,
+            "pending": 0,
+            "failed": 0
+          },
+          "gpu": "NVIDIA H100 80GB HBM3",
+          "threads": 4,
+          "checkpoint": "6cfce5c2fa4b4bd64026336ab649c5ca78857d52",
+          "environment": {
+            "packages": {
+              "torch": "2.8.0+cu128",
+              "transformers": "5.17.0",
+              "peft": "0.21.0",
+              "flash-linear-attention": "0.5.2",
+              "triton": "3.8.0",
+              "causal-conv1d": "1.7.0",
+              "mlx": null,
+              "mlx-lm": null
+            },
+            "device": "cuda",
+            "gpu": "NVIDIA H100 80GB HBM3",
+            "backend": "torch",
+            "dtype": "bfloat16",
+            "triton_f32_default": null,
+            "attention": "sdpa",
+            "deltanet": {
+              "forward": "kev.fused_qwen35.deltanet_forward",
+              "causal_conv1d_fn": "causal_conv1d.causal_conv1d_interface.causal_conv1d_fn",
+              "torch_chunk_gated_delta_rule": "fla.ops.gated_delta_rule.chunk.chunk_gated_delta_rule"
+            }
+          }
+        }
+      },
+      "64": {
+        "requests": 512,
+        "errors": [],
+        "rps": 37.07,
+        "p50_ms": 1547.48,
+        "p99_ms": 5068.81,
+        "process_p50_ms": 177.95,
+        "model_p50_ms": 77.65,
+        "graphs_before": {
+          "graphs": {
+            "captured": 33,
+            "kept": 33,
+            "pending": 0,
+            "failed": 0
+          },
+          "gpu": "NVIDIA H100 80GB HBM3",
+          "threads": 4,
+          "checkpoint": "6cfce5c2fa4b4bd64026336ab649c5ca78857d52",
+          "environment": {
+            "packages": {
+              "torch": "2.8.0+cu128",
+              "transformers": "5.17.0",
+              "peft": "0.21.0",
+              "flash-linear-attention": "0.5.2",
+              "triton": "3.8.0",
+              "causal-conv1d": "1.7.0",
+              "mlx": null,
+              "mlx-lm": null
+            },
+            "device": "cuda",
+            "gpu": "NVIDIA H100 80GB HBM3",
+            "backend": "torch",
+            "dtype": "bfloat16",
+            "triton_f32_default": null,
+            "attention": "sdpa",
+            "deltanet": {
+              "forward": "kev.fused_qwen35.deltanet_forward",
+              "causal_conv1d_fn": "causal_conv1d.causal_conv1d_interface.causal_conv1d_fn",
+              "torch_chunk_gated_delta_rule": "fla.ops.gated_delta_rule.chunk.chunk_gated_delta_rule"
+            }
+          }
+        },
+        "graphs_after": {
+          "graphs": {
+            "captured": 33,
+            "kept": 33,
+            "pending": 0,
+            "failed": 0
+          },
+          "gpu": "NVIDIA H100 80GB HBM3",
+          "threads": 4,
+          "checkpoint": "6cfce5c2fa4b4bd64026336ab649c5ca78857d52",
+          "environment": {
+            "packages": {
+              "torch": "2.8.0+cu128",
+              "transformers": "5.17.0",
+              "peft": "0.21.0",
+              "flash-linear-attention": "0.5.2",
+              "triton": "3.8.0",
+              "causal-conv1d": "1.7.0",
+              "mlx": null,
+              "mlx-lm": null
+            },
+            "device": "cuda",
+            "gpu": "NVIDIA H100 80GB HBM3",
+            "backend": "torch",
+            "dtype": "bfloat16",
+            "triton_f32_default": null,
+            "attention": "sdpa",
+            "deltanet": {
+              "forward": "kev.fused_qwen35.deltanet_forward",
+              "causal_conv1d_fn": "causal_conv1d.causal_conv1d_interface.causal_conv1d_fn",
+              "torch_chunk_gated_delta_rule": "fla.ops.gated_delta_rule.chunk.chunk_gated_delta_rule"
+            }
+          }
+        }
+      },
+      "128": {
+        "requests": 1024,
+        "errors": [],
+        "rps": 33.23,
+        "p50_ms": 3031.26,
+        "p99_ms": 10509.92,
+        "process_p50_ms": 145.45,
+        "model_p50_ms": 59.6,
+        "graphs_before": {
+          "graphs": {
+            "captured": 33,
+            "kept": 33,
+            "pending": 0,
+            "failed": 0
+          },
+          "gpu": "NVIDIA H100 80GB HBM3",
+          "threads": 4,
+          "checkpoint": "6cfce5c2fa4b4bd64026336ab649c5ca78857d52",
+          "environment": {
+            "packages": {
+              "torch": "2.8.0+cu128",
+              "transformers": "5.17.0",
+              "peft": "0.21.0",
+              "flash-linear-attention": "0.5.2",
+              "triton": "3.8.0",
+              "causal-conv1d": "1.7.0",
+              "mlx": null,
+              "mlx-lm": null
+            },
+            "device": "cuda",
+            "gpu": "NVIDIA H100 80GB HBM3",
+            "backend": "torch",
+            "dtype": "bfloat16",
+            "triton_f32_default": null,
+            "attention": "sdpa",
+            "deltanet": {
+              "forward": "kev.fused_qwen35.deltanet_forward",
+              "causal_conv1d_fn": "causal_conv1d.causal_conv1d_interface.causal_conv1d_fn",
+              "torch_chunk_gated_delta_rule": "fla.ops.gated_delta_rule.chunk.chunk_gated_delta_rule"
+            }
+          }
+        },
+        "graphs_after": {
+          "graphs": {
+            "captured": 33,
+            "kept": 33,
+            "pending": 0,
+            "failed": 0
+          },
+          "gpu": "NVIDIA H100 80GB HBM3",
+          "threads": 4,
+          "checkpoint": "6cfce5c2fa4b4bd64026336ab649c5ca78857d52",
+          "environment": {
+            "packages": {
+              "torch": "2.8.0+cu128",
+              "transformers": "5.17.0",
+              "peft": "0.21.0",
+              "flash-linear-attention": "0.5.2",
+              "triton": "3.8.0",
+              "causal-conv1d": "1.7.0",
+              "mlx": null,
+              "mlx-lm": null
+            },
+            "device": "cuda",
+            "gpu": "NVIDIA H100 80GB HBM3",
+            "backend": "torch",
+            "dtype": "bfloat16",
+            "triton_f32_default": null,
+            "attention": "sdpa",
+            "deltanet": {
+              "forward": "kev.fused_qwen35.deltanet_forward",
+              "causal_conv1d_fn": "causal_conv1d.causal_conv1d_interface.causal_conv1d_fn",
+              "torch_chunk_gated_delta_rule": "fla.ops.gated_delta_rule.chunk.chunk_gated_delta_rule"
+            }
+          }
+        }
+      }
+    },
+    "model_card": {
+      "models": [
+        {
+          "name": "kev-latest",
+          "description": "Kev pointer head on Qwen/Qwen3.5-4B-Base, serving jaredpalmer/kev-4b at temperature 2.41",
+          "release_date": "2026-10-01",
+          "run": "jaredpalmer/kev-4b",
+          "base": "Qwen/Qwen3.5-4B-Base",
+          "lora": 16,
+          "device": "cuda",
+          "backend": "torch",
+          "dtype": "bfloat16",
+          "temperature": 2.406050072164233,
+          "max_state_tokens": 65536,
+          "truncate_states": false,
+          "cuda_graphs": {
+            "captured": 5,
+            "kept": 5,
+            "pending": 0,
+            "failed": 0
+          },
+          "prefix_cache": {
+            "size": 4,
+            "min_state_tokens": 0,
+            "max_tokens": 65536,
+            "hits": 1,
+            "misses": 2,
+            "cached_states": 2,
+            "oom_retries": 0
+          },
+          "batches": {
+            "count": 3,
+            "requests": 3,
+            "queued": 0
+          }
+        },
+        {
+          "name": "jev-latest",
+          "description": "Kev pointer head on Qwen/Qwen3.5-4B-Base, serving jaredpalmer/kev-4b at temperature 2.41",
+          "release_date": "2026-10-01",
+          "run": "jaredpalmer/kev-4b",
+          "base": "Qwen/Qwen3.5-4B-Base",
+          "lora": 16,
+          "device": "cuda",
+          "backend": "torch",
+          "dtype": "bfloat16",
+          "temperature": 2.406050072164233,
+          "max_state_tokens": 65536,
+          "truncate_states": false,
+          "cuda_graphs": {
+            "captured": 5,
+            "kept": 5,
+            "pending": 0,
+            "failed": 0
+          },
+          "prefix_cache": {
+            "size": 4,
+            "min_state_tokens": 0,
+            "max_tokens": 65536,
+            "hits": 1,
+            "misses": 2,
+            "cached_states": 2,
+            "oom_retries": 0
+          },
+          "batches": {
+            "count": 3,
+            "requests": 3,
+            "queued": 0
+          }
+        }
+      ]
+    },
+    "protocol": {
+      "invalid_bearer": 401,
+      "invalid_question": 422,
+      "sdk": true
+    },
+    "settle": {
+      "graphs": {
+        "captured": 7,
+        "kept": 7,
+        "pending": 0,
+        "failed": 0
+      },
+      "gpu": "NVIDIA H100 80GB HBM3",
+      "threads": 4,
+      "checkpoint": "6cfce5c2fa4b4bd64026336ab649c5ca78857d52",
+      "environment": {
+        "packages": {
+          "torch": "2.8.0+cu128",
+          "transformers": "5.17.0",
+          "peft": "0.21.0",
+          "flash-linear-attention": "0.5.2",
+          "triton": "3.8.0",
+          "causal-conv1d": "1.7.0",
+          "mlx": null,
+          "mlx-lm": null
+        },
+        "device": "cuda",
+        "gpu": "NVIDIA H100 80GB HBM3",
+        "backend": "torch",
+        "dtype": "bfloat16",
+        "triton_f32_default": null,
+        "attention": "sdpa",
+        "deltanet": {
+          "forward": "kev.fused_qwen35.deltanet_forward",
+          "causal_conv1d_fn": "causal_conv1d.causal_conv1d_interface.causal_conv1d_fn",
+          "torch_chunk_gated_delta_rule": "fla.ops.gated_delta_rule.chunk.chunk_gated_delta_rule"
+        }
+      }
+    },
+    "answers": {
+      "department": {
+        "type": "choice",
+        "choice": "returns",
+        "confidence": 0.2606,
+        "probabilities": {
+          "returns": 0.5071,
+          "shipping": 0.332,
+          "billing": 0.1609
+        }
+      },
+      "return_reason": {
+        "type": "choice",
+        "choice": "wrong_size",
+        "confidence": 0.7527,
+        "probabilities": {
+          "wrong_size": 0.8021,
+          "wrong_item": 0.04,
+          "damaged": 0.0087,
+          "changed_mind": 0.0209,
+          "other": 0.1283
+        }
+      },
+      "requested_resolution": {
+        "type": "choice",
+        "choice": "refund",
+        "confidence": 0.0758,
+        "probabilities": {
+          "exchange": 0.1771,
+          "refund": 0.3068,
+          "replacement": 0.2788,
+          "information": 0.2373
+        }
+      },
+      "tone": {
+        "type": "choice",
+        "choice": "frustrated",
+        "confidence": 0.3307,
+        "probabilities": {
+          "calm": 0.0653,
+          "frustrated": 0.5538,
+          "angry": 0.3809
+        }
+      },
+      "escalate": {
+        "type": "noul",
+        "noul": 0.7447
+      },
+      "frustration": {
+        "type": "score",
+        "score": 1.3393,
+        "legend": {
+          "0": "Calm",
+          "1": "Frustrated",
+          "2": "Very angry"
+        },
+        "probabilities": {
+          "0": 0.0438,
+          "1": 0.5731,
+          "2": 0.3831
+        },
+        "confidence": 0.3597
+      }
+    }
+  },
+  "answers_equal": true,
+  "configuration": {
+    "asgi": {
+      "max_inputs": 64,
+      "target_inputs": 32
+    },
+    "doubled": {
+      "max_inputs": 128,
+      "target_inputs": 32
+    },
+    "direct": {
+      "target_concurrency": 64
+    }
+  }
+}

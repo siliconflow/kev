@@ -1,0 +1,90 @@
+{
+  "round": 23,
+  "stage": "locked",
+  "arm": "27b-k-w85",
+  "trial": null,
+  "parent": "runs/r6-27b-v2/01-trial-1",
+  "checkpoint": "/runs/r23-wise/27b-k-w85/checkpoint",
+  "temperature": 1.319507910772894,
+  "parent_temperature": 1.381912879967776,
+  "panels": {
+    "locked": {
+      "n": 656,
+      "acc": {
+        "candidate": 0.8887195121951219,
+        "parent": 0.8963414634146342,
+        "delta": -0.007621951219512257,
+        "ci95": [
+          -0.019817073170731673,
+          0.004573170731707266
+        ]
+      },
+      "brier": {
+        "candidate": 0.1536962237288575,
+        "parent": 0.16035522914585623,
+        "delta": -0.0066590054169986534,
+        "ci95": [
+          -0.01822052040489121,
+          0.003983217867576108
+        ]
+      }
+    }
+  },
+  "missing": [],
+  "temperature_fit": {
+    "reads": [
+      "runs/r23-27b-k-w85-r3cal",
+      "runs/r23-27b-k-w85-v9"
+    ],
+    "sources": {
+      "runs/r23-27b-k-w85-v9": [
+        "mmlu_pro"
+      ],
+      "runs/r23-27b-k-w85-r3cal": [
+        "composition_holdout",
+        "emotion",
+        "legacy_holdout",
+        "mmlu",
+        "paws",
+        "qnli",
+        "sciq",
+        "tweet_offensive"
+      ]
+    },
+    "exclude_reads": [
+      "runs/r23-27b-k-w85-transfer4"
+    ],
+    "questions": 648,
+    "excluded_questions": 0
+  },
+  "temperature_ci": {
+    "level": 0.9,
+    "samples": 2000,
+    "seed": 0,
+    "lower": 1.2030250360821164,
+    "upper": 1.447269237440378,
+    "questions": 648,
+    "resampled": "(source, group) clusters within each source (kev.metrics.cluster_resamples)"
+  },
+  "temperature_source": {
+    "kind": "pool",
+    "reads": [
+      "runs/r23-27b-k-w85-r3cal",
+      "runs/r23-27b-k-w85-v9"
+    ],
+    "questions": 648
+  },
+  "parent_temperature_source": {
+    "kind": "trial development rows",
+    "rows": "runs/r6-27b-v2/01-trial-1/development",
+    "suite": "evals/v7/decision-v7",
+    "training_corpus": true,
+    "shipped": 1.381912879967776
+  },
+  "criteria": {
+    "locked_acc_at_least_0.886": true,
+    "served_brier_at_most_0.165": true
+  },
+  "complete": true,
+  "passed": true
+}

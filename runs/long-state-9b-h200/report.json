@@ -1,0 +1,169 @@
+{
+  "run": "jaredpalmer/kev-9b",
+  "gpu": "NVIDIA H200",
+  "total_memory_gib": 139.8,
+  "resident_gib": 29.61,
+  "temperature": 2.193649959389252,
+  "environment": {
+    "packages": {
+      "torch": "2.8.0+cu128",
+      "transformers": "5.17.0",
+      "peft": "0.21.0",
+      "flash-linear-attention": "0.5.2",
+      "triton": "3.8.0",
+      "causal-conv1d": "1.7.0",
+      "mlx": null,
+      "mlx-lm": null
+    },
+    "device": "cuda",
+    "gpu": "NVIDIA H200",
+    "backend": "torch",
+    "dtype": "float32",
+    "triton_f32_default": null,
+    "attention": "sdpa",
+    "deltanet": {
+      "forward": "transformers.models.qwen3_5.modeling_qwen3_5.Qwen3_5GatedDeltaNet.forward",
+      "causal_conv1d_fn": "causal_conv1d.causal_conv1d_interface.causal_conv1d_fn",
+      "torch_chunk_gated_delta_rule": "fla.ops.gated_delta_rule.chunk.chunk_gated_delta_rule"
+    }
+  },
+  "config": {
+    "num_attention_heads": 16,
+    "num_key_value_heads": 4,
+    "head_dim": 256,
+    "hidden_size": 4096,
+    "num_hidden_layers": 32
+  },
+  "kernels_4k": {
+    "math": {
+      "void cutlass::Kernel2<cutlass_80_simt_sgemm_256x128_8x4_nn_align1>(cutlass_80_simt_sgemm_256x128_8x4_nn_align1::Params)": 19.24,
+      "void at::native::(anonymous namespace)::cunn_SoftMaxForwardReg<float, float, float, at::native::(anonymous namespace)::S": 7.23,
+      "void cutlass::Kernel2<cutlass_80_simt_sgemm_32x128_8x5_tn_align1>(cutlass_80_simt_sgemm_32x128_8x5_tn_align1::Params)": 0.43,
+      "void cutlass::Kernel2<cutlass_80_simt_sgemm_64x64_8x5_tn_align1>(cutlass_80_simt_sgemm_64x64_8x5_tn_align1::Params)": 0.03
+    },
+    "legacy": {
+      "void cutlass::Kernel2<cutlass_80_simt_sgemm_256x128_8x4_nn_align1>(cutlass_80_simt_sgemm_256x128_8x4_nn_align1::Params)": 19.21,
+      "fmha_cutlassF_f32_aligned_32x128_gmem_sm80(PyTorchMemEffAttention::AttentionKernel<float, cutlass::arch::Sm80, true, 32,": 7.46,
+      "void at::native::(anonymous namespace)::cunn_SoftMaxForwardReg<float, float, float, at::native::(anonymous namespace)::S": 6.56,
+      "void cutlass::Kernel2<cutlass_80_simt_sgemm_32x128_8x5_tn_align1>(cutlass_80_simt_sgemm_32x128_8x5_tn_align1::Params)": 0.43,
+      "void cutlass::Kernel2<cutlass_80_simt_sgemm_64x64_8x5_tn_align1>(cutlass_80_simt_sgemm_64x64_8x5_tn_align1::Params)": 0.03
+    },
+    "long": {
+      "fmha_cutlassF_f32_aligned_32x128_gmem_sm80(PyTorchMemEffAttention::AttentionKernel<float, cutlass::arch::Sm80, true, 32,": 30.15,
+      "void cutlass::Kernel2<cutlass_80_simt_sgemm_32x128_8x5_tn_align1>(cutlass_80_simt_sgemm_32x128_8x5_tn_align1::Params)": 0.43,
+      "void cutlass::Kernel2<cutlass_80_simt_sgemm_64x64_8x5_tn_align1>(cutlass_80_simt_sgemm_64x64_8x5_tn_align1::Params)": 0.03
+    }
+  },
+  "memory": {
+    "16k": {
+      "state_tokens": 15231,
+      "questions": 4,
+      "longest_row": 15337,
+      "math": {
+        "seconds": 5.71,
+        "peak_over_resident_gib": 33.74,
+        "oom": false
+      },
+      "legacy": {
+        "seconds": 5.75,
+        "peak_over_resident_gib": 33.74,
+        "oom": false
+      },
+      "long": {
+        "seconds": 5.12,
+        "peak_over_resident_gib": 4.57,
+        "oom": false
+      },
+      "long_vs_math": {
+        "questions": 4,
+        "max_dp_raw": 1.0013580322265625e-05,
+        "max_dp_shipped": 5.8710575103759766e-05,
+        "max_dlogit": 0.0036954879760742188,
+        "flips": 0
+      }
+    },
+    "32k": {
+      "state_tokens": 30468,
+      "questions": 4,
+      "longest_row": 30568,
+      "math": {
+        "seconds": 1.19,
+        "peak_over_resident_gib": 62.77,
+        "oom": true
+      },
+      "legacy": {
+        "seconds": 1.39,
+        "peak_over_resident_gib": 62.77,
+        "oom": true
+      },
+      "long": {
+        "seconds": 10.88,
+        "peak_over_resident_gib": 9.13,
+        "oom": false
+      }
+    },
+    "64k": {
+      "state_tokens": 60926,
+      "questions": 4,
+      "longest_row": 61023,
+      "math": {
+        "seconds": 1.93,
+        "peak_over_resident_gib": 22.46,
+        "oom": true
+      },
+      "legacy": {
+        "seconds": 1.93,
+        "peak_over_resident_gib": 22.46,
+        "oom": true
+      },
+      "long": {
+        "seconds": 25.11,
+        "peak_over_resident_gib": 18.24,
+        "oom": false
+      }
+    }
+  },
+  "parity": {
+    "8k": {
+      "records": 4,
+      "legacy_vs_math": {
+        "questions": 16,
+        "max_dp_raw": 4.190206527709961e-05,
+        "max_dp_shipped": 0.0001099705696105957,
+        "max_dlogit": 0.002956390380859375,
+        "flips": 0
+      },
+      "long_vs_math": {
+        "questions": 16,
+        "max_dp_raw": 5.0902366638183594e-05,
+        "max_dp_shipped": 9.989738464355469e-05,
+        "max_dlogit": 0.0026292800903320312,
+        "flips": 0
+      },
+      "rows_vs_math": {
+        "questions": 16,
+        "max_dp_raw": 5.4895877838134766e-05,
+        "max_dp_shipped": 0.00010436773300170898,
+        "max_dlogit": 0.007214069366455078,
+        "flips": 0
+      }
+    },
+    "16k": {
+      "records": 4,
+      "legacy_vs_math": {
+        "questions": 16,
+        "max_dp_raw": 0.00015121698379516602,
+        "max_dp_shipped": 0.00017070770263671875,
+        "max_dlogit": 0.002487093210220337,
+        "flips": 0
+      },
+      "long_vs_math": {
+        "questions": 16,
+        "max_dp_raw": 0.0002551525831222534,
+        "max_dp_shipped": 0.00026670098304748535,
+        "max_dlogit": 0.0021119117736816406,
+        "flips": 0
+      }
+    }
+  }
+}

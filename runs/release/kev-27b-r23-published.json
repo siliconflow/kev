@@ -1,0 +1,180 @@
+{
+  "release": "kev-27b-r23",
+  "name": "Kev-27B v2 (released)",
+  "date": "2026-09-30",
+  "approved_by": "Jared (2026-09-30)",
+  "previous": {
+    "repo": "jaredpalmer/kev-27b",
+    "commit": "01b81998019be550f0ae858727df49bac9511195",
+    "tag": "v1-lora",
+    "tag_object": "512eeb74d11466656f5eea6de126661f58929f9b",
+    "created_before_publish": true,
+    "what": "Kev-27B v1: LoRA r=16 adapter on Qwen/Qwen3.8-27B (trial r6-27b-v2/01-trial-1, B1 v2 seed 2), T 1.3819; records runs/release/kev-27b-v2.json"
+  },
+  "publish": {
+    "command": "KEV_APP_NAME=kev-release KEV_HF_SECRET=huggingface-secret uv run modal run modal_app.py::release_publish --run /runs/release/kev-27b-r23/checkpoint --repo jaredpalmer/kev-27b --card <docs/model-cards/kev-27b.md without the verification line> --message '...' --public --confirm-public jaredpalmer/kev-27b --replace",
+    "repo": "jaredpalmer/kev-27b",
+    "private": false,
+    "revision": "main",
+    "commit": "28be62e9c5ae0471bda2b7c636a55224b4f4b887",
+    "deleted_in_the_same_commit": [
+      "adapter_config.json",
+      "adapter_model.safetensors",
+      "provenance.json",
+      "result.json",
+      "train.log",
+      "training_config.json",
+      "training_metrics.json"
+    ],
+    "files": [
+      ".gitattributes",
+      "README.md",
+      "chat_template.jinja",
+      "config.json",
+      "head.pt",
+      "interpolation.json",
+      "model-00001-of-00011.safetensors",
+      "model-00002-of-00011.safetensors",
+      "model-00003-of-00011.safetensors",
+      "model-00004-of-00011.safetensors",
+      "model-00005-of-00011.safetensors",
+      "model-00006-of-00011.safetensors",
+      "model-00007-of-00011.safetensors",
+      "model-00008-of-00011.safetensors",
+      "model-00009-of-00011.safetensors",
+      "model-00010-of-00011.safetensors",
+      "model-00011-of-00011.safetensors",
+      "model.safetensors.index.json",
+      "tokenizer.json",
+      "tokenizer_config.json"
+    ],
+    "weights_sha256_from_lfs": "d27af6ab2be16824166ac639907b4dba40979ff338599c2872721aa6c5072022",
+    "head_sha256_from_lfs": "7968f17b03479c1ef9d1c0f3ab8a15e31ecb441cf40691b07ee945ab554d45ad",
+    "weights_equal_release": true,
+    "head_equal_release": true,
+    "card_metadata": {
+      "base_model": "Qwen/Qwen3.8-27B",
+      "base_model_relation": "finetune",
+      "library_name": "transformers"
+    },
+    "readme_commits": {
+      "0d7f9b497f825a765c419edbf790f20cbb226d14": "docs/model-cards/kev-27b.md with the verification line and the decision-v7 development read; weights unchanged since 28be62e9",
+      "058ffd47c9b4a0c0e6b8d151f26a715761a6d524": "docs/model-cards/kev-27b.md rewritten as a formal, standalone model card (2026-09-30; HfApi.upload_file of README.md only); weights unchanged since 28be62e9",
+      "b88afb6111ef39e97a63114095932c33591b0e4b": "the same card with the 2026-09-30 retirement of WANLI-v2 and TypeSafe noted (HfApi.upload_file of README.md only); weights unchanged since 28be62e9"
+    },
+    "main": "b88afb6111ef39e97a63114095932c33591b0e4b"
+  },
+  "verification": {
+    "command": "KEV_APP_NAME=kev-release uv run modal run modal_app.py::release_verify --jobs 'jaredpalmer/kev-27b@evals/external/semif-v1,jaredpalmer/kev-27b@evals/v4/transfer-v4,jaredpalmer/kev-27b@evals/v7/decision-v7,jaredpalmer/kev-27b@v1-lora@evals/external/semif-v1' --out runs/rel27-public --gpu H200",
+    "environment": "Modal H200, no Modal secret, no kev-hf-cache volume, a fresh HF_HOME on the scratch disk, no Hugging Face token (huggingface_hub.get_token() is None in every job)",
+    "resolutions": [
+      {
+        "requested": "jaredpalmer/kev-27b",
+        "token": null,
+        "path": "/tmp/hf-anon-zrph_kcb/hub/models--jaredpalmer--kev-27b/snapshots/28be62e9c5ae0471bda2b7c636a55224b4f4b887",
+        "layout": "full",
+        "temperature": 1.319507910772894,
+        "weights_sha256": "d27af6ab2be16824166ac639907b4dba40979ff338599c2872721aa6c5072022",
+        "head_sha256": "7968f17b03479c1ef9d1c0f3ab8a15e31ecb441cf40691b07ee945ab554d45ad"
+      },
+      {
+        "requested": "jaredpalmer/kev-27b",
+        "token": null,
+        "path": "/tmp/hf-anon-zrph_kcb/hub/models--jaredpalmer--kev-27b/snapshots/28be62e9c5ae0471bda2b7c636a55224b4f4b887",
+        "layout": "full",
+        "temperature": 1.319507910772894,
+        "weights_sha256": "d27af6ab2be16824166ac639907b4dba40979ff338599c2872721aa6c5072022",
+        "head_sha256": "7968f17b03479c1ef9d1c0f3ab8a15e31ecb441cf40691b07ee945ab554d45ad"
+      },
+      {
+        "requested": "jaredpalmer/kev-27b",
+        "token": null,
+        "path": "/tmp/hf-anon-zrph_kcb/hub/models--jaredpalmer--kev-27b/snapshots/28be62e9c5ae0471bda2b7c636a55224b4f4b887",
+        "layout": "full",
+        "temperature": 1.319507910772894,
+        "weights_sha256": "d27af6ab2be16824166ac639907b4dba40979ff338599c2872721aa6c5072022",
+        "head_sha256": "7968f17b03479c1ef9d1c0f3ab8a15e31ecb441cf40691b07ee945ab554d45ad"
+      },
+      {
+        "requested": "jaredpalmer/kev-27b@v1-lora",
+        "token": null,
+        "path": "/tmp/hf-anon-zrph_kcb/hub/models--jaredpalmer--kev-27b/snapshots/01b81998019be550f0ae858727df49bac9511195",
+        "layout": "lora",
+        "temperature": 1.381912879967776,
+        "weights_sha256": "41bf5af0f81ea58fba73eb0c168cc8fcaa8458d28a566592daabbc01fc04c47e",
+        "head_sha256": "1322189d3a31eaacd12758791ffe952371062bfc34be3b9281bcf7b5f87671d2"
+      }
+    ],
+    "v2": {
+      "semif_v1": {
+        "dir": "runs/rel27-public/0-jaredpalmer_kev-27b",
+        "suite": "evals/external/semif-v1",
+        "split": "development",
+        "n": 144,
+        "acc": 0.9652777777777778,
+        "served_brier": 0.06259279482538739,
+        "served_ece": 0.06049404849546461,
+        "vs": {
+          "reference": "runs/r23-27b-k-w85-semif/rows.json",
+          "rows": 252,
+          "inference_temperature": 1.319507910772894,
+          "logits_exact": 252,
+          "argmax_equal": 252,
+          "max_abs_dlogit_at_T": 0.0,
+          "max_abs_dp_at_T": 2.3957515804529095e-08,
+          "logits_rule": "served logits == fp32(z_reference * fp32(1 / T)), z_reference read at T 1.0"
+        }
+      },
+      "transfer_v4_development": {
+        "dir": "runs/rel27-public/1-jaredpalmer_kev-27b",
+        "suite": "evals/v4/transfer-v4",
+        "split": "development",
+        "n": 656,
+        "acc": 0.850609756097561,
+        "served_brier": 0.21785161360432248,
+        "served_ece": 0.037621330414077475,
+        "vs": {
+          "reference": "runs/r23-27b-k-w85-transfer4/rows.json",
+          "rows": 764,
+          "inference_temperature": 1.319507910772894,
+          "logits_exact": 764,
+          "argmax_equal": 764,
+          "max_abs_dlogit_at_T": 0.0,
+          "max_abs_dp_at_T": 3.924649649711398e-08,
+          "logits_rule": "served logits == fp32(z_reference * fp32(1 / T)), z_reference read at T 1.0"
+        }
+      },
+      "decision_v7_development": {
+        "dir": "runs/rel27-public/2-jaredpalmer_kev-27b",
+        "suite": "evals/v7/decision-v7",
+        "split": "development",
+        "n": 1264,
+        "acc": 0.8647151898734177,
+        "served_brier": 0.18256029343204153,
+        "served_ece": 0.016038718530470765,
+        "note": "first decision-v7 read of this checkpoint (report only): the README's trained-sources development cell"
+      }
+    },
+    "v1_at_tag": {
+      "semif_v1": {
+        "dir": "runs/rel27-public/3-jaredpalmer_kev-27b_v1-lora",
+        "suite": "evals/external/semif-v1",
+        "split": "development",
+        "n": 144,
+        "acc": 0.9722222222222222,
+        "served_brier": 0.06097785285264242,
+        "served_ece": 0.06836268517811935,
+        "vs": {
+          "reference": "runs/r6-27bv2-s2-semif/rows.json",
+          "rows": 252,
+          "inference_temperature": 1.381912879967776,
+          "logits_exact": 0,
+          "argmax_equal": 252,
+          "max_abs_dlogit_at_T": 0.13010096549987793,
+          "max_abs_dp_at_T": 0.032490640569245444
+        },
+        "note": "loads v1's adapter (layout lora, weights 41bf5af0..., the interpolation's `toward` hash) at T 1.3819; argmax equal on 252 of 252 and the same accuracy as the 2026-09-23 read (runs/r6-27bv2-s2-semif), logits not bit-identical to that read (max |dlogit| 0.13 at T, max |dp| 0.032), which was made with an older kev and dependency set; not investigated"
+      }
+    }
+  }
+}

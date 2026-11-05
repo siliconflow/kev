@@ -1,0 +1,134 @@
+{
+  "round": 27,
+  "stage": "tests",
+  "arm": "9b-r18a",
+  "trial": "runs/r18-9b/00-trial-0",
+  "parent": "runs/night2-9b-du/00-trial-0",
+  "temperature": 2.193649959389252,
+  "parent_temperature": 2.2973967099940698,
+  "panels": {
+    "pooled": {
+      "n": 1859,
+      "excluded": 300,
+      "acc": {
+        "candidate": 0.8224852071005917,
+        "parent": 0.635287789133943,
+        "delta": 0.18719741796664868,
+        "ci95": [
+          0.1674743560727265,
+          0.20815560602062122
+        ]
+      }
+    },
+    "hardtest": {
+      "n": 1088,
+      "acc": {
+        "candidate": 0.8336397058823529,
+        "parent": 0.5836397058823529,
+        "delta": 0.25,
+        "ci95": [
+          0.22025830462808227,
+          0.2814003193443997
+        ]
+      },
+      "ece": {
+        "candidate": 0.05414366492257429,
+        "parent": 0.07492001281694644
+      }
+    },
+    "devtest": {
+      "n": 771,
+      "excluded": 300,
+      "acc": {
+        "candidate": 0.8067444876783398,
+        "parent": 0.708171206225681,
+        "delta": 0.09857328145265887,
+        "ci95": [
+          0.07242463992930809,
+          0.125
+        ]
+      }
+    },
+    "docs1test": {
+      "n": 936,
+      "acc": {
+        "candidate": 0.8995726495726496,
+        "parent": 0.8290598290598291,
+        "delta": 0.07051282051282048,
+        "ci95": [
+          0.04724886559223903,
+          0.09235711549118472
+        ]
+      }
+    },
+    "docs2": {
+      "n": 953,
+      "acc": {
+        "candidate": 0.9003147953830011,
+        "parent": 0.8205666316894019,
+        "delta": 0.07974816369359916,
+        "ci95": [
+          0.05863865973051717,
+          0.10208866127348648
+        ]
+      }
+    }
+  },
+  "missing": [],
+  "temperature_fit": {
+    "reads": [
+      "runs/r27-9b-r18a-r3cal",
+      "runs/r18-9b-joint-lr2e5-v9"
+    ],
+    "sources": {
+      "runs/r18-9b-joint-lr2e5-v9": [
+        "mmlu_pro"
+      ],
+      "runs/r27-9b-r18a-r3cal": [
+        "composition_holdout",
+        "emotion",
+        "legacy_holdout",
+        "mmlu",
+        "paws",
+        "qnli",
+        "sciq",
+        "tweet_offensive"
+      ]
+    },
+    "exclude_reads": [
+      "runs/r18-9b/00-trial-0/transfer"
+    ],
+    "questions": 648,
+    "excluded_questions": 0
+  },
+  "temperature_ci": {
+    "level": 0.9,
+    "samples": 2000,
+    "seed": 0,
+    "lower": 2.04674778399355,
+    "upper": 2.406050072164233,
+    "questions": 648,
+    "resampled": "(source, group) clusters within each source (kev.metrics.cluster_resamples)"
+  },
+  "temperature_source": {
+    "kind": "pool",
+    "reads": [
+      "runs/r27-9b-r18a-r3cal",
+      "runs/r18-9b-joint-lr2e5-v9"
+    ],
+    "questions": 648
+  },
+  "parent_temperature_source": {
+    "kind": "trial development rows",
+    "rows": "runs/night2-9b-du/00-trial-0/development",
+    "suite": "evals/v7/decision-v7",
+    "training_corpus": true,
+    "shipped": 2.2973967099940698
+  },
+  "criteria": {
+    "pooled_lower_above_0": true,
+    "docs1test_lower_at_least_0": true
+  },
+  "complete": true,
+  "passed": true
+}

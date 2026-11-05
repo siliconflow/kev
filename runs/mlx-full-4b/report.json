@@ -1,0 +1,148 @@
+{
+  "full": "/tmp/kev-mlxfull-ckpts/kev-4b-full/checkpoint",
+  "weights_sha256": "6c3fa95f5e7dc97b98c404568923c29e1cc79f0a463564b6c06c013d2e2a8efb",
+  "lora": "jaredpalmer/kev-4b@139fdd94f1b6a6ad80cc15e08fcb99cac885a101",
+  "suite": "evals/v7/decision-v7",
+  "records": 60,
+  "weights_gb": 8.411549328,
+  "weights_dtype": "bf16",
+  "machine": "Apple M5",
+  "memory_gb": 32.0,
+  "loads": {
+    "mlx-full": {
+      "mlx_peak_load_gb": 8.411507752,
+      "mlx_active_after_load_gb": 8.4115026,
+      "mlx_cache_after_load_gb": 5.12e-06,
+      "load_seconds": 1.6,
+      "rss_peak_after_load_gb": 9.10139392,
+      "backend": "mlx",
+      "dtype": "bfloat16",
+      "score_seconds": 50.9,
+      "rss_peak_gb": 9.101869056,
+      "mlx_peak_gb": 9.321456782
+    },
+    "mlx-lora": {
+      "mlx_peak_load_gb": 15.86796494,
+      "mlx_active_after_load_gb": 8.41151028,
+      "mlx_cache_after_load_gb": 0.00065536,
+      "load_seconds": 35.9,
+      "rss_peak_after_load_gb": 4.880400384,
+      "backend": "mlx",
+      "dtype": "bfloat16",
+      "score_seconds": 51.6,
+      "rss_peak_gb": 4.880400384,
+      "mlx_peak_gb": 15.86796494
+    },
+    "mlx-lora-bf16": {
+      "mlx_peak_load_gb": 15.86796494,
+      "mlx_active_after_load_gb": 8.4115026,
+      "mlx_cache_after_load_gb": 0.00067072,
+      "load_seconds": 7.6,
+      "rss_peak_after_load_gb": 8.53598208,
+      "backend": "mlx",
+      "dtype": "bfloat16",
+      "score_seconds": 41.5,
+      "rss_peak_gb": 8.53598208,
+      "mlx_peak_gb": 15.86796494
+    },
+    "torch-full": {
+      "load_seconds": 70.3,
+      "rss_peak_after_load_gb": 16.07712768,
+      "backend": "torch",
+      "dtype": "float32",
+      "score_seconds": 366.7,
+      "rss_peak_gb": 16.07712768
+    }
+  },
+  "parity": {
+    "mlx-full vs mlx-lora": {
+      "questions": 60,
+      "max_dp": 0.018285512924194336,
+      "mean_dp": 0.003333881853419977,
+      "argmax_flips": 0,
+      "over_0.02": 0
+    },
+    "mlx-full vs mlx-lora-bf16": {
+      "questions": 60,
+      "max_dp": 0.0,
+      "mean_dp": 0.0,
+      "argmax_flips": 0,
+      "over_0.02": 0
+    },
+    "mlx-full vs torch-full": {
+      "questions": 60,
+      "max_dp": 0.015182524919509888,
+      "mean_dp": 0.003228026815728905,
+      "argmax_flips": 0,
+      "over_0.02": 0
+    },
+    "mlx-lora vs torch-full": {
+      "questions": 60,
+      "max_dp": 0.01822531223297119,
+      "mean_dp": 0.0037749505466005456,
+      "argmax_flips": 0,
+      "over_0.02": 0
+    }
+  },
+  "serve": {
+    "what": "kev.serve end to end on the Kev-4B full-weight checkpoint (scripts/merge_lora_checkpoint.py --lora jaredpalmer/kev-4b@139fdd94f1b6a6ad80cc15e08fcb99cac885a101 --weights_dtype bf16, weights sha256 6c3fa95f5e7d...) via MLX, Apple M5 32 GB, 2026-09-30",
+    "command": "uv run --extra serve python -m kev.serve --run /tmp/kev-mlxfull-ckpts/kev-4b-full/checkpoint --port 8019",
+    "v1_models": {
+      "backend": "mlx",
+      "dtype": "bfloat16",
+      "device": "mps",
+      "lora": 0,
+      "temperature": 2.406050072164233
+    },
+    "requests": [
+      {
+        "body": "README's three-question example (101 input tokens)",
+        "status": 200,
+        "latency_ms": 514.9,
+        "prefix_cache": "miss",
+        "answers": {
+          "department": {
+            "returns": 0.5133,
+            "shipping": 0.3566,
+            "billing": 0.1301
+          },
+          "escalate": 0.7242,
+          "frustration": {
+            "0": 0.0407,
+            "1": 0.6223,
+            "2": 0.3369
+          }
+        }
+      },
+      {
+        "body": "same",
+        "status": 200,
+        "latency_ms": 150.6,
+        "prefix_cache": "hit",
+        "answers": "identical"
+      },
+      {
+        "body": "same",
+        "status": 200,
+        "latency_ms": 152.7,
+        "prefix_cache": "hit",
+        "answers": "identical"
+      },
+      {
+        "body": "a 70,002-token state",
+        "status": 422,
+        "detail": "state is 70,002 tokens, over the 65,536-token limit (the <state> token included): shorten the document or split it across requests; or start the server with KEV_TRUNCATE_STATES=1 to read only its first 65,536 tokens (responses then say truncated: true)"
+      }
+    ]
+  },
+  "merge": {
+    "command": "scripts/merge_lora_checkpoint.py --lora jaredpalmer/kev-4b@139fdd94f1b6a6ad80cc15e08fcb99cac885a101 --out /tmp/kev-mlxfull-ckpts/kev-4b-full --weights_dtype bf16",
+    "phases": {
+      "load_base_and_adapter": 13.6,
+      "merge": 18.6,
+      "write_backbone": 2.1,
+      "hash_output": 2.2
+    },
+    "tensors": 426
+  }
+}

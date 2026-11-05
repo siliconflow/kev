@@ -1,0 +1,564 @@
+{
+  "version": "sft-v2-r25",
+  "description": "Round 25's training suite (private mirror; only this manifest is public): continued full-weight SFT from Kev-27B. sft-v2-r22's records, re-screened, states of at most 16,384 tokens: tasksource-v1 (stratified over its families), half of tone, guardrails-pii, guardrails-grounding, injection and ood, a tenth of agents, every b1v2 record (Kev-27B's own training data, the replay, 30% of the records) and a quarter of hard-v1 / devtools-v1 / documents-v1; no longify, longdoc, sft-v1 public or sft-v1 synthetic records. Round 25's registration explains these choices.",
+  "derived_from": {
+    "suite": "evals/sft-v2-r22",
+    "manifest": "evals/sft-v2-r22/manifest.json",
+    "mirror_revision": "f8d59fbb6b1019c2e666658447f571ad64d7de30",
+    "rule": "(1) keep the records of components ['tasksource-v1', 'tone', 'guardrails-pii', 'guardrails-grounding', 'injection', 'ood', 'agents', 'b1v2', 'kev-skills'] (component from _meta.source; sft-v1's records split into b1v2 by evals/round6/b1v2's source list, the public sources by evals/sft-v1's public groups, and the Kev skill sources); drop ['longdoc', 'longify', 'sft-v1 public', 'sft-v1 synthetic']; (2) re-screen (kev-sft assemble/screen_v2.py, common/screen.py's rule) against every evaluation partition of the kev checkout, the private evaluation mirror and JevBench public (the SFT corpora's own partitions excluded), dropping offenders; (3) train keeps states of at most 16384 tokens that fit kev.model.training_context(16384) strictly; calibration and development (already at most 8192 tokens) keep only the kept components; (4) train downsampled per component (see downsampled_components), each by the smallest sha256(SEED:keep:<component>: + record digest); sft-v2-r22's order",
+    "dropped_components": {
+      "longify": "long-state records built from sft-v1 train (8k-64k): excluded (round 25's CUAD hypothesis)",
+      "longdoc": "code-assembled long documents (8k-64k): excluded (round 25's CUAD hypothesis)",
+      "sft-v1 public": "sft-v1's public sources: not in round 25's mix",
+      "sft-v1 synthetic": "sft-v1's synthetic-v1 sources: not in round 25's mix"
+    }
+  },
+  "downsampled_components": {
+    "tasksource-v1": {
+      "records": 23996,
+      "kept": 13000,
+      "families": 119,
+      "families_kept": 119,
+      "rule": "stratified by family (the family list is private): each family keeps its share of 13000, floors then largest remainders, the records with the smallest sha256(SEED:keep:tasksource-v1: + record digest)"
+    },
+    "tone": {
+      "records": 7544,
+      "kept": 3772,
+      "fraction": 0.5,
+      "rule": "round(n x 0.5) of each source, the records with the smallest sha256(SEED:keep:tone: + record digest)"
+    },
+    "guardrails-pii": {
+      "records": 4152,
+      "kept": 2076,
+      "fraction": 0.5,
+      "rule": "round(n x 0.5) of each source, the records with the smallest sha256(SEED:keep:guardrails-pii: + record digest)"
+    },
+    "guardrails-grounding": {
+      "records": 5467,
+      "kept": 2734,
+      "fraction": 0.5,
+      "rule": "round(n x 0.5) of each source, the records with the smallest sha256(SEED:keep:guardrails-grounding: + record digest)"
+    },
+    "injection": {
+      "records": 2615,
+      "kept": 1308,
+      "fraction": 0.5,
+      "rule": "round(n x 0.5) of each source, the records with the smallest sha256(SEED:keep:injection: + record digest)"
+    },
+    "ood": {
+      "records": 7312,
+      "kept": 3656,
+      "fraction": 0.5,
+      "rule": "round(n x 0.5) of each source, the records with the smallest sha256(SEED:keep:ood: + record digest)"
+    },
+    "agents": {
+      "records": 3714,
+      "kept": 371,
+      "fraction": 0.1,
+      "rule": "round(n x 0.1) of each source, the records with the smallest sha256(SEED:keep:agents: + record digest)"
+    },
+    "b1v2": {
+      "records": 13763,
+      "kept": 13763,
+      "fraction": 1.0,
+      "rule": "round(n x 1) of each source, the records with the smallest sha256(SEED:keep:b1v2: + record digest)"
+    },
+    "kev-skills": {
+      "records": 19345,
+      "kept": 4835,
+      "fraction": 0.25,
+      "rule": "round(n x 0.25) of each source, the records with the smallest sha256(SEED:keep:kev-skills: + record digest)"
+    }
+  },
+  "components": {
+    "b1v2": "the replay: Kev-27B's own training data (evals/round6/b1v2: decision-v7 train with ambiguity targets, dates / unknowable, long v2 records) as screened into sft-v1 and sft-v2 (the screen had dropped records resembling evaluation items, most long v2 records among them); kept whole",
+    "kev-skills": "sft-v1's other Kev components: hard-v1 train + extra, devtools-v1 train, documents-v1 train (round 22 trained on all of them)",
+    "tasksource-v1": "public multi-task collection, native labels; families private (records carry source 'tasksource')",
+    "agents": "only states of at most 16384 tokens, then a tenth of them"
+  },
+  "screening_partitions": "calibration and development hold only states of at most 8,192 tokens of the kept components: in-distribution screening partitions (kev.experiment's in-trial temperature and development score), which no round-25 criterion reads; sft-v1's Kev components have no calibration or development records",
+  "seed": "sft-v2-r25-derive-20260928",
+  "partitions": [
+    "train",
+    "calibration",
+    "development"
+  ],
+  "eval_only": false,
+  "roles": {
+    "train": "training",
+    "calibration": "never trained on; held-out items of the training components (in distribution): kev.experiment's in-trial temperature only (screening), never a served or shipped temperature",
+    "development": "never trained on; held-out items of the training components (in distribution): scored per trial for screening only; served and shipped temperatures come from a pool of held-out datasets (docs/autoresearch.md section 3)"
+  },
+  "files": {
+    "train.jsonl": {
+      "sha256": "1c356fe48ee52565fbbbc6ce049b2e25583758674e46f67fef58854d28ffdef3",
+      "records": 45515,
+      "questions": 93558,
+      "bytes": 180405829,
+      "soft_target_questions": 3417,
+      "by_component": {
+        "tasksource-v1": {
+          "records": 13000,
+          "questions": 17757,
+          "state_tokens": 1815385,
+          "row_tokens_with_prefix_sharing": 2494160
+        },
+        "tone": {
+          "records": 3772,
+          "questions": 15874,
+          "state_tokens": 610887,
+          "row_tokens_with_prefix_sharing": 1318632
+        },
+        "guardrails-pii": {
+          "records": 2076,
+          "questions": 5329,
+          "state_tokens": 1715644,
+          "row_tokens_with_prefix_sharing": 2061589
+        },
+        "guardrails-grounding": {
+          "records": 2734,
+          "questions": 12587,
+          "state_tokens": 5495499,
+          "row_tokens_with_prefix_sharing": 6342258
+        },
+        "injection": {
+          "records": 1308,
+          "questions": 5519,
+          "state_tokens": 2071005,
+          "row_tokens_with_prefix_sharing": 2476471
+        },
+        "ood": {
+          "records": 3656,
+          "questions": 11019,
+          "state_tokens": 2941512,
+          "row_tokens_with_prefix_sharing": 3947144
+        },
+        "agents": {
+          "records": 371,
+          "questions": 1719,
+          "state_tokens": 3318125,
+          "row_tokens_with_prefix_sharing": 3414872
+        },
+        "b1v2": {
+          "records": 13763,
+          "questions": 16788,
+          "state_tokens": 2029083,
+          "row_tokens_with_prefix_sharing": 3351869
+        },
+        "kev-skills": {
+          "records": 4835,
+          "questions": 6966,
+          "state_tokens": 2704004,
+          "row_tokens_with_prefix_sharing": 3122586
+        }
+      },
+      "state_tokens": {
+        "min": 2,
+        "median": 120,
+        "mean": 498.8,
+        "p90": 1164,
+        "p99": 7130,
+        "max": 16365,
+        "total": 22701144
+      },
+      "row_tokens_with_prefix_sharing": 28529581,
+      "state_tokens_histogram": {
+        "1-256": 30896,
+        "257-512": 4662,
+        "513-1024": 4390,
+        "1025-2048": 3792,
+        "2049-4096": 798,
+        "4097-8192": 570,
+        "8193-16384": 407,
+        "16385-32768": 0,
+        "32769-65536": 0
+      },
+      "dropped": {
+        "component:longdoc": 7617,
+        "component:longify": 3200,
+        "component:sft-v1 public": 12000,
+        "component:sft-v1 synthetic": 33678,
+        "downsampled:agents": 3343,
+        "downsampled:guardrails-grounding": 2733,
+        "downsampled:guardrails-pii": 2076,
+        "downsampled:injection": 1307,
+        "downsampled:kev-skills": 14510,
+        "downsampled:ood": 3656,
+        "downsampled:tasksource-v1": 10996,
+        "downsampled:tone": 3772,
+        "state_over_16384:agents": 1161,
+        "state_over_16384:guardrails-grounding": 188,
+        "state_over_16384:injection": 84,
+        "state_over_16384:tasksource-v1": 4
+      }
+    },
+    "calibration.jsonl": {
+      "sha256": "3081a30e439392a0c0dc21facb1a32ab56374a3275501893d35cd227a191cf5c",
+      "records": 4904,
+      "questions": 10362,
+      "bytes": 17511279,
+      "soft_target_questions": 297,
+      "by_component": {
+        "tasksource-v1": {
+          "records": 3480,
+          "questions": 4770,
+          "state_tokens": 511945,
+          "row_tokens_with_prefix_sharing": 693846
+        },
+        "tone": {
+          "records": 372,
+          "questions": 1647,
+          "state_tokens": 61039,
+          "row_tokens_with_prefix_sharing": 135610
+        },
+        "guardrails-pii": {
+          "records": 219,
+          "questions": 556,
+          "state_tokens": 174493,
+          "row_tokens_with_prefix_sharing": 210949
+        },
+        "guardrails-grounding": {
+          "records": 237,
+          "questions": 1235,
+          "state_tokens": 349325,
+          "row_tokens_with_prefix_sharing": 433157
+        },
+        "injection": {
+          "records": 122,
+          "questions": 519,
+          "state_tokens": 153107,
+          "row_tokens_with_prefix_sharing": 191349
+        },
+        "ood": {
+          "records": 388,
+          "questions": 1143,
+          "state_tokens": 315681,
+          "row_tokens_with_prefix_sharing": 424902
+        },
+        "agents": {
+          "records": 86,
+          "questions": 492,
+          "state_tokens": 478914,
+          "row_tokens_with_prefix_sharing": 505591
+        }
+      },
+      "state_tokens": {
+        "min": 2,
+        "median": 101,
+        "mean": 416.9,
+        "p90": 1078,
+        "p99": 5824,
+        "max": 8165,
+        "total": 2044504
+      },
+      "row_tokens_with_prefix_sharing": 2595404,
+      "state_tokens_histogram": {
+        "1-256": 3378,
+        "257-512": 512,
+        "513-1024": 483,
+        "1025-2048": 372,
+        "2049-4096": 66,
+        "4097-8192": 93,
+        "8193-16384": 0,
+        "16385-32768": 0,
+        "32769-65536": 0
+      },
+      "dropped": {
+        "component:longdoc": 13,
+        "component:sft-v1 public": 5198,
+        "component:sft-v1 synthetic": 3270
+      }
+    },
+    "development.jsonl": {
+      "sha256": "71faaa510bba4c1b2ce9338e5ba2cacf7ab53ff8a8d40954b216138931239b8b",
+      "records": 2714,
+      "questions": 5408,
+      "bytes": 8916745,
+      "soft_target_questions": 179,
+      "by_component": {
+        "tasksource-v1": {
+          "records": 2087,
+          "questions": 2839,
+          "state_tokens": 340820,
+          "row_tokens_with_prefix_sharing": 447978
+        },
+        "tone": {
+          "records": 159,
+          "questions": 712,
+          "state_tokens": 26197,
+          "row_tokens_with_prefix_sharing": 58498
+        },
+        "guardrails-pii": {
+          "records": 77,
+          "questions": 194,
+          "state_tokens": 57164,
+          "row_tokens_with_prefix_sharing": 69270
+        },
+        "guardrails-grounding": {
+          "records": 151,
+          "questions": 775,
+          "state_tokens": 205505,
+          "row_tokens_with_prefix_sharing": 257692
+        },
+        "injection": {
+          "records": 49,
+          "questions": 214,
+          "state_tokens": 59718,
+          "row_tokens_with_prefix_sharing": 75230
+        },
+        "ood": {
+          "records": 156,
+          "questions": 484,
+          "state_tokens": 128316,
+          "row_tokens_with_prefix_sharing": 170168
+        },
+        "agents": {
+          "records": 35,
+          "questions": 190,
+          "state_tokens": 188034,
+          "row_tokens_with_prefix_sharing": 198356
+        }
+      },
+      "state_tokens": {
+        "min": 2,
+        "median": 85,
+        "mean": 370.6,
+        "p90": 947,
+        "p99": 5150,
+        "max": 8124,
+        "total": 1005754
+      },
+      "row_tokens_with_prefix_sharing": 1277192,
+      "state_tokens_histogram": {
+        "1-256": 1961,
+        "257-512": 251,
+        "513-1024": 258,
+        "1025-2048": 163,
+        "2049-4096": 44,
+        "4097-8192": 37,
+        "8193-16384": 0,
+        "16385-32768": 0,
+        "32769-65536": 0
+      },
+      "dropped": {
+        "component:longdoc": 4,
+        "component:sft-v1 public": 2180,
+        "component:sft-v1 synthetic": 1303
+      }
+    }
+  },
+  "screen": {
+    "rule": "exact normalised state or content string (>= 5 words, in <= 5 reference items), word 8-gram Jaccard > 0.2, or smaller-side containment >= 0.5 (smaller side >= 10 grams); 8-grams in > 50 reference items ignored (kev-sft common/screen.py; assemble/screen_v2.py)",
+    "reference_partitions": 105,
+    "reference_items": 76207,
+    "reference_sets": [
+      "kev:agents-ood-v1/development.jsonl",
+      "kev:breadth-v1/development.jsonl",
+      "kev:breadth-v1/test.jsonl",
+      "kev:decision-v1/calibration.jsonl",
+      "kev:decision-v1/development.jsonl",
+      "kev:decision-v1/test.jsonl",
+      "kev:decision-v2/calibration.jsonl",
+      "kev:decision-v2/development.jsonl",
+      "kev:decision-v2/test.jsonl",
+      "kev:devtools-v1/development.jsonl",
+      "kev:devtools-v1/test.jsonl",
+      "kev:diagnostics/binding-v1.jsonl",
+      "kev:documents-v1/development.jsonl",
+      "kev:documents-v1/test.jsonl",
+      "kev:documents-v2/test.jsonl",
+      "kev:external/ekzhang-mmlupro-v1/records.jsonl",
+      "kev:external/scienthoon-v1/development.jsonl",
+      "kev:external/semif-v1/development.jsonl",
+      "kev:external/typesafe-v1/development.jsonl",
+      "kev:external/wanli-v1/development.jsonl",
+      "kev:external/wanli-v2/development.jsonl",
+      "kev:guardrails-ood-v1/development.jsonl",
+      "kev:hard-v1/development.jsonl",
+      "kev:hard-v1/test.jsonl",
+      "kev:longdoc-v1/development.jsonl",
+      "kev:longdoc-v1/test.jsonl",
+      "kev:ood-v2/development.jsonl",
+      "kev:public-pool-v4/calibration.jsonl",
+      "kev:public-pool-v4/development.jsonl",
+      "kev:public-pool-v4/test.jsonl",
+      "kev:public-pool-v5/calibration.jsonl",
+      "kev:public-pool-v5/development.jsonl",
+      "kev:public-pool-v5/test.jsonl",
+      "kev:public-pool-v6/calibration.jsonl",
+      "kev:public-pool-v6/development.jsonl",
+      "kev:public-pool-v6/test.jsonl",
+      "kev:round3/decision-r3/calibration.jsonl",
+      "kev:round3/decision-r3/development.jsonl",
+      "kev:round3/transfer-r3/calibration.jsonl",
+      "kev:round3/transfer-r3/development.jsonl",
+      "kev:round3/transfer-r3/test.jsonl",
+      "kev:round4/longstate-v1/development.jsonl",
+      "kev:round5/longstate-v2/development.jsonl",
+      "kev:round5/transfer-r5/calibration.jsonl",
+      "kev:round5/transfer-r5/development.jsonl",
+      "kev:round5/transfer-r5/test.jsonl",
+      "kev:round8/longstate-x1/development.jsonl",
+      "kev:smoke-v1/calibration.jsonl",
+      "kev:smoke-v1/development.jsonl",
+      "kev:smoke-v1/test.jsonl",
+      "kev:tasksource-heldout-v1/development.jsonl",
+      "kev:tasksource-heldout-v1/test.jsonl",
+      "kev:transfer-v1/development.jsonl",
+      "kev:transfer-v1/test.jsonl",
+      "kev:transfer-v2/development.jsonl",
+      "kev:transfer-v2/test.jsonl",
+      "kev:v3/decision-v3/calibration.jsonl",
+      "kev:v3/decision-v3/development.jsonl",
+      "kev:v3/decision-v3/test.jsonl",
+      "kev:v3/smoke-v3/calibration.jsonl",
+      "kev:v3/smoke-v3/development.jsonl",
+      "kev:v3/transfer-v3/development.jsonl",
+      "kev:v3/transfer-v3/test.jsonl",
+      "kev:v4/decision-v4/calibration.jsonl",
+      "kev:v4/decision-v4/development.jsonl",
+      "kev:v4/decision-v4/test.jsonl",
+      "kev:v4/transfer-v4/development.jsonl",
+      "kev:v4/transfer-v4/test.jsonl",
+      "kev:v5/decision-v5/calibration.jsonl",
+      "kev:v5/decision-v5/development.jsonl",
+      "kev:v5/decision-v5/test.jsonl",
+      "kev:v5/transfer-v5/development.jsonl",
+      "kev:v5/transfer-v5/test.jsonl",
+      "kev:v6/decision-v6/calibration.jsonl",
+      "kev:v6/decision-v6/development.jsonl",
+      "kev:v6/decision-v6/test.jsonl",
+      "kev:v6/transfer-v6/development.jsonl",
+      "kev:v6/transfer-v6/test.jsonl",
+      "kev:v7/decision-v7/calibration.jsonl",
+      "kev:v7/decision-v7/development.jsonl",
+      "kev:v7/decision-v7/test.jsonl",
+      "kev:v8/decision-v8/calibration.jsonl",
+      "kev:v8/decision-v8/development.jsonl",
+      "kev:v8/decision-v8/test.jsonl",
+      "kev:v9/transfer-v9/development.jsonl",
+      "kev:v9/transfer-v9/test.jsonl"
+    ],
+    "dropped": {
+      "train": 0,
+      "calibration": 0,
+      "development": 0
+    }
+  },
+  "trainable_sources": [
+    "aegis",
+    "agnews",
+    "amazon",
+    "banking77",
+    "boolq",
+    "cfpb",
+    "codereviewer",
+    "commitpackft",
+    "compositional",
+    "dbpedia14",
+    "flakeflagger",
+    "hard_ambiguous",
+    "hard_judge",
+    "hard_long_policy",
+    "hard_multi_hop",
+    "hard_probability",
+    "hard_temporal_numeric",
+    "hard_tradeoff",
+    "imdb",
+    "legacy_policy",
+    "longstate",
+    "mnli",
+    "night2_dates",
+    "night2_unknowable",
+    "night2_unknowable_control",
+    "sst5",
+    "synthetic-v2-guardrails/grounding",
+    "synthetic-v2-guardrails/injection",
+    "synthetic-v2-guardrails/pii",
+    "synthetic-v2/agent_sessions",
+    "synthetic-v2/ood",
+    "synthetic-v2/tone",
+    "tasksource",
+    "trec",
+    "yelp"
+  ],
+  "eval_only_sources": [],
+  "holdout_sources": [],
+  "base_revisions": {
+    "Qwen/Qwen3.8-27B": "1d4bf0f2ff6012fd82039f2fa52739d0dd7c60c0"
+  },
+  "context": {
+    "max_state": 16384,
+    "max_branch": 17024,
+    "max_packed": 18048,
+    "truncate": false,
+    "admission_branch_headroom": 64,
+    "tokenizer": {
+      "model": "Qwen/Qwen3.8-27B",
+      "revision": "1d4bf0f2ff6012fd82039f2fa52739d0dd7c60c0"
+    },
+    "note": "train with --max_state 16384"
+  },
+  "epoch_projection": {
+    "method": "Round 25's epoch-time projection for an assembled suite, with round 22's pass-time model (PLAN.md \"Round 22\": per GPU a micro-batch slot costs A + SCALE x (B x P + C x n x S^2), P = padded pass tokens (k), n = states in the pass, S = the longest (k); a step is the sum over its slots of the slowest rank; SCALE = 1.469 is the fit that reproduced round 21's measured steps), on the exact plan kev.train deals with --length_sort 1 --pass_tokens_max 40960, 8 ranks, batch 8, accum 2: kev.train.balanced_runs + the ceiling loop (the replica round 22 checked against kev.train.microbatch_plan), over each record's exact epoch-0 token shapes (augmented variant + none-pair siblings under --p_none_pair 0.25 --none_pair_max_state 8192, seed 0: the shapes file round 22 computed for every sft-v2-r21 train record, which covers every sft-v2-r25 record). Round 22 measured ~50 s per step against the model's 58.6, so `anchored` scales by 50 / 58.6.",
+    "records": 45515,
+    "none_paired_records": 6681,
+    "steps": 356,
+    "micro_batches_per_rank": 712,
+    "largest_pass_tokens": 25590,
+    "epoch_hours_model": 2.22,
+    "seconds_per_step_model": 22.5,
+    "epoch_hours_anchored": 1.9,
+    "snapshot_steps": [
+      89,
+      178,
+      267
+    ],
+    "in_trial_scoring_hours": 0.67,
+    "attempt_hours_model": 3.36,
+    "attempt_hours_anchored": 3.02
+  },
+  "inputs": {
+    "components": {
+      "sft-v2-r22": {
+        "suite": "evals/sft-v2-r22"
+      }
+    },
+    "note": "every record is an sft-v2-r22 record, unchanged; kev.rounds follows sft-v2-r22's manifest to its components"
+  },
+  "code": {
+    "repository": "jaredpalmer/kev-sft (private)",
+    "branch": "assemble-r25",
+    "commit": "c8644ef97d72b6dd9236ee497bbd36ec1f1c2a47",
+    "dirty": false,
+    "files_sha256": {
+      "assemble/__init__.py": "07b2d8f66fdb3f9bcde6dab77f7a6b83ca3bf5f8f9f5b82f8401c0aada2c1ed7",
+      "assemble/build.py": "3b800bf5f80c9d77f47edb8b1b1c4208c8b3f85ef402235b3f856fa9a2dd15f3",
+      "assemble/build_v2.py": "49d0f49818e713f46dc48fd1624d9c0e288584429677d1d1b5a5f94ed4e90ab0",
+      "assemble/derive_r25.py": "3c78189c4c9c171f89546b4753c78bc55e712427d29ba6bd62a733247315ebff",
+      "assemble/epoch_estimate.py": "89baa2e630dbcb0cef93c110cf00f722dc11e3d5b04f36ce49dbfa3908535103",
+      "assemble/epoch_r25.py": "6d5e882cdaa2d19245d61b6e71a52746cb966fd6fa7a99095f810c3e3ca5d623",
+      "assemble/screen_breadth.py": "0c71380692f80cecf134e13838a52a2ea44d40af63c9b310d670bdc8ccdb1a9c",
+      "assemble/screen_components.py": "e05f251e730049b8e60e69f1f77b74adcb2230f941902c49a1d8271ca430fc69",
+      "assemble/screen_v2.py": "09826dcdf00af9f4a3aae764189214f67fc3c0d666e25666b1a3cb9516e195f3",
+      "common/__init__.py": "30f75923540794caec9fd6335fdb903eaf8bd1bd7e15d5ee318ae06add5501d7",
+      "common/admission.py": "ffbf0781b9145859d37dda320686c09fca760c6e02e85c9b0cf74ba2f47ffee9",
+      "common/hub.py": "de285c05340d2833c20ffd90599a7e30a8f735086e31381e00939ce1c62e0d54",
+      "common/records.py": "e1bad5c362edf2e11e63c1a2132e75a5f53f0bb4a7dc04bddc3c55745cbaae40",
+      "common/screen.py": "6965e4c3b604267ecf4fbcaf0f538b7b51caedd0218fcfb484338a7294413270"
+    },
+    "code_sha256": "fa19a176f82659cec512fd54928ab4df3a9d7a9c623e190be162caa9fb90dc2a"
+  },
+  "kev_package": {
+    "repository": "jaredpalmer/kev",
+    "commit": "461b5eac35d96e95c7dede21b9e0402b4cf7092d",
+    "kev/api.py": "a6f53af5354f8ea17915abc78360fdf291a5108ce39a53a2d9135d48c603ae58",
+    "kev/data.py": "e77a2fffeb8ee7e05b118893be8e38b8358aef97c3ca2e143cdce208201b92f9",
+    "kev/model.py": "d78fab645f29513a62816e594d10296b02bf166ba77835c55db5eda80c7f1978",
+    "kev/suite.py": "1f9a97968e857f0d35e58436997d03902f520a8a8097702703448eadd15a5d28"
+  },
+  "mirror": {
+    "dataset": "jaredpalmer/kev-private-train",
+    "revision": "1c855ff92294f37a6c3388a9906ab2f49fd3e485"
+  }
+}

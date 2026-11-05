@@ -1,0 +1,141 @@
+{
+  "what": "skills/kev-deploy/scripts/kev_serve.py at KEV_REF 0a58b699e458a195c32a73f4cd7cdf4435fcaab3, deployed as Modal app kev-refbump-27b with KEV_MODEL=jaredpalmer/kev-27b (default GPU list B200, H200, H100; Modal gave an H200), bearer key on; stopped after the checks",
+  "date": "2026-09-30",
+  "served": {
+    "run": "jaredpalmer/kev-27b",
+    "base": "Qwen/Qwen3.8-27B",
+    "lora": 0,
+    "device": "cuda",
+    "backend": "torch",
+    "dtype": "bfloat16",
+    "temperature": 1.319507910772894,
+    "cuda_graphs": {
+      "captured": 6,
+      "kept": 6,
+      "pending": 0,
+      "failed": 0
+    },
+    "prefix_cache": {
+      "size": 4,
+      "min_state_tokens": 0,
+      "max_tokens": 65536,
+      "hits": 0,
+      "misses": 3,
+      "cached_states": 3,
+      "oom_retries": 0
+    }
+  },
+  "gpu": "NVIDIA H200",
+  "cold_start_seconds": 202,
+  "long_state": {
+    "request": "long_request.json is not committed; make_long_state.py rebuilds it from docs/model-cards/*.md at this commit (a ticket, then ~15.6k tokens of model-card text with one knowledge-base sentence inserted at 60% depth)",
+    "request_sha256": "dc97559eb273339ff77a3572e215cc1325a0c6c4800f27547d2e744538be5563",
+    "state_tokens_tokenizer": 15695,
+    "usage_input_tokens": 15805,
+    "limit_at_old_pin_f2bb629": {
+      "SERVE_MAX_STATE": 8192,
+      "SERVE_MAX_BRANCH": 8192
+    },
+    "limit_at_new_pin": {
+      "SERVE_MAX_STATE": 65536,
+      "SERVE_MAX_BRANCH": 73728
+    },
+    "expected": {
+      "team": "billing",
+      "office": "dublin",
+      "duplicate": "yes"
+    },
+    "first": {
+      "http": 200,
+      "answers": {
+        "team": {
+          "type": "choice",
+          "choice": "billing",
+          "confidence": 0.9988,
+          "probabilities": {
+            "returns": 0.0007,
+            "shipping": 0.0,
+            "billing": 0.9992
+          }
+        },
+        "office": {
+          "type": "choice",
+          "choice": "dublin",
+          "confidence": 0.9998,
+          "probabilities": {
+            "dublin": 0.9999,
+            "austin": 0.0,
+            "singapore": 0.0001
+          }
+        },
+        "duplicate": {
+          "type": "noul",
+          "noul": 0.9997
+        }
+      },
+      "latency_ms": 15335.3,
+      "round_trip_s": 16.5
+    },
+    "repeat": {
+      "http": 200,
+      "answers": {
+        "team": {
+          "type": "choice",
+          "choice": "billing",
+          "confidence": 0.9988,
+          "probabilities": {
+            "returns": 0.0007,
+            "shipping": 0.0,
+            "billing": 0.9992
+          }
+        },
+        "office": {
+          "type": "choice",
+          "choice": "dublin",
+          "confidence": 0.9998,
+          "probabilities": {
+            "dublin": 0.9999,
+            "austin": 0.0,
+            "singapore": 0.0001
+          }
+        },
+        "duplicate": {
+          "type": "noul",
+          "noul": 0.9997
+        }
+      },
+      "latency_ms": 364.3,
+      "round_trip_s": 1.16
+    },
+    "correct": true
+  },
+  "short_parity": {
+    "served": "runs/kev-deploy-27b-v2/semif-v1 (kev.benchmark --remote <endpoint> --suite evals/external/semif-v1 --remote-concurrency 8; development, 252 rows)",
+    "reference": "runs/rel27-public/0-jaredpalmer_kev-27b (kev.benchmark, anonymous Hub load of the same checkpoint on an H200, LocalPredictor)",
+    "rows": 252,
+    "max_abs_dp": 0.012182530675943992,
+    "mean_abs_dp": 0.0007932768680484608,
+    "p99_abs_dp": 0.007509667683079882,
+    "argmax_flips": 0,
+    "tolerance": 0.03,
+    "within_tolerance": true,
+    "clean": {
+      "n": {
+        "served": 144,
+        "reference": 144
+      },
+      "acc": {
+        "served": 0.9652777777777778,
+        "reference": 0.9652777777777778
+      },
+      "ece": {
+        "served": 0.05771168184745018,
+        "reference": 0.06049404849546461
+      },
+      "nll": {
+        "served": 0.12737823230857037,
+        "reference": 0.12745846257058913
+      }
+    }
+  }
+}

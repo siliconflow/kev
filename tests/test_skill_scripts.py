@@ -1,5 +1,5 @@
 """The kev-finetune skill's local scripts (skills/kev-finetune/scripts): record validation, state-grouped splitting,
-generator prompt/balancing and response parsing. Standard library only, no network.
+generator prompt/balancing and response parsing; the kev-deploy Modal configuration. No network.
 Run: uv run python -m pytest tests/test_skill_scripts.py -q
 """
 import json
@@ -19,6 +19,60 @@ import plan_size  # noqa: E402
 import split_data  # noqa: E402
 
 SPEC = json.loads((SKILL / "assets/workload.example.json").read_text(encoding="utf-8"))
+
+
+def modal_deployment(monkeypatch, **settings):
+    import modal
+    import runpy
+    for key in ("KEV_MODEL", "KEV_APP_NAME", "KEV_MIN_CONTAINERS", "KEV_GPU", "KEV_REGION", "KEV_FLASH",
+                "KEV_TRUNCATE_STATES", "KEV_API_KEY", "KEV_HF_SECRET"):
+        monkeypatch.delenv(key, raising=False)
+    for key, value in settings.items(): monkeypatch.setenv(key, value)
+    options = {}
+    for method in ("cls", "server"):
+        original = getattr(modal.App, method)
+        def register(self, _method=method, _original=original, **kwargs):
+            options[_method] = kwargs
+            return _original(self, **kwargs)
+        monkeypatch.setattr(modal.App, method, register)
+    concurrent = modal.concurrent
+    def concurrency(**kwargs):
+        options["concurrent"] = kwargs
+        return concurrent(**kwargs)
+    monkeypatch.setattr(modal, "concurrent", concurrency)
+    module = runpy.run_path(str(ROOT / "skills/kev-deploy/scripts/kev_serve.py"))
+    return module, options
+
+
+def test_modal_web_deployment_preserves_concurrency_and_scale_to_zero(monkeypatch):
+    import modal
+    module, options = modal_deployment(monkeypatch, KEV_API_KEY="pilot-test-key")
+    assert isinstance(module["Kev"], modal.Cls) and "server" not in options
+    assert options["concurrent"] == {"max_inputs": 64, "target_inputs": 32}
+    assert options["cls"]["min_containers"] == 0 and options["cls"]["region"] is None
+    assert options["cls"]["timeout"] == 600 and options["cls"]["startup_timeout"] == 1200
+    assert len(options["cls"]["secrets"]) == 1
+    assert module["SECRET"]["KEV_API_KEY"] == "pilot-test-key"
+
+
+@pytest.mark.parametrize("minimum, expected", [("0", 1), ("2", 2)])
+def test_modal_direct_server_uses_native_concurrency_and_application_auth(monkeypatch, minimum, expected):
+    import modal
+    module, options = modal_deployment(monkeypatch, KEV_FLASH="1", KEV_REGION="us-east,us-west",
+                                       KEV_MIN_CONTAINERS=minimum, KEV_API_KEY="pilot-test-key", KEV_TRUNCATE_STATES="1")
+    assert isinstance(module["Kev"], modal.Server)
+    assert "cls" not in options and "concurrent" not in options
+    server = options["server"]
+    assert server["target_concurrency"] == 64 and server["min_containers"] == expected
+    assert server["compute_region"] == ["us-east", "us-west"] and server["routing_region"] == "us-east"
+    assert server["port"] == 8000 and server["startup_timeout"] == 1200 and server["exit_grace_period"] == 120
+    assert server["unauthenticated"] is True and len(server["secrets"]) == 1   # Kev, not Modal's proxy, checks the bearer
+    assert module["SECRET"]["KEV_API_KEY"] == "pilot-test-key" and module["SETTINGS"]["KEV_TRUNCATE_STATES"] == "1"
+
+
+def test_modal_direct_server_requires_a_routing_region(monkeypatch):
+    with pytest.raises(SystemExit, match="set KEV_REGION"):
+        modal_deployment(monkeypatch, KEV_FLASH="1")
 
 
 def record(state, dept="billing", urgent=True, level=1):
@@ -49,6 +103,164 @@ def test_dedupe_drops_exact_copies_and_conflicting_states():
     kept, dupes, conflicts = split_data.dedupe(rows)
     assert dupes == 1 and conflicts == 1
     assert [r["state"] for r in kept] == ["login broken"]
+
+
+@pytest.mark.parametrize("left,right", [
+    ({"type": "score", "criteria": ["bad", "good"], "label": 1},
+     {"type": "score", "criteria": ["bad", "neutral", "good"], "label": 2}),
+    ({"type": "score", "instructions": "Rate anger", "criteria": ["bad", "good"], "label": 0},
+     {"type": "score", "instructions": "Rate joy", "criteria": ["bad", "good"], "label": 1}),
+    ({"type": "score", "criteria": ["bad", "good"], "label": 0},
+     {"type": "score", "criteria": ["good", "bad"], "label": 1}),
+    ({"type": "choice", "criteria": {"a": "billing", "b": "shipping"}, "label": "a"},
+     {"type": "choice", "criteria": {"a": "shipping", "b": "billing"}, "label": "b"}),
+    ({"type": "noul", "label": True},
+     {"type": "choice", "criteria": {"yes": "yes", "no": "no"}, "label": "yes"}),
+    ({"type": "noul", "label": True},
+     {"type": "noul", "criteria": {"true": "yes", "false": "no"}, "label": False}),
+])
+def test_dedupe_preserves_different_question_definitions(left, right):
+    rows = [{"state": "same input", "questions": {"answer": {"instructions": "Assess this input", **q}}} for q in (left, right)]
+    assert all(split_data.check_record(row) == [] for row in rows)
+    assert split_data.dedupe(rows) == (rows, 0, 0)
+
+
+@pytest.mark.parametrize("criteria", [
+    {"a": "billing", "b": "shipping"},
+    {"é": "naïve", "b": "autre"},
+])
+def test_dedupe_still_detects_conflicts_with_reordered_criteria_keys(criteria):
+    first = {"type": "choice", "instructions": "Route this", "criteria": criteria, "label": next(iter(criteria))}
+    second = {**first, "criteria": {k: criteria[k] for k in reversed(criteria)}, "label": next(reversed(criteria))}
+    rows = [{"state": "same input", "questions": {"answer": q}} for q in (first, second)]
+    assert split_data.dedupe(rows) == ([], 0, 1)
+
+
+def test_dedupe_treats_missing_and_null_noul_criteria_as_one_form():
+    bare = {"type": "noul", "instructions": "Urgent?", "label": True}
+    null = {"type": "noul", "instructions": "Urgent?", "criteria": None, "label": False}
+    rows = [{"state": "same input", "questions": {"urgent": q}} for q in (bare, null)]
+    assert all(split_data.check_record(row) == [] for row in rows)
+    assert split_data.dedupe(rows) == ([], 0, 1)
+
+
+def test_label_table_counts_each_question_definition():
+    short = {"type": "score", "instructions": "Rate it", "criteria": ["bad", "good"], "label": 1}
+    long = {"type": "score", "instructions": "Rate it", "criteria": ["bad", "neutral", "good"], "label": 1}
+    rows = [{"state": "same", "questions": {"rating": q}} for q in (short, long)]
+    table = split_data.label_table(rows)
+    assert table["rating (2 levels)"] == Counter({"1": 1})
+    assert table["rating (3 levels)"] == Counter({"1": 1})
+    warnings = {w.split(":")[0]: w for w in split_data.warnings_for(rows)}
+    assert "['0']" in warnings["question 'rating (2 levels)'"]
+    assert "['0', '2']" in warnings["question 'rating (3 levels)'"]
+    assert set(split_data.label_table([record("x")])) == {"department", "escalate", "frustration"}
+    plain = {"type": "noul", "instructions": "Is it urgent?", "label": True}
+    described = {"type": "noul", "instructions": "Is it urgent?", "criteria": {"true": "yes", "false": "no"}, "label": False}
+    noul_rows = [{"state": f"n{i}", "questions": {"answer": q}} for i, q in enumerate((plain, described))]
+    assert set(split_data.label_table(noul_rows)) == {"answer (noul)", "answer (noul) #2"}
+
+
+def test_form_names_stay_with_the_definition_when_the_file_is_reversed():
+    forms = [{"type": "choice", "instructions": instr, "criteria": {"a": "1", "b": "2"}, "label": "a"} for instr in ("Alpha", "Beta", "Gamma")]
+    rows = [{"state": f"s{i}", "questions": {"answer": q}} for i, q in enumerate(forms)]
+    def named(seq):
+        return {sample["instructions"]: name for name, sample, _ in split_data.label_groups(seq)}
+    assert named(rows) == named(list(reversed(rows)))
+    assert set(named(rows).values()) == {"answer (2 options)", "answer (2 options) #2", "answer (2 options) #3"}
+
+
+def test_form_name_does_not_replace_another_question_id():
+    rows = [
+        {"state": "a", "questions": {
+            "answer": {"type": "choice", "instructions": "One", "criteria": {"a": "1", "b": "2"}, "label": "a"},
+            "answer (2 options)": {"type": "noul", "instructions": "Other?", "label": True}}},
+        {"state": "b", "questions": {
+            "answer": {"type": "choice", "instructions": "Two", "criteria": {"c": "1", "d": "2"}, "label": "c"}}}]
+    table = split_data.label_table(rows)
+    assert table["answer (2 options)"] == Counter({"true": 1})
+    assert sum(sum(counts.values()) for counts in table.values()) == 3
+    assert Counter({"a": 1}) in table.values() and Counter({"c": 1}) in table.values()
+
+
+def test_summary_keeps_question_ids_in_first_seen_order(tmp_path, monkeypatch):
+    rows = [{"state": f"s{i}", "questions": {
+        "zebra": {"type": "noul", "instructions": "Z?", "label": i % 2 == 0},
+        "apple": {"type": "noul", "instructions": "A?", "label": True}}} for i in range(30)]
+    src, out = tmp_path / "ids.jsonl", tmp_path / "out"
+    src.write_text("".join(json.dumps(row) + "\n" for row in rows), encoding="utf-8")
+    monkeypatch.setattr(sys, "argv", ["split_data.py", str(src), "--out", str(out)])
+    assert split_data.main() == 0
+    summary = json.loads((out / "summary.json").read_text(encoding="utf-8"))
+    assert list(split_data.label_table(rows)) == ["zebra", "apple"]
+    for part in summary["partitions"].values():
+        assert list(part["labels"]) == ["zebra", "apple"]
+
+
+def test_summary_uses_one_name_for_a_form_in_every_partition(tmp_path, monkeypatch):
+    short = {"type": "score", "instructions": "Rate", "criteria": ["bad", "good"], "label": 1}
+    long = {"type": "score", "instructions": "Rate", "criteria": ["bad", "neutral", "good"], "label": 2}
+    rows = [{"state": f"short {i}", "questions": {"rating": short}} for i in range(2)]
+    rows.append({"state": "long 0", "questions": {"rating": long}})
+    src, out = tmp_path / "scales.jsonl", tmp_path / "out"
+    src.write_text("".join(json.dumps(row) + "\n" for row in rows), encoding="utf-8")
+    # 3 states at 0.34/0.34 puts one state in each partition, so two partitions contain only the short scale.
+    monkeypatch.setattr(sys, "argv", ["split_data.py", str(src), "--out", str(out), "--calibration", "0.34", "--development", "0.34"])
+    assert split_data.main() == 0
+    summary = json.loads((out / "summary.json").read_text(encoding="utf-8"))
+    keys = [set(part["labels"]) for part in summary["partitions"].values()]
+    assert {"rating (3 levels)"} in keys and {"rating (2 levels)"} in keys
+    assert all("rating" not in part["labels"] for part in summary["partitions"].values())
+
+
+def test_holdout_scale_keeps_its_own_summary_name(tmp_path, monkeypatch):
+    short = {"type": "score", "instructions": "Rate", "criteria": ["bad", "good"], "label": 1}
+    long = {"type": "score", "instructions": "Rate", "criteria": ["bad", "neutral", "good"], "label": 2}
+    synthetic = [{"state": f"gen {i}", "questions": {"rating": short}} for i in range(10)]
+    real = [{"state": f"real {i}", "questions": {"rating": long}} for i in range(6)]
+    for name, group in (("gen.jsonl", synthetic), ("real.jsonl", real)):
+        (tmp_path / name).write_text("".join(json.dumps(row) + "\n" for row in group), encoding="utf-8")
+    monkeypatch.setattr(sys, "argv", ["split_data.py", str(tmp_path / "gen.jsonl"), "--out", str(tmp_path / "out"), "--holdout", str(tmp_path / "real.jsonl")])
+    assert split_data.main() == 0
+    summary = json.loads((tmp_path / "out/summary.json").read_text(encoding="utf-8"))
+    assert set(summary["partitions"]["train"]["labels"]) == {"rating (2 levels)"}
+    assert set(summary["partitions"]["calibration"]["labels"]) == {"rating (3 levels)"}
+    assert set(summary["partitions"]["development"]["labels"]) == {"rating (3 levels)"}
+
+
+def test_invalid_criteria_is_rejected_before_the_histogram(tmp_path, monkeypatch):
+    rows = [record(f"case {i}") for i in range(30)]
+    bad = [{"state": "no criteria", "questions": {"rating": {"type": "score", "instructions": "Rate", "label": 1}}},
+           {"state": "list criteria", "questions": {"team": {"type": "choice", "instructions": "Who?", "criteria": ["a", "b"], "label": "a"}}}]
+    src = tmp_path / "d.jsonl"
+    src.write_text("".join(json.dumps(row) + "\n" for row in rows + bad), encoding="utf-8")
+    monkeypatch.setattr(sys, "argv", ["split_data.py", str(src), "--out", str(tmp_path / "out")])
+    assert split_data.main() == 0
+    summary = json.loads((tmp_path / "out/summary.json").read_text(encoding="utf-8"))
+    assert summary["invalid_lines"] == 2 and summary["records"] == 30
+    assert all(set(part["labels"]) == {"department", "escalate", "frustration"} for part in summary["partitions"].values())
+
+
+def test_split_cli_keeps_question_variants_in_the_same_partition(tmp_path, monkeypatch):
+    rows = [{"state": f"case {i}", "questions": {"rating": {
+        "type": "score", "instructions": "Rate the experience", "criteria": levels, "label": len(levels) - 1}}}
+        for i in range(60) for levels in (["bad", "good"], ["bad", "neutral", "good"])]
+    src, out = tmp_path / "variants.jsonl", tmp_path / "out"
+    src.write_text("".join(json.dumps(row) + "\n" for row in rows), encoding="utf-8")
+    monkeypatch.setattr(sys, "argv", ["split_data.py", str(src), "--out", str(out)])
+    assert split_data.main() == 0
+    summary = json.loads((out / "summary.json").read_text(encoding="utf-8"))
+    assert summary["records"] == 120 and summary["conflicting_states_dropped"] == 0
+    for part in summary["partitions"].values():
+        assert set(part["labels"]) == {"rating (2 levels)", "rating (3 levels)"}
+    states = []
+    for name in ("train", "calibration", "development"):
+        part = [json.loads(line) for line in (out / f"{name}.jsonl").read_text(encoding="utf-8").splitlines()]
+        counts = Counter(split_data.state_key(row["state"]) for row in part)
+        assert set(counts.values()) == {2}
+        states.append(set(counts))
+    assert sum(map(len, states)) == 60
+    assert not (states[0] & states[1] or states[0] & states[2] or states[1] & states[2])
 
 
 def test_split_keeps_states_together_and_is_deterministic():
@@ -151,6 +363,198 @@ def test_convert_label_matching():
     assert convert_data.map_label(SPEC["questions"]["department"], "RETURNS", {}, 0) == ("returns", None)
     assert convert_data.map_label(SPEC["questions"]["escalate"], "N", {}, 0) == (False, None)
     assert convert_data.get({"meta": {"team": "x"}}, "meta.team") == "x"
+
+
+@pytest.mark.parametrize("value", ["1.9", "-0.5", "0.99999999999999999", "NaN", "Infinity", "-Infinity", "1e9999999"])
+def test_convert_rejects_fractional_and_nonfinite_score_indices(value):
+    label, reason = convert_data.map_label(SPEC["questions"]["frustration"], value, {}, 0)
+    assert label is None and reason
+
+
+@pytest.mark.parametrize("value,offset,expected", [("1", 0, 1), ("1.0", 0, 1), ("2e0", 1, 1), ("-0.0", 0, 0), ("Annoyed", 0, 1)])
+def test_convert_preserves_integer_scores_offsets_and_level_text(value, offset, expected):
+    assert convert_data.map_label(SPEC["questions"]["frustration"], value, {}, offset) == (expected, None)
+
+
+def test_convert_skips_invalid_scores_and_continues(tmp_path, monkeypatch, capsys):
+    spec = tmp_path / "spec.json"
+    spec.write_text(json.dumps({"questions": {"rating": SPEC["questions"]["frustration"]}}), encoding="utf-8")
+    src, out = tmp_path / "ratings.csv", tmp_path / "out.jsonl"
+    src.write_text("body,rating\nfirst,1.9\nsecond,Infinity\nthird,2.0\nfourth,medium\nnear,0.99999999999999999\n", encoding="utf-8")
+    monkeypatch.setattr(sys, "argv", ["convert_data.py", str(spec), str(src), "--state", "body", "--score-offset", "1",
+                                    "--map", "rating=medium:2.0", "--out", str(out)])
+    assert convert_data.main() == 0
+    rows = [json.loads(line) for line in out.read_text(encoding="utf-8").splitlines()]
+    assert [r["state"] for r in rows] == ["third", "fourth"]
+    assert all(r["questions"]["rating"]["label"] == 1 for r in rows)
+    assert "3 rows skipped" in capsys.readouterr().out
+
+
+RATING_SPEC = {"questions": {"rating": {"type": "score", "instructions": "Rate this synthetic example.", "criteria": ["low", "medium", "high"]}}}
+
+
+def test_convert_jsonl_skips_near_integer_score(tmp_path, monkeypatch, capsys):
+    spec, src, out = tmp_path / "workload.json", tmp_path / "ratings.jsonl", tmp_path / "converted.jsonl"
+    spec.write_text(json.dumps(RATING_SPEC), encoding="utf-8")
+    text = ('{"body":"valid integer","rating":1}\n'
+            '{"body":"ordinary fraction","rating":1.9}\n'
+            '{"body":"near-integer fraction","rating":0.99999999999999999}\n')
+    src.write_text(text, encoding="utf-8")
+    read = list(convert_data.rows_from(src))
+    assert isinstance(read[0]["rating"], int) and not isinstance(read[0]["rating"], bool)
+    assert isinstance(read[1]["rating"], convert_data.Decimal) and str(read[1]["rating"]) == "1.9"
+    assert str(read[2]["rating"]) == "0.99999999999999999"
+    monkeypatch.setattr(sys, "argv", ["convert_data.py", str(spec), str(src), "--state", "body", "--out", str(out)])
+    assert convert_data.main() == 0
+    written = [json.loads(line) for line in out.read_text(encoding="utf-8").splitlines()]
+    assert [row["state"] for row in written] == ["valid integer"]
+    assert written[0]["questions"]["rating"]["label"] == 1 and type(written[0]["questions"]["rating"]["label"]) is int
+    assert "2 rows skipped" in capsys.readouterr().out
+
+
+def test_convert_json_state_numbers_stay_plain(tmp_path, monkeypatch, capsys):
+    spec = tmp_path / "workload.json"
+    spec.write_text(json.dumps(RATING_SPEC), encoding="utf-8")
+    payload = ('[{"body":"one point zero","weight":0.25,"count":2,"nested":{"n":1.5,"sci":1e20},"rating":1.0,'
+               '"trail":1.00,"neg":-0.0,"big":9007199254740993},'
+               '{"body":"near-integer fraction","weight":0.1,"rating":0.99999999999999999}]')
+    columns = "body,weight,count,nested,trail,neg,big"
+    for name, text in (("ratings.json", payload), ("wrapped.json", '{"rows": ' + payload + "}"), ("data.json", '{"data": ' + payload + "}")):
+        src, out = tmp_path / name, tmp_path / f"{name}.out.jsonl"
+        src.write_text(text, encoding="utf-8")
+        monkeypatch.setattr(sys, "argv", ["convert_data.py", str(spec), str(src), "--state", columns, "--out", str(out)])
+        assert convert_data.main() == 0
+        raw = out.read_text(encoding="utf-8")
+        written = [json.loads(line) for line in raw.splitlines()]
+        assert len(written) == 1 and written[0]["questions"]["rating"]["label"] == 1
+        state = written[0]["state"]
+        assert state["body"] == "one point zero"
+        assert state["weight"] == 0.25 and type(state["weight"]) is float
+        assert state["count"] == 2 and type(state["count"]) is int
+        assert state["nested"] == {"n": 1.5, "sci": 1e20}
+        assert state["big"] == 9007199254740993 and type(state["big"]) is int
+        # Same bytes json.loads would have written for these numbers, including exponent, trailing zeros and -0.0.
+        plain = json.loads(payload)[0]
+        for key in ("weight", "count", "nested", "trail", "neg", "big"):
+            assert json.dumps(state[key]) == json.dumps(plain[key])
+        assert "Decimal" not in raw
+        assert "1 rows skipped" in capsys.readouterr().out
+
+
+def test_convert_json_score_edges_and_other_labels_keep_float_spelling(tmp_path, monkeypatch, capsys):
+    """1e0 / 1.00 / -0.0 stay whole levels. NaN, Infinity and 1e9999999 are skipped.
+    A noul or choice label keeps the str(float) spelling, so 1e0 is not the integer 1 and 1.0e1 is not option "10".
+    """
+    spec = tmp_path / "workload.json"
+    questions = {"rating": RATING_SPEC["questions"]["rating"],
+                 "flag": {"type": "noul", "instructions": "Yes?", "criteria": {"true": "yes", "false": "no"}},
+                 "bucket": {"type": "choice", "instructions": "Which?", "criteria": {"10": "ten", "25": None, "billing": "money"}}}
+    spec.write_text(json.dumps({"questions": questions}), encoding="utf-8")
+    rows = "\n".join([
+        '{"body":"e0","rating":1e0,"flag":true,"bucket":"billing"}',
+        '{"body":"two","rating":2e0,"flag":false,"bucket":"10"}',
+        '{"body":"one","rating":1.0,"flag":true,"bucket":"billing"}',
+        '{"body":"zeros","rating":1.00,"flag":true,"bucket":"billing"}',
+        '{"body":"neg","rating":-0.0,"flag":false,"bucket":"billing"}',
+        '{"body":"negexp","rating":-0e0,"flag":false,"bucket":"billing"}',
+        '{"body":"near","rating":0.99999999999999999,"flag":true,"bucket":"billing"}',
+        '{"body":"fraction","rating":1.9,"flag":true,"bucket":"billing"}',
+        '{"body":"nan","rating":NaN,"flag":true,"bucket":"billing"}',
+        '{"body":"inf","rating":Infinity,"flag":true,"bucket":"billing"}',
+        '{"body":"ninf","rating":-Infinity,"flag":true,"bucket":"billing"}',
+        '{"body":"huge","rating":1e9999999,"flag":true,"bucket":"billing"}',
+        '{"body":"big","rating":1000000000000000000000000000001,"flag":true,"bucket":"billing"}',
+        '{"body":"noul exp","rating":1,"flag":1e0,"bucket":"billing"}',
+        '{"body":"noul zero","rating":1,"flag":0e0,"bucket":"billing"}',
+        '{"body":"noul float","rating":1,"flag":1.0,"bucket":"billing"}',
+        '{"body":"noul int","rating":0,"flag":1,"bucket":"10"}',
+        '{"body":"choice exp","rating":1,"flag":true,"bucket":1.0e1}',
+        '{"body":"choice 25","rating":1,"flag":false,"bucket":2.5e1}',
+        '{"body":"choice float","rating":1,"flag":true,"bucket":10.0}',
+        '{"body":"state","rating":0,"flag":false,"bucket":"billing","sci":1e20,"neg":-0.0,"nan":NaN,"inf":Infinity}',
+    ]) + "\n"
+    src, out = tmp_path / "rows.jsonl", tmp_path / "out.jsonl"
+    src.write_text(rows, encoding="utf-8")
+    monkeypatch.setattr(sys, "argv", ["convert_data.py", str(spec), str(src), "--state", "body,sci,neg,nan,inf", "--out", str(out)])
+    assert convert_data.main() == 0
+    written = [json.loads(line) for line in out.read_text(encoding="utf-8").splitlines()]
+    kept = [row["state"]["body"] for row in written]
+    assert kept == ["e0", "two", "one", "zeros", "neg", "negexp", "noul int", "state"]
+    labels = {row["state"]["body"]: row["questions"]["rating"]["label"] for row in written}
+    assert labels == {"e0": 1, "two": 2, "one": 1, "zeros": 1, "neg": 0, "negexp": 0, "noul int": 0, "state": 0}
+    assert all(type(row["questions"]["rating"]["label"]) is int for row in written)
+    noul_int = next(row for row in written if row["state"]["body"] == "noul int")
+    assert noul_int["questions"]["flag"]["label"] is True and noul_int["questions"]["bucket"]["label"] == "10"
+    state = next(row for row in written if row["state"]["body"] == "state")["state"]
+    plain = json.loads(rows.splitlines()[-1])
+    for key in ("sci", "neg", "nan", "inf"):
+        assert json.dumps(state[key]) == json.dumps(plain[key])
+    report = capsys.readouterr().out
+    assert "13 rows skipped" in report and "0.99999999999999999" in report and "1E+9999999" in report
+    spec.write_text(json.dumps(RATING_SPEC), encoding="utf-8")
+    mapped, mapped_out = tmp_path / "mapped.jsonl", tmp_path / "mapped.out.jsonl"
+    mapped.write_text('{"body":"a","rating":1.00}\n{"body":"b","rating":1e0}\n{"body":"c","rating":1.0}\n', encoding="utf-8")
+    monkeypatch.setattr(sys, "argv", ["convert_data.py", str(spec), str(mapped), "--state", "body", "--map", "rating=1.0:2", "--out", str(mapped_out)])
+    assert convert_data.main() == 0
+    mapped_rows = [json.loads(line) for line in mapped_out.read_text(encoding="utf-8").splitlines()]
+    assert [row["state"] for row in mapped_rows] == ["a", "b", "c"]
+    assert [row["questions"]["rating"]["label"] for row in mapped_rows] == [2, 2, 2]
+    csv_src, csv_out = tmp_path / "ratings.csv", tmp_path / "csv.jsonl"
+    csv_src.write_text("body,rating\ne0,2e0\nneg,-0.0\nnear,0.99999999999999999\nhuge,1e9999999\ninf,Infinity\n", encoding="utf-8")
+    monkeypatch.setattr(sys, "argv", ["convert_data.py", str(spec), str(csv_src), "--state", "body", "--out", str(csv_out)])
+    assert convert_data.main() == 0
+    csv_rows = [json.loads(line) for line in csv_out.read_text(encoding="utf-8").splitlines()]
+    assert [row["state"] for row in csv_rows] == ["e0", "neg"]
+    assert [row["questions"]["rating"]["label"] for row in csv_rows] == [2, 0]
+
+
+def test_convert_jsonl_keeps_choice_and_noul(tmp_path, monkeypatch):
+    src, out = tmp_path / "rows.jsonl", tmp_path / "out.jsonl"
+    src.write_text('{"body":"charged twice","department":"billing","escalate":true,"frustration":0}\n', encoding="utf-8")
+    monkeypatch.setattr(sys, "argv", ["convert_data.py", str(SKILL / "assets/workload.example.json"), str(src), "--state", "body", "--out", str(out)])
+    assert convert_data.main() == 0
+    row = json.loads(out.read_text(encoding="utf-8"))
+    assert row["questions"]["department"]["label"] == "billing"
+    assert row["questions"]["escalate"]["label"] is True
+    assert row["questions"]["frustration"]["label"] == 0
+
+
+def test_parse_records_rejects_near_integer_score():
+    fraction = '{"records":[{"state":{"note":0.25},"labels":{"department":"billing","escalate":true,"frustration":0.99999999999999999}}]}'
+    item = generate_data.parse_records(fraction)[0]
+    record, why = generate_data.to_record(SPEC, item)
+    assert record is None and "score label" in why
+    kept = '{"records":[{"state":{"note":0.25},"labels":{"department":"billing","escalate":true,"frustration":1.0}}]}'
+    record, why = generate_data.to_record(SPEC, generate_data.parse_records(kept)[0])
+    assert why is None and record["questions"]["frustration"]["label"] == 1
+    assert record["state"] == {"note": 0.25} and type(record["state"]["note"]) is float
+    assert "Decimal" not in json.dumps(record)
+    integer = '{"records":[{"state":"valid integer","labels":{"department":"billing","escalate":false,"frustration":1}}]}'
+    record, why = generate_data.to_record(SPEC, generate_data.parse_records(integer)[0])
+    assert why is None and record["questions"]["frustration"]["label"] == 1 and record["questions"]["escalate"]["label"] is False
+    huge = '{"records":[{"state":"x","labels":{"department":"billing","escalate":true,"frustration":1e9999999}}]}'
+    record, why = generate_data.to_record(SPEC, generate_data.parse_records(huge)[0])
+    assert record is None and "score label" in why and "Decimal" not in why and len(why) < 200
+    for token, label in (("1e0", 1), ("2e0", 2), ("1.00", 1), ("-0.0", 0), ("-0e0", 0)):
+        body = '{"records":[{"state":{"note":' + token + ',"big":9007199254740993},"labels":{"department":"billing","escalate":false,"frustration":' + token + '}}]}'
+        record, why = generate_data.to_record(SPEC, generate_data.parse_records(body)[0])
+        assert why is None and record["questions"]["frustration"]["label"] == label and type(record["questions"]["frustration"]["label"]) is int
+        assert json.dumps(record["state"]["note"]) == json.dumps(json.loads(token))
+        assert record["state"]["big"] == 9007199254740993 and type(record["state"]["big"]) is int
+    for token in ("1.9", "0.99999999999999999", "NaN", "Infinity", "-Infinity"):
+        body = '{"records":[{"state":"x","labels":{"department":"billing","escalate":true,"frustration":' + token + '}}]}'
+        record, why = generate_data.to_record(SPEC, generate_data.parse_records(body)[0])
+        assert record is None and "score label" in why and "Decimal" not in why
+    noul = '{"records":[{"state":"x","labels":{"department":"billing","escalate":1e0,"frustration":1}}]}'
+    record, why = generate_data.to_record(SPEC, generate_data.parse_records(noul)[0])
+    assert record is None and "Decimal" not in why
+    choice = '{"records":[{"state":"x","labels":{"department":1.0e1,"escalate":true,"frustration":1}}]}'
+    record, why = generate_data.to_record(SPEC, generate_data.parse_records(choice)[0])
+    assert record is None and "Decimal" not in why
+    text = '{"records":[{"state":"x","labels":{"department":"billing","escalate":true,"frustration":"Annoyed"}}]}'
+    record, why = generate_data.to_record(SPEC, generate_data.parse_records(text)[0])
+    assert record is None and "score label" in why
+    assert generate_data.coerce_label(SPEC["questions"]["frustration"], 2.0) == 2
 
 
 def test_extract_finds_typescript_and_python_questions(tmp_path):

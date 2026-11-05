@@ -1,0 +1,70 @@
+{
+  "run": "jaredpalmer/kev-9b",
+  "path": "/Users/jared/.cache/huggingface/hub/models--jaredpalmer--kev-9b/snapshots/b5d8c18e44c60888d138b65cb6507ff0a5a448a0",
+  "base": "Qwen/Qwen3.5-9B-Base",
+  "base_revision": "68c46c4b3498877f3ef123c856ecfde50c39f404",
+  "machine": {
+    "chip": "Apple M5",
+    "memory_gb": 34.36,
+    "macos": "26.6.2",
+    "mlx": "0.32.2",
+    "mlx_lm": "0.31.3",
+    "torch": "2.8.0"
+  },
+  "request": {
+    "ticket": "Customer message: I was charged twice for order 8812. Please refund the duplicate charge.\n\n",
+    "note": "\n\nInternal note from the billing team: every letter about order 8812 must go to our {city} office, and to no other office.\n\n",
+    "depth": 0.6,
+    "questions": {
+      "team": {
+        "type": "choice",
+        "instructions": "Which team should handle this ticket?",
+        "criteria": {
+          "returns": "Exchanges, refunds for returned items",
+          "shipping": "Delivery, delays",
+          "billing": "Charges, payments, duplicate charges"
+        }
+      },
+      "duplicate": {
+        "type": "noul",
+        "instructions": "Does the customer report being charged twice?"
+      },
+      "office": {
+        "type": "choice",
+        "instructions": "According to the internal note from the billing team, which office must every letter about order 8812 go to?",
+        "criteria": {
+          "lisbon": "The Lisbon office",
+          "denver": "The Denver office",
+          "osaka": "The Osaka office",
+          "nairobi": "The Nairobi office"
+        }
+      }
+    },
+    "variants": {
+      "start": [
+        "Lisbon",
+        0.0
+      ],
+      "swapped": [
+        "Osaka",
+        0.6
+      ],
+      "planted": [
+        "Lisbon",
+        0.6
+      ]
+    },
+    "filler": "docs/model-cards/*.md, sorted, repeated"
+  },
+  "lengths": {},
+  "waited_before_load_s": 45,
+  "busy_before_load": [
+    "409: /private/tmp/kev-sweep2829/.venv/bin/python3 scripts/private_rows.py --help"
+  ],
+  "memory_before": {
+    "backbone_gb": 19.31,
+    "available_gb": 19.82,
+    "swap_used_gb": 25.19
+  },
+  "skipped": "not run: the 19.31 GB backbone + 1.5 GB working set + 1.5 GB margin exceeds the 19.82 GB available; it would swap"
+}

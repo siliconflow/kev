@@ -1,0 +1,147 @@
+{
+ "candidate": "runs/r25-init-kev-27b-merged-transfer4/rows.json (/runs/r25-init/kev-27b-merged/checkpoint, full weights bf16, 1 H200)",
+ "reference": "runs/r6-27b-v2/01-trial-1/transfer/rows.json (Kev-27B: bf16 base + unmerged fp32 LoRA)",
+ "suite": "evals/v4/transfer-v4 development",
+ "questions": 764,
+ "method": "raw logits (logits x inference_temperature) of both sides re-served at T",
+ "T=1.38191": {
+  "max_abs_dp": 0.01829,
+  "median_abs_dp": 0.000608,
+  "p99_abs_dp": 0.01227,
+  "argmax_flips": 3,
+  "flips": [
+   {
+    "id": "emotion/test/690",
+    "question": "emotion",
+    "variant": "clean",
+    "label": 0,
+    "candidate_p": [
+     0.3831,
+     0.3822,
+     0.2072,
+     0.0101,
+     0.0064,
+     0.0109
+    ],
+    "reference_p": [
+     0.3756,
+     0.3898,
+     0.2068,
+     0.0105,
+     0.0063,
+     0.011
+    ]
+   },
+   {
+    "id": "tweet_offensive/test/274",
+    "question": "offensive",
+    "variant": "clean",
+    "label": 1,
+    "candidate_p": [
+     0.4985,
+     0.5015
+    ],
+    "reference_p": [
+     0.5026,
+     0.4974
+    ]
+   },
+   {
+    "id": "emotion/test/790/permuted",
+    "question": "emotion",
+    "variant": "permuted",
+    "label": 2,
+    "candidate_p": [
+     0.4253,
+     0.0061,
+     0.4274,
+     0.0352,
+     0.0048,
+     0.1012
+    ],
+    "reference_p": [
+     0.4295,
+     0.006,
+     0.4265,
+     0.0345,
+     0.0047,
+     0.0989
+    ]
+   }
+  ],
+  "argmax_correct": {
+   "candidate": 644,
+   "reference": 641
+  }
+ },
+ "T=1": {
+  "max_abs_dp": 0.0215,
+  "median_abs_dp": 0.000243,
+  "p99_abs_dp": 0.01376,
+  "argmax_flips": 3,
+  "flips": [
+   {
+    "id": "emotion/test/690",
+    "question": "emotion",
+    "variant": "clean",
+    "label": 0,
+    "candidate_p": [
+     0.4096,
+     0.4081,
+     0.1751,
+     0.0027,
+     0.0014,
+     0.003
+    ],
+    "reference_p": [
+     0.3986,
+     0.4194,
+     0.1747,
+     0.0028,
+     0.0014,
+     0.003
+    ]
+   },
+   {
+    "id": "tweet_offensive/test/274",
+    "question": "offensive",
+    "variant": "clean",
+    "label": 1,
+    "candidate_p": [
+     0.4979,
+     0.5021
+    ],
+    "reference_p": [
+     0.5036,
+     0.4964
+    ]
+   },
+   {
+    "id": "emotion/test/790/permuted",
+    "question": "emotion",
+    "variant": "permuted",
+    "label": 2,
+    "candidate_p": [
+     0.4585,
+     0.0013,
+     0.4616,
+     0.0146,
+     0.0009,
+     0.063
+    ],
+    "reference_p": [
+     0.4636,
+     0.0013,
+     0.4592,
+     0.0142,
+     0.0009,
+     0.0609
+    ]
+   }
+  ],
+  "argmax_correct": {
+   "candidate": 644,
+   "reference": 641
+  }
+ }
+}

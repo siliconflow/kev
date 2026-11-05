@@ -1,0 +1,589 @@
+{
+  "run": "jaredpalmer/kev-0.8b",
+  "path": "/Users/jared/.cache/huggingface/hub/models--jaredpalmer--kev-0.8b/snapshots/9a45d25eb2ab761841196625383fa1dff0e56c1e",
+  "base": "Qwen/Qwen3.5-0.8B-Base",
+  "base_revision": "dc7cdfe2ee4154fa7e30f5b51ca41bfa40174e68",
+  "machine": {
+    "chip": "Apple M5",
+    "memory_gb": 34.36,
+    "macos": "26.6.2",
+    "mlx": "0.32.2",
+    "mlx_lm": "0.31.3",
+    "torch": "2.8.0"
+  },
+  "request": {
+    "ticket": "Customer message: I was charged twice for order 8812. Please refund the duplicate charge.\n\n",
+    "note": "\n\nInternal note from the billing team: every letter about order 8812 must go to our {city} office, and to no other office.\n\n",
+    "depth": 0.6,
+    "questions": {
+      "team": {
+        "type": "choice",
+        "instructions": "Which team should handle this ticket?",
+        "criteria": {
+          "returns": "Exchanges, refunds for returned items",
+          "shipping": "Delivery, delays",
+          "billing": "Charges, payments, duplicate charges"
+        }
+      },
+      "duplicate": {
+        "type": "noul",
+        "instructions": "Does the customer report being charged twice?"
+      },
+      "office": {
+        "type": "choice",
+        "instructions": "According to the internal note from the billing team, which office must every letter about order 8812 go to?",
+        "criteria": {
+          "lisbon": "The Lisbon office",
+          "denver": "The Denver office",
+          "osaka": "The Osaka office",
+          "nairobi": "The Nairobi office"
+        }
+      }
+    },
+    "variants": {
+      "start": [
+        "Lisbon",
+        0.0
+      ],
+      "swapped": [
+        "Osaka",
+        0.6
+      ],
+      "planted": [
+        "Lisbon",
+        0.6
+      ]
+    },
+    "filler": "docs/model-cards/*.md, sorted, repeated"
+  },
+  "lengths": {
+    "8192": {
+      "available_gb_before": 17.93,
+      "waited_s": 0,
+      "busy_before": [],
+      "state_tokens": 8192,
+      "tokens": 8304,
+      "first_ms": 1419.6,
+      "cold_ms": 1418.0,
+      "cold_ms_all": {
+        "start": 1419.6,
+        "swapped": 1418.0,
+        "planted": 1407.7
+      },
+      "cached_ms": 74.3,
+      "cached_ms_all": [
+        74.2,
+        77.2,
+        74.3
+      ],
+      "http_office": "lisbon",
+      "http_input_tokens": 8304,
+      "mlx_peak_gb": 2.73,
+      "mlx_working_gb": 1.23,
+      "rss_peak_gb": 3.13,
+      "footprint_peak_gb": 5.29,
+      "swap_out_gb": 0.0,
+      "all_correct": true,
+      "variants": {
+        "start": {
+          "ms": 1419.6,
+          "answers": {
+            "team": {
+              "returns": 0.1217949241399765,
+              "shipping": 0.0417029894888401,
+              "billing": 0.8365021347999573
+            },
+            "duplicate": {
+              "false": 0.38403958082199097,
+              "true": 0.6159603595733643
+            },
+            "office": {
+              "lisbon": 0.8485716581344604,
+              "denver": 0.05248492211103439,
+              "osaka": 0.049529749900102615,
+              "nairobi": 0.049413714557886124
+            }
+          },
+          "correct": {
+            "team": true,
+            "duplicate": true,
+            "office": true
+          }
+        },
+        "swapped": {
+          "ms": 1418.0,
+          "answers": {
+            "team": {
+              "returns": 0.13096749782562256,
+              "shipping": 0.08096550405025482,
+              "billing": 0.7880669832229614
+            },
+            "duplicate": {
+              "false": 0.4113721549510956,
+              "true": 0.5886278748512268
+            },
+            "office": {
+              "lisbon": 0.11643534153699875,
+              "denver": 0.095652736723423,
+              "osaka": 0.6996743679046631,
+              "nairobi": 0.08823750913143158
+            }
+          },
+          "correct": {
+            "team": true,
+            "duplicate": true,
+            "office": true
+          }
+        },
+        "planted": {
+          "ms": 1407.7,
+          "answers": {
+            "team": {
+              "returns": 0.12620140612125397,
+              "shipping": 0.08380987495183945,
+              "billing": 0.7899886965751648
+            },
+            "duplicate": {
+              "false": 0.42162400484085083,
+              "true": 0.5783759951591492
+            },
+            "office": {
+              "lisbon": 0.6845699548721313,
+              "denver": 0.09794843941926956,
+              "osaka": 0.11598392575979233,
+              "nairobi": 0.10149768739938736
+            }
+          },
+          "correct": {
+            "team": true,
+            "duplicate": true,
+            "office": true
+          }
+        }
+      },
+      "office_p_true": {
+        "start": 0.8486,
+        "swapped": 0.6997,
+        "planted": 0.6846
+      },
+      "planted_vs_start": {
+        "max_dp": 0.164,
+        "argmax_flips": []
+      },
+      "torch_fp32_cpu": {
+        "answers": {
+          "team": {
+            "returns": 0.12750902771949768,
+            "shipping": 0.08649758249521255,
+            "billing": 0.7859933972358704
+          },
+          "duplicate": {
+            "false": 0.4140208661556244,
+            "true": 0.5859790444374084
+          },
+          "office": {
+            "lisbon": 0.6868006587028503,
+            "denver": 0.09613217413425446,
+            "osaka": 0.11443733423948288,
+            "nairobi": 0.10262982547283173
+          }
+        },
+        "seconds": 21.1,
+        "vs_mlx": {
+          "max_dp": 0.0076,
+          "argmax_flips": []
+        }
+      },
+      "busy_after": []
+    },
+    "16384": {
+      "available_gb_before": 17.37,
+      "waited_s": 0,
+      "busy_before": [],
+      "state_tokens": 16384,
+      "tokens": 16496,
+      "first_ms": 3180.0,
+      "cold_ms": 3171.4,
+      "cold_ms_all": {
+        "start": 3180.0,
+        "swapped": 3171.4,
+        "planted": 3149.9
+      },
+      "cached_ms": 94.1,
+      "cached_ms_all": [
+        95.0,
+        94.1,
+        91.6
+      ],
+      "http_office": "lisbon",
+      "http_input_tokens": 16496,
+      "mlx_peak_gb": 3.01,
+      "mlx_working_gb": 1.51,
+      "rss_peak_gb": 3.13,
+      "footprint_peak_gb": 6.11,
+      "swap_out_gb": 0.0,
+      "all_correct": true,
+      "variants": {
+        "start": {
+          "ms": 3180.0,
+          "answers": {
+            "team": {
+              "returns": 0.10326677560806274,
+              "shipping": 0.024520812556147575,
+              "billing": 0.8722124695777893
+            },
+            "duplicate": {
+              "false": 0.20577837526798248,
+              "true": 0.7942215800285339
+            },
+            "office": {
+              "lisbon": 0.7664877772331238,
+              "denver": 0.08205524832010269,
+              "osaka": 0.07872333377599716,
+              "nairobi": 0.07273362576961517
+            }
+          },
+          "correct": {
+            "team": true,
+            "duplicate": true,
+            "office": true
+          }
+        },
+        "swapped": {
+          "ms": 3171.4,
+          "answers": {
+            "team": {
+              "returns": 0.10087872296571732,
+              "shipping": 0.02548682503402233,
+              "billing": 0.873634397983551
+            },
+            "duplicate": {
+              "false": 0.18930882215499878,
+              "true": 0.810691237449646
+            },
+            "office": {
+              "lisbon": 0.11289829760789871,
+              "denver": 0.09579870104789734,
+              "osaka": 0.702564537525177,
+              "nairobi": 0.08873839676380157
+            }
+          },
+          "correct": {
+            "team": true,
+            "duplicate": true,
+            "office": true
+          }
+        },
+        "planted": {
+          "ms": 3149.9,
+          "answers": {
+            "team": {
+              "returns": 0.09427476674318314,
+              "shipping": 0.02384779043495655,
+              "billing": 0.8818774819374084
+            },
+            "duplicate": {
+              "false": 0.18975093960762024,
+              "true": 0.8102490305900574
+            },
+            "office": {
+              "lisbon": 0.6847094297409058,
+              "denver": 0.09431201964616776,
+              "osaka": 0.10731687396764755,
+              "nairobi": 0.11366163194179535
+            }
+          },
+          "correct": {
+            "team": true,
+            "duplicate": true,
+            "office": true
+          }
+        }
+      },
+      "office_p_true": {
+        "start": 0.7665,
+        "swapped": 0.7026,
+        "planted": 0.6847
+      },
+      "planted_vs_start": {
+        "max_dp": 0.08178,
+        "argmax_flips": []
+      },
+      "torch_fp32_cpu": {
+        "answers": {
+          "team": {
+            "returns": 0.09171941876411438,
+            "shipping": 0.022209307178854942,
+            "billing": 0.8860713243484497
+          },
+          "duplicate": {
+            "false": 0.1846044510602951,
+            "true": 0.8153955340385437
+          },
+          "office": {
+            "lisbon": 0.6865092515945435,
+            "denver": 0.09327579289674759,
+            "osaka": 0.10724132508039474,
+            "nairobi": 0.11297367513179779
+          }
+        },
+        "seconds": 99.3,
+        "vs_mlx": {
+          "max_dp": 0.00515,
+          "argmax_flips": []
+        }
+      },
+      "busy_after": []
+    },
+    "32768": {
+      "available_gb_before": 17.25,
+      "waited_s": 0,
+      "busy_before": [],
+      "state_tokens": 32768,
+      "tokens": 32880,
+      "first_ms": 7883.4,
+      "cold_ms": 8021.9,
+      "cold_ms_all": {
+        "start": 7883.4,
+        "swapped": 8227.3,
+        "planted": 8021.9
+      },
+      "cached_ms": 134.4,
+      "cached_ms_all": [
+        134.9,
+        134.4,
+        129.4
+      ],
+      "http_office": "lisbon",
+      "http_input_tokens": 32880,
+      "mlx_peak_gb": 3.15,
+      "mlx_working_gb": 1.65,
+      "rss_peak_gb": 3.13,
+      "footprint_peak_gb": 6.33,
+      "swap_out_gb": 0.0,
+      "all_correct": true,
+      "variants": {
+        "start": {
+          "ms": 7883.4,
+          "answers": {
+            "team": {
+              "returns": 0.10230408608913422,
+              "shipping": 0.02079622633755207,
+              "billing": 0.8768996596336365
+            },
+            "duplicate": {
+              "false": 0.3927748501300812,
+              "true": 0.6072251796722412
+            },
+            "office": {
+              "lisbon": 0.8164653182029724,
+              "denver": 0.06490813195705414,
+              "osaka": 0.052327681332826614,
+              "nairobi": 0.06629884243011475
+            }
+          },
+          "correct": {
+            "team": true,
+            "duplicate": true,
+            "office": true
+          }
+        },
+        "swapped": {
+          "ms": 8227.3,
+          "answers": {
+            "team": {
+              "returns": 0.11042645573616028,
+              "shipping": 0.04753941297531128,
+              "billing": 0.842034101486206
+            },
+            "duplicate": {
+              "false": 0.4389021098613739,
+              "true": 0.5610979199409485
+            },
+            "office": {
+              "lisbon": 0.11112599074840546,
+              "denver": 0.10846895724534988,
+              "osaka": 0.7110716104507446,
+              "nairobi": 0.06933341920375824
+            }
+          },
+          "correct": {
+            "team": true,
+            "duplicate": true,
+            "office": true
+          }
+        },
+        "planted": {
+          "ms": 8021.9,
+          "answers": {
+            "team": {
+              "returns": 0.1051221415400505,
+              "shipping": 0.04568605124950409,
+              "billing": 0.8491917848587036
+            },
+            "duplicate": {
+              "false": 0.439258873462677,
+              "true": 0.560741126537323
+            },
+            "office": {
+              "lisbon": 0.7026283144950867,
+              "denver": 0.12024817615747452,
+              "osaka": 0.08677332103252411,
+              "nairobi": 0.0903501808643341
+            }
+          },
+          "correct": {
+            "team": true,
+            "duplicate": true,
+            "office": true
+          }
+        }
+      },
+      "office_p_true": {
+        "start": 0.8165,
+        "swapped": 0.7111,
+        "planted": 0.7026
+      },
+      "planted_vs_start": {
+        "max_dp": 0.11384,
+        "argmax_flips": []
+      },
+      "busy_after": []
+    },
+    "65000": {
+      "available_gb_before": 16.6,
+      "waited_s": 0,
+      "busy_before": [],
+      "state_tokens": 65000,
+      "tokens": 65112,
+      "first_ms": 21641.7,
+      "cold_ms": 21190.3,
+      "cold_ms_all": {
+        "start": 21641.7,
+        "swapped": 21190.3,
+        "planted": 20884.2
+      },
+      "cached_ms": 202.5,
+      "cached_ms_all": [
+        205.3,
+        202.5,
+        189.7
+      ],
+      "http_office": "lisbon",
+      "http_input_tokens": 65112,
+      "mlx_peak_gb": 3.81,
+      "mlx_working_gb": 2.3,
+      "rss_peak_gb": 3.14,
+      "footprint_peak_gb": 5.41,
+      "swap_out_gb": 0.0,
+      "all_correct": true,
+      "variants": {
+        "start": {
+          "ms": 21641.7,
+          "answers": {
+            "team": {
+              "returns": 0.13169711828231812,
+              "shipping": 0.043770257383584976,
+              "billing": 0.8245325684547424
+            },
+            "duplicate": {
+              "false": 0.2774617373943329,
+              "true": 0.7225382924079895
+            },
+            "office": {
+              "lisbon": 0.8338861465454102,
+              "denver": 0.05070628970861435,
+              "osaka": 0.045280490070581436,
+              "nairobi": 0.07012707740068436
+            }
+          },
+          "correct": {
+            "team": true,
+            "duplicate": true,
+            "office": true
+          }
+        },
+        "swapped": {
+          "ms": 21190.3,
+          "answers": {
+            "team": {
+              "returns": 0.12001652270555496,
+              "shipping": 0.03575744107365608,
+              "billing": 0.8442260026931763
+            },
+            "duplicate": {
+              "false": 0.29854369163513184,
+              "true": 0.7014563083648682
+            },
+            "office": {
+              "lisbon": 0.12403657287359238,
+              "denver": 0.10181628912687302,
+              "osaka": 0.6560052633285522,
+              "nairobi": 0.11814197152853012
+            }
+          },
+          "correct": {
+            "team": true,
+            "duplicate": true,
+            "office": true
+          }
+        },
+        "planted": {
+          "ms": 20884.2,
+          "answers": {
+            "team": {
+              "returns": 0.1148286685347557,
+              "shipping": 0.03441055491566658,
+              "billing": 0.850760817527771
+            },
+            "duplicate": {
+              "false": 0.2958725392818451,
+              "true": 0.7041274905204773
+            },
+            "office": {
+              "lisbon": 0.6212286353111267,
+              "denver": 0.12589630484580994,
+              "osaka": 0.10846637189388275,
+              "nairobi": 0.14440865814685822
+            }
+          },
+          "correct": {
+            "team": true,
+            "duplicate": true,
+            "office": true
+          }
+        }
+      },
+      "office_p_true": {
+        "start": 0.8339,
+        "swapped": 0.656,
+        "planted": 0.6212
+      },
+      "planted_vs_start": {
+        "max_dp": 0.21266,
+        "argmax_flips": []
+      },
+      "busy_after": []
+    }
+  },
+  "waited_before_load_s": 0,
+  "busy_before_load": [],
+  "memory_before": {
+    "backbone_gb": 1.75,
+    "available_gb": 17.43,
+    "swap_used_gb": 23.41
+  },
+  "load_seconds": 1.3,
+  "load_swap_out_gb": 0.0,
+  "resident_gb": 1.5,
+  "footprint_after_load_gb": 3.65,
+  "dtype": "bfloat16",
+  "temperature": 2.3510958125672174,
+  "kv_kb_per_token": 12.3,
+  "admission": {
+    "state_tokens": 70000,
+    "limit": 65536,
+    "status": 422,
+    "detail": "state is 70,000 tokens, over the 65,536-token limit (the <state> token included): shorten the document or split it across requests; or start the server with KEV_TRUNCATE_STATES=1 to read only its first 65,536 tokens (responses then say truncated: true)"
+  }
+}

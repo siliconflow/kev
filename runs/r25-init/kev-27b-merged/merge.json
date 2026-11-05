@@ -1,0 +1,28 @@
+{
+  "checkpoint": "/runs/r25-init/kev-27b-merged/checkpoint",
+  "weights_sha256": "f61fb0c5306d1c5a7b68283bf3e0e964a55b26d5519183d6fc2f72ca18ac7a83",
+  "head_sha256": "b170f015345e3c5fea90baffb00edc9ca3c7b498f4c82e252a289045600bba45",
+  "tensors": 850,
+  "merged_lora": {
+    "source": {
+      "path": "jaredpalmer/kev-27b@01b81998019be550f0ae858727df49bac9511195",
+      "resolved": "/__modal/volumes/vo-kEMu8BkBAIrorAQI6V8f2D/hub/models--jaredpalmer--kev-27b/snapshots/01b81998019be550f0ae858727df49bac9511195",
+      "weights_sha256": "41bf5af0f81ea58fba73eb0c168cc8fcaa8458d28a566592daabbc01fc04c47e",
+      "head_sha256": "1322189d3a31eaacd12758791ffe952371062bfc34be3b9281bcf7b5f87671d2"
+    },
+    "base": "Qwen/Qwen3.8-27B@1d4bf0f2ff6012fd82039f2fa52739d0dd7c60c0",
+    "adapted_tensors": 496,
+    "formula": "round_to_weights_dtype(fp32(W) + fp32(peft get_delta_weight)) for adapted weights, W unchanged elsewhere"
+  },
+  "temperature": 1.381912879967776,
+  "head_dim": 256,
+  "like": "/runs/r22-27b-lr2e6/00-trial-0/checkpoint",
+  "phases": {
+    "load_base_and_adapter": 37.0,
+    "merge": 96.0,
+    "write_backbone": 81.2,
+    "check_like": 10.1,
+    "hash_output": 14.4
+  },
+  "seconds": 243.5
+}

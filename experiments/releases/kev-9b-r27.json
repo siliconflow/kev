@@ -1,0 +1,63 @@
+{
+  "release": "kev-9b-r27",
+  "note": "PLAN.md round 27: round 18's 9B documents-and-skills delta, arm (a) (runs/r18-9b/00-trial-0: the released Kev-9B + one epoch on round 15's joint documents + skills data with 10,000 replay, lr 2e-5), served at the round's pool temperature (2.19); candidate 'Kev-9B v2' (docs/model-cards/kev-9b.md). The comparison column is the released Kev-9B (the round's parent), served at its shipped 2.30. Whole suites minus drop_ids; the registered panels with their exclusions are runs/r27-readout/round27.json and runs/r27-verdict/",
+  "drop_ids": [
+    "codereviewer/cls-test/13657",
+    "codereviewer/cls-test/19245"
+  ],
+  "candidate": {
+    "checkpoint": "/runs/release/kev-9b-r27/checkpoint",
+    "pool": {
+      "reads": {
+        "runs/r27-9b-r18a-r3cal": [
+          "composition_holdout",
+          "emotion",
+          "legacy_holdout",
+          "mmlu",
+          "paws",
+          "qnli",
+          "sciq",
+          "tweet_offensive"
+        ],
+        "runs/r18-9b-joint-lr2e5-v9": [
+          "mmlu_pro"
+        ]
+      },
+      "exclude": [
+        "runs/r18-9b/00-trial-0/transfer"
+      ]
+    },
+    "v9": "runs/r18-9b-joint-lr2e5-v9",
+    "locked": "runs/locked/kev-9b-r27-ungated",
+    "transfer_dev": "runs/r18-9b/00-trial-0/transfer",
+    "r3test": "runs/r18-9b-joint-lr2e5-r3test",
+    "breadth_dev": "runs/fam-9bnew-breadth",
+    "breadth_test": "runs/fam-9bnew-breadthtest",
+    "docs1_dev": "runs/r18-9b-joint-lr2e5-docs",
+    "hard_dev": "runs/r18-9b-joint-lr2e5-hard",
+    "devtools_dev": "runs/r18-9b-joint-lr2e5-devtools",
+    "docs1_test": "runs/r27c-9b-cand-docs1test",
+    "hard_test": "runs/r27c-9b-cand-hardtest",
+    "devtools_test": "runs/r27c-9b-cand-devtest",
+    "docs2": "runs/r27c-9b-cand-docs2",
+    "semif": "runs/r18-9b-joint-lr2e5-semif"
+  },
+  "parent": {
+    "trial": "runs/night2-9b-du/00-trial-0",
+    "transfer_dev": "runs/night2-9b-du/00-trial-0/transfer",
+    "v9": "runs/n2-9b-du-v9",
+    "locked": "runs/locked/kev-9b-night2-du-ungated",
+    "r3test": "runs/rc-parent-r3test",
+    "breadth_dev": "runs/fam-9b-breadth",
+    "breadth_test": "runs/fam-9b-breadthtest",
+    "docs1_dev": "runs/docs1-P9",
+    "hard_dev": "runs/hv1-P9",
+    "devtools_dev": "runs/dt1-P9",
+    "docs1_test": "runs/r27c-9b-parent-docs1test",
+    "hard_test": "runs/r27c-9b-parent-hardtest",
+    "devtools_test": "runs/r27c-9b-parent-devtest",
+    "docs2": "runs/r27c-9b-parent-docs2",
+    "semif": "runs/r5r-P9-semif"
+  },
+  "paired_locked": true
+}

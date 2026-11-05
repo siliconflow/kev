@@ -1,0 +1,363 @@
+{
+ "note": "phase A of the rounds 28/29 development-read sweep (PLAN.md 'Round 28 (registered)' / 'Round 29 (registered)'): the 68 reads that need no long states; phase B (longdoc-v1, agents-ood-v1, guardrails-ood-v1) waits for the evaluator memory fix",
+ "app": "kev-sweep2829 (deployed from this checkout; the specs' app names kev-r28 / kev-r29 were not used, the specs are unchanged)",
+ "gpu": "H100 requested (modal_app.py::benchmarks --gpu H100, default per-suite timeout 1800 s); Modal placed r29-9b-r7-s1-r3test and r29-9b-r7-s1-tsheld on an H200 (report.json environment)",
+ "spend": {
+  "baseline_metered_usd": 4633.77,
+  "before_wave_1": 4633.85,
+  "before_wave_2": 4652.54,
+  "after": {
+   "september_metered": 4682.78,
+   "october_metered": 3.17,
+   "total": 4685.95
+  },
+  "delta_usd": 52.18,
+  "scope": "workspace-wide, includes anything else running",
+  "admission_bound_usd": {
+   "wave_1": 102.15,
+   "wave_2": 90.8
+  }
+ },
+ "reads": {
+  "r28-4b-r10-ood": {
+   "job": "/runs/r10-skills/00-trial-0/checkpoint@evals/ood-v2@r28-4b-r10-ood",
+   "wave": 1,
+   "launched": "2026-09-30T16:20:00"
+  },
+  "r28-4b-r10-r3cal": {
+   "job": "/runs/r10-skills/00-trial-0/checkpoint@evals/round3/transfer-r3@r28-4b-r10-r3cal@--split calibration",
+   "wave": 1,
+   "launched": "2026-09-30T16:20:00"
+  },
+  "r28-4b-r10-tsheld": {
+   "job": "/runs/r10-skills/00-trial-0/checkpoint@evals/tasksource-heldout-v1@r28-4b-r10-tsheld",
+   "wave": 1,
+   "launched": "2026-09-30T16:20:00"
+  },
+  "r28-08b-r15-ood": {
+   "job": "/runs/r15-08b/00-trial-0/checkpoint@evals/ood-v2@r28-08b-r15-ood",
+   "wave": 1,
+   "launched": "2026-09-30T16:20:20"
+  },
+  "r28-08b-r15-r3cal": {
+   "job": "/runs/r15-08b/00-trial-0/checkpoint@evals/round3/transfer-r3@r28-08b-r15-r3cal@--split calibration",
+   "wave": 1,
+   "launched": "2026-09-30T16:20:20"
+  },
+  "r28-08b-r15-tsheld": {
+   "job": "/runs/r15-08b/00-trial-0/checkpoint@evals/tasksource-heldout-v1@r28-08b-r15-tsheld",
+   "wave": 1,
+   "launched": "2026-09-30T16:20:20"
+  },
+  "r29-9b-r7-s1-breadth": {
+   "job": "/runs/r7-docs/00-trial-0/checkpoint@evals/breadth-v1@r29-9b-r7-s1-breadth",
+   "wave": 1,
+   "launched": "2026-09-30T16:20:40"
+  },
+  "r29-9b-r7-s1-devtools": {
+   "job": "/runs/r7-docs/00-trial-0/checkpoint@evals/devtools-v1@r29-9b-r7-s1-devtools",
+   "wave": 1,
+   "launched": "2026-09-30T16:20:40"
+  },
+  "r29-9b-r7-s1-hard": {
+   "job": "/runs/r7-docs/00-trial-0/checkpoint@evals/hard-v1@r29-9b-r7-s1-hard",
+   "wave": 1,
+   "launched": "2026-09-30T16:20:40"
+  },
+  "r29-9b-r7-s1-ood": {
+   "job": "/runs/r7-docs/00-trial-0/checkpoint@evals/ood-v2@r29-9b-r7-s1-ood",
+   "wave": 1,
+   "launched": "2026-09-30T16:20:40"
+  },
+  "r29-9b-r7-s1-r3cal": {
+   "job": "/runs/r7-docs/00-trial-0/checkpoint@evals/round3/transfer-r3@r29-9b-r7-s1-r3cal@--split calibration",
+   "wave": 1,
+   "launched": "2026-09-30T16:20:40"
+  },
+  "r29-9b-r7-s1-r3test": {
+   "job": "/runs/r7-docs/00-trial-0/checkpoint@evals/round3/transfer-r3@r29-9b-r7-s1-r3test@--allow-test",
+   "wave": 1,
+   "launched": "2026-09-30T16:20:40"
+  },
+  "r29-9b-r7-s1-tsheld": {
+   "job": "/runs/r7-docs/00-trial-0/checkpoint@evals/tasksource-heldout-v1@r29-9b-r7-s1-tsheld",
+   "wave": 1,
+   "launched": "2026-09-30T16:20:40"
+  },
+  "r29-P9-ood": {
+   "job": "jaredpalmer/kev-9b@2629c06a5aeb0feb3b9783bafed17ed8f39ecf5c@evals/ood-v2@r29-P9-ood",
+   "wave": 1,
+   "launched": "2026-09-30T16:22:00"
+  },
+  "r29-P9-tsheld": {
+   "job": "jaredpalmer/kev-9b@2629c06a5aeb0feb3b9783bafed17ed8f39ecf5c@evals/tasksource-heldout-v1@r29-P9-tsheld",
+   "wave": 1,
+   "launched": "2026-09-30T16:22:00"
+  },
+  "r29-9b-r7-s2-breadth": {
+   "job": "/runs/r7-docs/01-trial-1/checkpoint@evals/breadth-v1@r29-9b-r7-s2-breadth",
+   "wave": 1,
+   "launched": "2026-09-30T16:21:00"
+  },
+  "r29-9b-r7-s2-devtools": {
+   "job": "/runs/r7-docs/01-trial-1/checkpoint@evals/devtools-v1@r29-9b-r7-s2-devtools",
+   "wave": 1,
+   "launched": "2026-09-30T16:21:00"
+  },
+  "r29-9b-r7-s2-hard": {
+   "job": "/runs/r7-docs/01-trial-1/checkpoint@evals/hard-v1@r29-9b-r7-s2-hard",
+   "wave": 1,
+   "launched": "2026-09-30T16:21:00"
+  },
+  "r29-9b-r7-s2-ood": {
+   "job": "/runs/r7-docs/01-trial-1/checkpoint@evals/ood-v2@r29-9b-r7-s2-ood",
+   "wave": 1,
+   "launched": "2026-09-30T16:21:00"
+  },
+  "r29-9b-r7-s2-r3cal": {
+   "job": "/runs/r7-docs/01-trial-1/checkpoint@evals/round3/transfer-r3@r29-9b-r7-s2-r3cal@--split calibration",
+   "wave": 1,
+   "launched": "2026-09-30T16:21:00"
+  },
+  "r29-9b-r7-s2-r3test": {
+   "job": "/runs/r7-docs/01-trial-1/checkpoint@evals/round3/transfer-r3@r29-9b-r7-s2-r3test@--allow-test",
+   "wave": 1,
+   "launched": "2026-09-30T16:21:00"
+  },
+  "r29-9b-r7-s2-tsheld": {
+   "job": "/runs/r7-docs/01-trial-1/checkpoint@evals/tasksource-heldout-v1@r29-9b-r7-s2-tsheld",
+   "wave": 1,
+   "launched": "2026-09-30T16:21:00"
+  },
+  "r29-9b-r9-a-breadth": {
+   "job": "/runs/r9-docs/00-trial-0/checkpoint@evals/breadth-v1@r29-9b-r9-a-breadth",
+   "wave": 1,
+   "launched": "2026-09-30T16:21:20"
+  },
+  "r29-9b-r9-a-devtools": {
+   "job": "/runs/r9-docs/00-trial-0/checkpoint@evals/devtools-v1@r29-9b-r9-a-devtools",
+   "wave": 1,
+   "launched": "2026-09-30T16:21:20"
+  },
+  "r29-9b-r9-a-hard": {
+   "job": "/runs/r9-docs/00-trial-0/checkpoint@evals/hard-v1@r29-9b-r9-a-hard",
+   "wave": 1,
+   "launched": "2026-09-30T16:21:20"
+  },
+  "r29-9b-r9-a-ood": {
+   "job": "/runs/r9-docs/00-trial-0/checkpoint@evals/ood-v2@r29-9b-r9-a-ood",
+   "wave": 1,
+   "launched": "2026-09-30T16:21:20"
+  },
+  "r29-9b-r9-a-r3cal": {
+   "job": "/runs/r9-docs/00-trial-0/checkpoint@evals/round3/transfer-r3@r29-9b-r9-a-r3cal@--split calibration",
+   "wave": 1,
+   "launched": "2026-09-30T16:21:20"
+  },
+  "r29-9b-r9-a-r3test": {
+   "job": "/runs/r9-docs/00-trial-0/checkpoint@evals/round3/transfer-r3@r29-9b-r9-a-r3test@--allow-test",
+   "wave": 1,
+   "launched": "2026-09-30T16:21:20"
+  },
+  "r29-9b-r9-a-tsheld": {
+   "job": "/runs/r9-docs/00-trial-0/checkpoint@evals/tasksource-heldout-v1@r29-9b-r9-a-tsheld",
+   "wave": 1,
+   "launched": "2026-09-30T16:21:20"
+  },
+  "r29-9b-r9-b-breadth": {
+   "job": "/runs/r9-docs/01-trial-1/checkpoint@evals/breadth-v1@r29-9b-r9-b-breadth",
+   "wave": 1,
+   "launched": "2026-09-30T16:21:40"
+  },
+  "r29-9b-r9-b-devtools": {
+   "job": "/runs/r9-docs/01-trial-1/checkpoint@evals/devtools-v1@r29-9b-r9-b-devtools",
+   "wave": 1,
+   "launched": "2026-09-30T16:21:40"
+  },
+  "r29-9b-r9-b-hard": {
+   "job": "/runs/r9-docs/01-trial-1/checkpoint@evals/hard-v1@r29-9b-r9-b-hard",
+   "wave": 1,
+   "launched": "2026-09-30T16:21:40"
+  },
+  "r29-9b-r9-b-ood": {
+   "job": "/runs/r9-docs/01-trial-1/checkpoint@evals/ood-v2@r29-9b-r9-b-ood",
+   "wave": 1,
+   "launched": "2026-09-30T16:21:40"
+  },
+  "r29-9b-r9-b-r3cal": {
+   "job": "/runs/r9-docs/01-trial-1/checkpoint@evals/round3/transfer-r3@r29-9b-r9-b-r3cal@--split calibration",
+   "wave": 1,
+   "launched": "2026-09-30T16:21:40"
+  },
+  "r29-9b-r9-b-r3test": {
+   "job": "/runs/r9-docs/01-trial-1/checkpoint@evals/round3/transfer-r3@r29-9b-r9-b-r3test@--allow-test",
+   "wave": 1,
+   "launched": "2026-09-30T16:21:40"
+  },
+  "r29-9b-r9-b-tsheld": {
+   "job": "/runs/r9-docs/01-trial-1/checkpoint@evals/tasksource-heldout-v1@r29-9b-r9-b-tsheld",
+   "wave": 1,
+   "launched": "2026-09-30T16:21:40"
+  },
+  "r29-9b-r9-c-breadth": {
+   "job": "/runs/r9-docs/02-trial-2/checkpoint@evals/breadth-v1@r29-9b-r9-c-breadth",
+   "wave": 2,
+   "launched": "2026-09-30T16:32:10"
+  },
+  "r29-9b-r9-c-devtools": {
+   "job": "/runs/r9-docs/02-trial-2/checkpoint@evals/devtools-v1@r29-9b-r9-c-devtools",
+   "wave": 2,
+   "launched": "2026-09-30T16:32:10"
+  },
+  "r29-9b-r9-c-hard": {
+   "job": "/runs/r9-docs/02-trial-2/checkpoint@evals/hard-v1@r29-9b-r9-c-hard",
+   "wave": 2,
+   "launched": "2026-09-30T16:32:10"
+  },
+  "r29-9b-r9-c-ood": {
+   "job": "/runs/r9-docs/02-trial-2/checkpoint@evals/ood-v2@r29-9b-r9-c-ood",
+   "wave": 2,
+   "launched": "2026-09-30T16:32:10"
+  },
+  "r29-9b-r9-c-r3cal": {
+   "job": "/runs/r9-docs/02-trial-2/checkpoint@evals/round3/transfer-r3@r29-9b-r9-c-r3cal@--split calibration",
+   "wave": 2,
+   "launched": "2026-09-30T16:32:10"
+  },
+  "r29-9b-r9-c-r3test": {
+   "job": "/runs/r9-docs/02-trial-2/checkpoint@evals/round3/transfer-r3@r29-9b-r9-c-r3test@--allow-test",
+   "wave": 2,
+   "launched": "2026-09-30T16:32:10"
+  },
+  "r29-9b-r9-c-tsheld": {
+   "job": "/runs/r9-docs/02-trial-2/checkpoint@evals/tasksource-heldout-v1@r29-9b-r9-c-tsheld",
+   "wave": 2,
+   "launched": "2026-09-30T16:32:10"
+  },
+  "r29-9b-r11-s4-breadth": {
+   "job": "/runs/r11-docs/00-trial-0/checkpoint@evals/breadth-v1@r29-9b-r11-s4-breadth",
+   "wave": 2,
+   "launched": "2026-09-30T16:30:10"
+  },
+  "r29-9b-r11-s4-devtools": {
+   "job": "/runs/r11-docs/00-trial-0/checkpoint@evals/devtools-v1@r29-9b-r11-s4-devtools",
+   "wave": 2,
+   "launched": "2026-09-30T16:30:10"
+  },
+  "r29-9b-r11-s4-hard": {
+   "job": "/runs/r11-docs/00-trial-0/checkpoint@evals/hard-v1@r29-9b-r11-s4-hard",
+   "wave": 2,
+   "launched": "2026-09-30T16:30:10"
+  },
+  "r29-9b-r11-s4-ood": {
+   "job": "/runs/r11-docs/00-trial-0/checkpoint@evals/ood-v2@r29-9b-r11-s4-ood",
+   "wave": 2,
+   "launched": "2026-09-30T16:30:10"
+  },
+  "r29-9b-r11-s4-r3cal": {
+   "job": "/runs/r11-docs/00-trial-0/checkpoint@evals/round3/transfer-r3@r29-9b-r11-s4-r3cal@--split calibration",
+   "wave": 2,
+   "launched": "2026-09-30T16:30:10"
+  },
+  "r29-9b-r11-s4-tsheld": {
+   "job": "/runs/r11-docs/00-trial-0/checkpoint@evals/tasksource-heldout-v1@r29-9b-r11-s4-tsheld",
+   "wave": 2,
+   "launched": "2026-09-30T16:30:10"
+  },
+  "r29-9b-r11-s5-breadth": {
+   "job": "/runs/r11-docs/01-trial-1/checkpoint@evals/breadth-v1@r29-9b-r11-s5-breadth",
+   "wave": 2,
+   "launched": "2026-09-30T16:30:30"
+  },
+  "r29-9b-r11-s5-devtools": {
+   "job": "/runs/r11-docs/01-trial-1/checkpoint@evals/devtools-v1@r29-9b-r11-s5-devtools",
+   "wave": 2,
+   "launched": "2026-09-30T16:30:30"
+  },
+  "r29-9b-r11-s5-hard": {
+   "job": "/runs/r11-docs/01-trial-1/checkpoint@evals/hard-v1@r29-9b-r11-s5-hard",
+   "wave": 2,
+   "launched": "2026-09-30T16:30:30"
+  },
+  "r29-9b-r11-s5-ood": {
+   "job": "/runs/r11-docs/01-trial-1/checkpoint@evals/ood-v2@r29-9b-r11-s5-ood",
+   "wave": 2,
+   "launched": "2026-09-30T16:30:30"
+  },
+  "r29-9b-r11-s5-r3cal": {
+   "job": "/runs/r11-docs/01-trial-1/checkpoint@evals/round3/transfer-r3@r29-9b-r11-s5-r3cal@--split calibration",
+   "wave": 2,
+   "launched": "2026-09-30T16:30:30"
+  },
+  "r29-9b-r11-s5-tsheld": {
+   "job": "/runs/r11-docs/01-trial-1/checkpoint@evals/tasksource-heldout-v1@r29-9b-r11-s5-tsheld",
+   "wave": 2,
+   "launched": "2026-09-30T16:30:30"
+  },
+  "r29-9b-r16-lr1e5-breadth": {
+   "job": "/runs/r16-9b/00-trial-0/checkpoint@evals/breadth-v1@r29-9b-r16-lr1e5-breadth",
+   "wave": 2,
+   "launched": "2026-09-30T16:30:50"
+  },
+  "r29-9b-r16-lr1e5-ood": {
+   "job": "/runs/r16-9b/00-trial-0/checkpoint@evals/ood-v2@r29-9b-r16-lr1e5-ood",
+   "wave": 2,
+   "launched": "2026-09-30T16:30:50"
+  },
+  "r29-9b-r16-lr1e5-r3cal": {
+   "job": "/runs/r16-9b/00-trial-0/checkpoint@evals/round3/transfer-r3@r29-9b-r16-lr1e5-r3cal@--split calibration",
+   "wave": 2,
+   "launched": "2026-09-30T16:30:50"
+  },
+  "r29-9b-r16-lr1e5-tsheld": {
+   "job": "/runs/r16-9b/00-trial-0/checkpoint@evals/tasksource-heldout-v1@r29-9b-r16-lr1e5-tsheld",
+   "wave": 2,
+   "launched": "2026-09-30T16:30:50"
+  },
+  "r29-9b-r16-lr2e5-breadth": {
+   "job": "/runs/r16-9b/01-trial-1/checkpoint@evals/breadth-v1@r29-9b-r16-lr2e5-breadth",
+   "wave": 2,
+   "launched": "2026-09-30T16:31:10"
+  },
+  "r29-9b-r16-lr2e5-ood": {
+   "job": "/runs/r16-9b/01-trial-1/checkpoint@evals/ood-v2@r29-9b-r16-lr2e5-ood",
+   "wave": 2,
+   "launched": "2026-09-30T16:31:10"
+  },
+  "r29-9b-r16-lr2e5-r3cal": {
+   "job": "/runs/r16-9b/01-trial-1/checkpoint@evals/round3/transfer-r3@r29-9b-r16-lr2e5-r3cal@--split calibration",
+   "wave": 2,
+   "launched": "2026-09-30T16:31:10"
+  },
+  "r29-9b-r16-lr2e5-tsheld": {
+   "job": "/runs/r16-9b/01-trial-1/checkpoint@evals/tasksource-heldout-v1@r29-9b-r16-lr2e5-tsheld",
+   "wave": 2,
+   "launched": "2026-09-30T16:31:10"
+  },
+  "r29-9b-r18a-ood": {
+   "job": "/runs/r18-9b/00-trial-0/checkpoint@evals/ood-v2@r29-9b-r18a-ood",
+   "wave": 2,
+   "launched": "2026-09-30T16:31:30"
+  },
+  "r29-9b-r18a-tsheld": {
+   "job": "/runs/r18-9b/00-trial-0/checkpoint@evals/tasksource-heldout-v1@r29-9b-r18a-tsheld",
+   "wave": 2,
+   "launched": "2026-09-30T16:31:30"
+  },
+  "r29-9b-r18b-breadth": {
+   "job": "/runs/r18-9b/01-trial-1/checkpoint@evals/breadth-v1@r29-9b-r18b-breadth",
+   "wave": 2,
+   "launched": "2026-09-30T16:31:50"
+  },
+  "r29-9b-r18b-ood": {
+   "job": "/runs/r18-9b/01-trial-1/checkpoint@evals/ood-v2@r29-9b-r18b-ood",
+   "wave": 2,
+   "launched": "2026-09-30T16:31:50"
+  },
+  "r29-9b-r18b-tsheld": {
+   "job": "/runs/r18-9b/01-trial-1/checkpoint@evals/tasksource-heldout-v1@r29-9b-r18b-tsheld",
+   "wave": 2,
+   "launched": "2026-09-30T16:31:50"
+  }
+ }
+}

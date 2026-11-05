@@ -1,0 +1,324 @@
+{
+  "what": "skills/kev-deploy/scripts/kev_serve.py at KEV_REF 71d482977d3da59e36cacf3846f56dc66ef01927 (kev main after #200 MLX full-weight loading, #201 MLX chunked prefill + PrefixCache.make_room + the out-of-memory retry fix, #202 fp32 long-row attention), KEV_MODEL=jaredpalmer/kev-27b, KEV_GPU=H200 (as the reference read and the previous check, runs/kev-deploy-2ea5660), bearer key on, default server (no KEV_TRUNCATE_STATES). One Modal app, kev-ref71d4829-27b, stopped after the checks",
+  "date": "2026-09-30 (US) / 2026-10-01 UTC",
+  "kev_ref": "71d482977d3da59e36cacf3846f56dc66ef01927",
+  "app": {
+    "name": "kev-ref71d4829-27b",
+    "window_utc": [
+      "2026-10-01T03:38:50Z",
+      "2026-10-01T03:43:11Z"
+    ],
+    "cold_start_seconds": 67,
+    "cold_start_basis": "first /v1/models (curl -L) after the deploy, 03:39:26Z -> 03:40:33Z; weights and kernels cached on kev-hf-cache",
+    "served": {
+      "run": "jaredpalmer/kev-27b",
+      "base": "Qwen/Qwen3.8-27B",
+      "lora": 0,
+      "device": "cuda",
+      "backend": "torch",
+      "dtype": "bfloat16",
+      "temperature": 1.319507910772894,
+      "max_state_tokens": 65536,
+      "truncate_states": false,
+      "cuda_graphs": {
+        "captured": 6,
+        "kept": 6,
+        "pending": 0,
+        "failed": 0
+      },
+      "prefix_cache": {
+        "size": 4,
+        "min_state_tokens": 0,
+        "max_tokens": 65536,
+        "hits": 0,
+        "misses": 3,
+        "cached_states": 3,
+        "oom_retries": 0
+      }
+    }
+  },
+  "gpu": "NVIDIA H200",
+  "a_short": {
+    "semif_parity": {
+      "served": "runs/kev-deploy-71d4829/semif-v1 (kev.benchmark --remote <endpoint> --suite evals/external/semif-v1 --remote-concurrency 8; development, 252 rows; 03:40:41Z -> 03:42:18Z)",
+      "reference": "runs/rel27-public/0-jaredpalmer_kev-27b (kev.benchmark, anonymous Hub load of the same checkpoint on an H200, LocalPredictor)",
+      "previous_deploy": "runs/kev-deploy-2ea5660/semif-v1 (KEV_REF 2ea5660)",
+      "vs_reference": {
+        "rows": 252,
+        "max_abs_dp": 0.012182530675943992,
+        "mean_abs_dp": 0.0008028796944305302,
+        "p99_abs_dp": 0.00641062660467806,
+        "argmax_flips": 0
+      },
+      "vs_previous_deploy": {
+        "rows": 252,
+        "max_abs_dp": 0.010800000000000032,
+        "mean_abs_dp": 0.0005583290887618666,
+        "p99_abs_dp": 0.0049000000000000155,
+        "argmax_flips": 0
+      },
+      "dp_basis": "per row, the largest |p_served - p_other| over its options; rows paired by id; served p are the API's 4-decimal probabilities",
+      "tolerance": 0.03,
+      "within_tolerance": true,
+      "coverage": {
+        "requested_records": 252,
+        "requested_questions": 252,
+        "evaluated_records": 252,
+        "evaluated_questions": 252,
+        "rejected_records": 0,
+        "truncated_records": 0
+      },
+      "clean": {
+        "n": {
+          "served": 144,
+          "reference": 144
+        },
+        "acc": {
+          "served": 0.9652777777777778,
+          "reference": 0.9652777777777778
+        },
+        "ece": {
+          "served": 0.057623098369529585,
+          "reference": 0.06049404849546461
+        },
+        "nll": {
+          "served": 0.1275476887822054,
+          "reference": 0.12745846257058913
+        }
+      }
+    }
+  },
+  "long_requests": {
+    "built_by": "runs/kev-deploy-2ea5660/make_long_state.py jaredpalmer/kev-27b <tokens> <out>, run in a checkout of 2ea5660's docs/model-cards (the cards have changed since); the requests (not committed) ask team (choice) and duplicate (noul). long60k_b = long60k with 'order 8812' -> 'order 9317' (a different state of the same length). Sent in order by runs/kev-deploy-71d4829/long_checks.py (raw responses + /v1/models prefix_cache after each: long_checks.json)",
+    "long70k": {
+      "request_sha256": "73bfb023039b89d385aa442a4c2c9fcc5fc39a3f6cf9d51a26cffcd4ad52f283",
+      "state_tokens_tokenizer": 70022,
+      "note": "byte-identical to runs/kev-deploy-2ea5660's long request"
+    },
+    "long60k": {
+      "request_sha256": "1e22d26cb28dbf83a891171c159f1038c69afdd43730efc415e8666b90335636",
+      "state_tokens_tokenizer": 60022,
+      "input_tokens": 60118
+    },
+    "long60k_b": {
+      "request_sha256": "fe3f18e85ecd551e8e3a62605608895ac81a29a73d5bfa877e6a010485ac4c2f",
+      "state_tokens_tokenizer": 60022,
+      "input_tokens": 60118
+    },
+    "prefix_cache_before": {
+      "size": 4,
+      "min_state_tokens": 0,
+      "max_tokens": 65536,
+      "hits": 34,
+      "misses": 221,
+      "cached_states": 4,
+      "oom_retries": 0
+    }
+  },
+  "b_long_default": {
+    "http": 422,
+    "body": {
+      "detail": "state is 70,065 tokens, over the 65,536-token limit (the <state> token included): shorten the document or split it across requests; or start the server with KEV_TRUNCATE_STATES=1 to read only its first 65,536 tokens (responses then say truncated: true)"
+    },
+    "server-timing": "app;dur=546.6",
+    "prefix_cache_after": {
+      "size": 4,
+      "min_state_tokens": 0,
+      "max_tokens": 65536,
+      "hits": 34,
+      "misses": 221,
+      "cached_states": 4,
+      "oom_retries": 0
+    }
+  },
+  "c_near_limit": {
+    "order": [
+      "long60k (A) new",
+      "A repeat",
+      "long60k_b (B) new: evicts A",
+      "B repeat",
+      "A again: a miss, recomputed"
+    ],
+    "a_first": {
+      "http": 200,
+      "answers": {
+        "team": {
+          "type": "choice",
+          "choice": "billing",
+          "confidence": 0.9991,
+          "probabilities": {
+            "returns": 0.0005,
+            "shipping": 0.0001,
+            "billing": 0.9994
+          }
+        },
+        "duplicate": {
+          "type": "noul",
+          "noul": 0.9995
+        }
+      },
+      "usage": {
+        "input_tokens": 60118,
+        "output_tokens": 85
+      },
+      "latency_ms": 10127.1,
+      "round_trip_s": 10.85,
+      "server-timing": "app;dur=10548.0",
+      "prefix_cache_after": {
+        "size": 4,
+        "min_state_tokens": 0,
+        "max_tokens": 65536,
+        "hits": 34,
+        "misses": 222,
+        "cached_states": 4,
+        "oom_retries": 0
+      }
+    },
+    "a_repeat": {
+      "http": 200,
+      "answers": {
+        "team": {
+          "type": "choice",
+          "choice": "billing",
+          "confidence": 0.9991,
+          "probabilities": {
+            "returns": 0.0005,
+            "shipping": 0.0001,
+            "billing": 0.9994
+          }
+        },
+        "duplicate": {
+          "type": "noul",
+          "noul": 0.9995
+        }
+      },
+      "usage": {
+        "input_tokens": 60118,
+        "output_tokens": 85
+      },
+      "latency_ms": 276.3,
+      "round_trip_s": 0.93,
+      "server-timing": "app;dur=624.2",
+      "prefix_cache_after": {
+        "size": 4,
+        "min_state_tokens": 0,
+        "max_tokens": 65536,
+        "hits": 35,
+        "misses": 222,
+        "cached_states": 4,
+        "oom_retries": 0
+      }
+    },
+    "b_first": {
+      "http": 200,
+      "answers": {
+        "team": {
+          "type": "choice",
+          "choice": "billing",
+          "confidence": 0.9991,
+          "probabilities": {
+            "returns": 0.0006,
+            "shipping": 0.0001,
+            "billing": 0.9994
+          }
+        },
+        "duplicate": {
+          "type": "noul",
+          "noul": 0.9995
+        }
+      },
+      "usage": {
+        "input_tokens": 60118,
+        "output_tokens": 85
+      },
+      "latency_ms": 8137.4,
+      "round_trip_s": 8.79,
+      "server-timing": "app;dur=8480.8",
+      "prefix_cache_after": {
+        "size": 4,
+        "min_state_tokens": 0,
+        "max_tokens": 65536,
+        "hits": 35,
+        "misses": 223,
+        "cached_states": 1,
+        "oom_retries": 0
+      }
+    },
+    "b_repeat": {
+      "http": 200,
+      "answers": {
+        "team": {
+          "type": "choice",
+          "choice": "billing",
+          "confidence": 0.9991,
+          "probabilities": {
+            "returns": 0.0006,
+            "shipping": 0.0001,
+            "billing": 0.9994
+          }
+        },
+        "duplicate": {
+          "type": "noul",
+          "noul": 0.9995
+        }
+      },
+      "usage": {
+        "input_tokens": 60118,
+        "output_tokens": 85
+      },
+      "latency_ms": 278.8,
+      "round_trip_s": 0.95,
+      "server-timing": "app;dur=640.0",
+      "prefix_cache_after": {
+        "size": 4,
+        "min_state_tokens": 0,
+        "max_tokens": 65536,
+        "hits": 36,
+        "misses": 223,
+        "cached_states": 1,
+        "oom_retries": 0
+      }
+    },
+    "a_again": {
+      "http": 200,
+      "answers": {
+        "team": {
+          "type": "choice",
+          "choice": "billing",
+          "confidence": 0.9991,
+          "probabilities": {
+            "returns": 0.0005,
+            "shipping": 0.0001,
+            "billing": 0.9994
+          }
+        },
+        "duplicate": {
+          "type": "noul",
+          "noul": 0.9995
+        }
+      },
+      "usage": {
+        "input_tokens": 60118,
+        "output_tokens": 85
+      },
+      "latency_ms": 8130.4,
+      "round_trip_s": 8.78,
+      "server-timing": "app;dur=8482.9",
+      "prefix_cache_after": {
+        "size": 4,
+        "min_state_tokens": 0,
+        "max_tokens": 65536,
+        "hits": 36,
+        "misses": 224,
+        "cached_states": 1,
+        "oom_retries": 0
+      }
+    },
+    "correct": true,
+    "eviction": "clean: after A the cache held A (60,065 state tokens) + 3 earlier short states inside the 65,536-token bound; B's batch evicted those and A before its pass (PrefixCache.make_room), leaving B alone (cached_states 1); A again was a miss (8.1 s) and replaced B. Every repeat was a hit (~0.28 s model time vs 8.1-10.1 s new). oom_retries 0 throughout, no 5xx"
+  },
+  "spend": {
+    "estimate_usd": 0.45,
+    "basis": "upper bound from Modal rates (H200 $4.54/h, CPU $0.0473/core/h, memory $0.008/GiB/h) over the app window above (~4.4 min, 4 cores, <= 128 GiB) plus the image build (CPU, < 1 min); the hourly billing report had not closed the hour when this was written"
+  }
+}

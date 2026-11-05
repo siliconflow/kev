@@ -1,0 +1,364 @@
+{
+  "round": 27,
+  "registered": "PLAN.md \"Round 27 (registered)\"",
+  "gpu": "H100",
+  "app": "kev-r27",
+  "reads": {
+    "hard": {
+      "suite": "evals/hard-v1"
+    },
+    "devtools": {
+      "suite": "evals/devtools-v1"
+    },
+    "docs": {
+      "suite": "evals/documents-v1"
+    },
+    "v9": {
+      "suite": "evals/v9/transfer-v9"
+    },
+    "r3test": {
+      "suite": "evals/round3/transfer-r3",
+      "flags": "--allow-test"
+    },
+    "semif": {
+      "suite": "evals/external/semif-v1"
+    },
+    "hardtest": {
+      "suite": "evals/hard-v1",
+      "flags": "--allow-test"
+    },
+    "devtest": {
+      "suite": "evals/devtools-v1",
+      "flags": "--allow-test"
+    },
+    "docs1test": {
+      "suite": "evals/documents-v1",
+      "flags": "--allow-test"
+    },
+    "docs2": {
+      "suite": "evals/documents-v2",
+      "flags": "--allow-test"
+    },
+    "locked": {
+      "entrypoint": "locked_test",
+      "decision": "evals/v7/decision-v7"
+    },
+    "r3cal": {
+      "suite": "evals/round3/transfer-r3",
+      "flags": "--split calibration"
+    }
+  },
+  "temperature": {
+    "reads": [
+      "r3cal",
+      "v9"
+    ],
+    "sources": {
+      "v9": [
+        "mmlu_pro"
+      ],
+      "r3cal": [
+        "composition_holdout",
+        "emotion",
+        "legacy_holdout",
+        "mmlu",
+        "paws",
+        "qnli",
+        "sciq",
+        "tweet_offensive"
+      ]
+    },
+    "exclude_reads": [
+      "transfer"
+    ],
+    "ci": {
+      "level": 0.9,
+      "samples": 2000,
+      "seed": 0
+    }
+  },
+  "drop_ids": [
+    "codereviewer/cls-test/13657",
+    "codereviewer/cls-test/19245"
+  ],
+  "parents": {
+    "9b": {
+      "trial": "runs/night2-9b-du/00-trial-0",
+      "reads": {
+        "hard": "runs/hv1-P9",
+        "devtools": "runs/dt1-P9",
+        "docs": "runs/docs1-P9",
+        "v9": "runs/n2-9b-du-v9",
+        "r3test": "runs/rc-parent-r3test",
+        "semif": "runs/r5r-P9-semif",
+        "locked": "runs/locked/kev-9b-night2-du-ungated/transfer"
+      },
+      "checkpoint": "jaredpalmer/kev-9b@2629c06a5aeb0feb3b9783bafed17ed8f39ecf5c"
+    }
+  },
+  "arms": {
+    "9b-r18a": {
+      "trial": "runs/r18-9b/00-trial-0",
+      "parent": "9b",
+      "reads": {
+        "hard": "runs/r18-9b-joint-lr2e5-hard",
+        "devtools": "runs/r18-9b-joint-lr2e5-devtools",
+        "docs": "runs/r18-9b-joint-lr2e5-docs",
+        "v9": "runs/r18-9b-joint-lr2e5-v9",
+        "r3test": "runs/r18-9b-joint-lr2e5-r3test",
+        "semif": "runs/r18-9b-joint-lr2e5-semif",
+        "r3cal": "runs/r27-9b-r18a-r3cal"
+      },
+      "trained_on": [
+        "evals/v7/decision-v7",
+        "evals/documents-v1",
+        "evals/round10/skills"
+      ]
+    },
+    "9b-r18b": {
+      "trial": "runs/r18-9b/01-trial-1",
+      "parent": "9b",
+      "reads": {
+        "hard": "runs/r18-9b-joint-lr1e5-hard",
+        "devtools": "runs/r18-9b-joint-lr1e5-devtools",
+        "docs": "runs/r18-9b-joint-lr1e5-docs",
+        "v9": "runs/r18-9b-joint-lr1e5-v9",
+        "r3test": "runs/r18-9b-joint-lr1e5-r3test",
+        "semif": "runs/r18-9b-joint-lr1e5-semif",
+        "r3cal": "runs/r27-9b-r18b-r3cal"
+      },
+      "trained_on": [
+        "evals/v7/decision-v7",
+        "evals/documents-v1",
+        "evals/round10/skills"
+      ]
+    }
+  },
+  "rule": {
+    "panels": {
+      "primary": {
+        "reads": [
+          "hard",
+          "devtools"
+        ],
+        "metrics": [
+          "acc"
+        ],
+        "exclude_sources": [
+          "flakeflagger"
+        ],
+        "exclude_tasks": [
+          "commitpackft_type"
+        ]
+      },
+      "hard": {
+        "reads": [
+          "hard"
+        ],
+        "metrics": [
+          "acc",
+          "ece"
+        ]
+      },
+      "devtools": {
+        "reads": [
+          "devtools"
+        ],
+        "metrics": [
+          "acc"
+        ],
+        "exclude_sources": [
+          "flakeflagger"
+        ],
+        "exclude_tasks": [
+          "commitpackft_type"
+        ]
+      },
+      "docs": {
+        "reads": [
+          "docs"
+        ],
+        "metrics": [
+          "acc"
+        ]
+      },
+      "short": {
+        "reads": [
+          "transfer",
+          "r3test"
+        ],
+        "exclude_sources": [
+          "emotion"
+        ],
+        "metrics": [
+          "acc",
+          "brier",
+          "confident_error_rate"
+        ]
+      },
+      "semif": {
+        "reads": [
+          "semif"
+        ],
+        "metrics": [
+          "acc"
+        ],
+        "optional": true
+      }
+    },
+    "unknowable": "v9",
+    "criteria": {
+      "1_primary_lower_above_0": {
+        "left": "primary.acc.lower",
+        "op": ">",
+        "right": 0
+      },
+      "1_docs_lower_above_0": {
+        "left": "docs.acc.lower",
+        "op": ">",
+        "right": 0
+      },
+      "2_short_acc_lower_at_least_minus_2pp": {
+        "left": "short.acc.lower",
+        "op": ">=",
+        "right": -0.02
+      },
+      "2_short_brier_upper_at_most_0.02": {
+        "left": "short.brier.upper",
+        "op": "<=",
+        "right": 0.02
+      },
+      "2_short_confident_errors_upper_at_most_1pp": {
+        "left": "short.confident_error_rate.upper",
+        "op": "<=",
+        "right": 0.01
+      },
+      "2_unknowable_at_most_0.05": {
+        "left": "unknowable.candidate",
+        "op": "<=",
+        "right": 0.05
+      },
+      "3_hard_ece_at_most_parent_plus_0.01": {
+        "left": "hard.ece.candidate",
+        "op": "<=",
+        "right": "hard.ece.parent",
+        "plus": 0.01
+      }
+    },
+    "rank": [
+      {
+        "by": [
+          "primary.acc.delta",
+          "docs.acc.delta"
+        ],
+        "order": "desc"
+      }
+    ]
+  },
+  "confirm": {
+    "tests": {
+      "candidate_reads": "runs/r27c-{size}-cand-{tag}",
+      "parent_reads": "runs/r27c-{size}-parent-{tag}",
+      "panels": {
+        "pooled": {
+          "reads": [
+            "hardtest",
+            "devtest"
+          ],
+          "metrics": [
+            "acc"
+          ],
+          "exclude_sources": [
+            "flakeflagger"
+          ],
+          "exclude_tasks": [
+            "commitpackft_type"
+          ]
+        },
+        "hardtest": {
+          "reads": [
+            "hardtest"
+          ],
+          "metrics": [
+            "acc"
+          ],
+          "report": [
+            "ece"
+          ]
+        },
+        "devtest": {
+          "reads": [
+            "devtest"
+          ],
+          "metrics": [
+            "acc"
+          ],
+          "exclude_sources": [
+            "flakeflagger"
+          ],
+          "exclude_tasks": [
+            "commitpackft_type"
+          ]
+        },
+        "docs1test": {
+          "reads": [
+            "docs1test"
+          ],
+          "metrics": [
+            "acc"
+          ]
+        },
+        "docs2": {
+          "reads": [
+            "docs2"
+          ],
+          "metrics": [
+            "acc"
+          ]
+        }
+      },
+      "criteria": {
+        "pooled_lower_above_0": {
+          "left": "pooled.acc.lower",
+          "op": ">",
+          "right": 0
+        },
+        "docs1test_lower_at_least_0": {
+          "left": "docs1test.acc.lower",
+          "op": ">",
+          "right": 0
+        }
+      }
+    },
+    "locked": {
+      "candidate_reads": {
+        "locked": "runs/locked/kev-{size}-r27-ungated/transfer"
+      },
+      "panels": {
+        "locked": {
+          "reads": [
+            "locked"
+          ],
+          "metrics": [
+            "acc",
+            "brier"
+          ]
+        }
+      },
+      "criteria": {
+        "locked_acc_at_least_parent_minus_1pp": {
+          "left": "locked.acc.candidate",
+          "op": ">=",
+          "right": "locked.acc.parent",
+          "plus": -0.01
+        },
+        "served_brier_at_most_parent_plus_0.005": {
+          "left": "locked.brier.candidate",
+          "op": "<=",
+          "right": "locked.brier.parent",
+          "plus": 0.005
+        }
+      }
+    }
+  }
+}

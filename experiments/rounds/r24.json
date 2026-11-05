@@ -1,0 +1,935 @@
+{
+  "round": 24,
+  "registered": "PLAN.md > Round 24 - retrospective selection: the 2026-09-27 evaluation-suite audit's verdicts applied uniformly, as one rule frozen before any computation under it, to every existing full-weight 27B checkpoint (rounds 19, 20 and 22), no training and no new development read; registered with this spec's commit, before any round-24 read-out",
+  "gpu": "H200",
+  "app": "kev-sft",
+  "reads": {
+    "breadth": {
+      "suite": "evals/breadth-v1"
+    },
+    "tsheld": {
+      "suite": "evals/tasksource-heldout-v1"
+    },
+    "hard": {
+      "suite": "evals/hard-v1"
+    },
+    "devtools": {
+      "suite": "evals/devtools-v1"
+    },
+    "docs": {
+      "suite": "evals/documents-v1"
+    },
+    "semif": {
+      "suite": "evals/external/semif-v1"
+    },
+    "wanli2": {
+      "suite": "evals/external/wanli-v2"
+    },
+    "typesafe": {
+      "suite": "evals/external/typesafe-v1"
+    },
+    "v9": {
+      "suite": "evals/v9/transfer-v9"
+    },
+    "r3test": {
+      "suite": "evals/round3/transfer-r3",
+      "flags": "--allow-test"
+    },
+    "r3cal": {
+      "suite": "evals/round3/transfer-r3",
+      "flags": "--split calibration"
+    },
+    "transfer4": {
+      "suite": "evals/v4/transfer-v4"
+    },
+    "longdoc": {
+      "suite": "evals/longdoc-v1"
+    },
+    "ood": {
+      "suite": "evals/ood-v2"
+    },
+    "agentsood": {
+      "suite": "evals/agents-ood-v1"
+    },
+    "guardood": {
+      "suite": "evals/guardrails-ood-v1"
+    },
+    "breadthtest": {
+      "suite": "evals/breadth-v1",
+      "flags": "--allow-test"
+    },
+    "tshtest": {
+      "suite": "evals/tasksource-heldout-v1",
+      "flags": "--allow-test"
+    },
+    "hardtest": {
+      "suite": "evals/hard-v1",
+      "flags": "--allow-test"
+    },
+    "devtest": {
+      "suite": "evals/devtools-v1",
+      "flags": "--allow-test"
+    },
+    "docs1test": {
+      "suite": "evals/documents-v1",
+      "flags": "--allow-test"
+    },
+    "docs2": {
+      "suite": "evals/documents-v2",
+      "flags": "--allow-test"
+    },
+    "longdoctest": {
+      "suite": "evals/longdoc-v1",
+      "flags": "--allow-test"
+    },
+    "locked": {
+      "entrypoint": "locked_test",
+      "decision": "evals/v7/decision-v7"
+    }
+  },
+  "read_timeout": {
+    "27b": 14400
+  },
+  "transfer_read": "transfer4",
+  "temperature": {
+    "reads": [
+      "r3cal",
+      "v9"
+    ],
+    "sources": {
+      "v9": [
+        "mmlu_pro"
+      ],
+      "r3cal": [
+        "composition_holdout",
+        "emotion",
+        "legacy_holdout",
+        "mmlu",
+        "paws",
+        "qnli",
+        "sciq",
+        "tweet_offensive"
+      ]
+    },
+    "exclude_reads": [
+      "transfer"
+    ],
+    "ci": {
+      "level": 0.9,
+      "samples": 2000,
+      "seed": 0
+    }
+  },
+  "drop_ids": [
+    "codereviewer/cls-test/13657",
+    "codereviewer/cls-test/19245"
+  ],
+  "locked_args": {
+    "27b": [
+      "--timeout",
+      "14400",
+      "--memory-mb",
+      "131072"
+    ]
+  },
+  "parents": {
+    "27b": {
+      "trial": "runs/r6-27b-v2/01-trial-1",
+      "checkpoint": "jaredpalmer/kev-27b@01b81998019be550f0ae858727df49bac9511195",
+      "reads": {
+        "breadth": "runs/breadth-v1-kev-27b",
+        "tsheld": "runs/r21-P27-tsheld",
+        "hard": "runs/hv1-27b",
+        "devtools": "runs/dt1-27b",
+        "docs": "runs/r6-27bv2-s2-docs",
+        "v9": "runs/r6-27bv2-s2-v9",
+        "r3test": "runs/r19-P27-r3test",
+        "semif": "runs/r6-27bv2-s2-semif",
+        "wanli2": "runs/r6-27bv2-s2-wanli2",
+        "typesafe": "runs/r6-27bv2-s2-typesafe",
+        "longdoc": "runs/longdoc-v1-kev-27b",
+        "ood": "runs/r21-P27-ood",
+        "agentsood": "runs/r21-P27-agentsood",
+        "guardood": "runs/r21-P27-guardood",
+        "locked": "runs/locked/kev-27b-v2-ungated/transfer"
+      }
+    }
+  },
+  "arms": {
+    "27b-r19a": {
+      "checkpoint": "/runs/r19-27b-lr2e6/00-trial-0/checkpoint",
+      "parent": "27b",
+      "trained_on": [
+        "evals/sft-v1"
+      ],
+      "reads": {
+        "breadth": "runs/r19-27b-lr2e6-breadth",
+        "tsheld": "runs/sweep-r19-a-tsheld",
+        "transfer4": "runs/r19-27b-lr2e6/00-trial-0/transfer",
+        "hard": "runs/r19-27b-lr2e6-hard",
+        "devtools": "runs/r19-27b-lr2e6-devtools",
+        "docs": "runs/r19-27b-lr2e6-docs",
+        "r3test": "runs/r19-27b-lr2e6-r3test",
+        "r3cal": "runs/r20-27b-a-r3cal",
+        "v9": "runs/r19-27b-lr2e6-v9",
+        "longdoc": "runs/sweep-r19-a-longdoc",
+        "semif": "runs/r19-27b-lr2e6-semif",
+        "wanli2": "runs/r19-27b-lr2e6-wanli2",
+        "typesafe": "runs/r19-27b-lr2e6-typesafe",
+        "ood": "runs/sweep-r19-a-ood",
+        "agentsood": "runs/sweep-r19-a-agentsood",
+        "guardood": "runs/sweep-r19-a-guardood"
+      }
+    },
+    "27b-r19b": {
+      "checkpoint": "/runs/r19-27b-lr5e6/00-trial-0/checkpoint",
+      "parent": "27b",
+      "trained_on": [
+        "evals/sft-v1"
+      ],
+      "reads": {
+        "breadth": "runs/r19-27b-lr5e6-breadth",
+        "tsheld": "runs/sweep-r19-b-tsheld",
+        "transfer4": "runs/r19-27b-lr5e6/00-trial-0/transfer",
+        "hard": "runs/r19-27b-lr5e6-hard",
+        "devtools": "runs/r19-27b-lr5e6-devtools",
+        "docs": "runs/r19-27b-lr5e6-docs",
+        "r3test": "runs/r19-27b-lr5e6-r3test",
+        "r3cal": "runs/r20-27b-b-r3cal",
+        "v9": "runs/r19-27b-lr5e6-v9",
+        "longdoc": "runs/sweep-r19-b-longdoc",
+        "semif": "runs/r19-27b-lr5e6-semif",
+        "wanli2": "runs/r19-27b-lr5e6-wanli2",
+        "typesafe": "runs/r19-27b-lr5e6-typesafe",
+        "ood": "runs/sweep-r19-b-ood",
+        "agentsood": "runs/sweep-r19-b-agentsood",
+        "guardood": "runs/sweep-r19-b-guardood"
+      }
+    },
+    "27b-r20a-w85": {
+      "checkpoint": "/runs/r20-wise/27b-a-w85/checkpoint",
+      "parent": "27b",
+      "trained_on": [
+        "evals/sft-v1"
+      ],
+      "reads": {
+        "breadth": "runs/r20-27b-a-w85-breadth",
+        "tsheld": "runs/sweep-r20-a-w85-tsheld",
+        "transfer4": "runs/r20-27b-a-w85-transfer4",
+        "hard": "runs/r20-27b-a-w85-hard",
+        "devtools": "runs/r20-27b-a-w85-devtools",
+        "docs": "runs/r20-27b-a-w85-docs",
+        "r3test": "runs/r20-27b-a-w85-r3test",
+        "r3cal": "runs/r20-27b-a-w85-r3cal",
+        "v9": "runs/r20-27b-a-w85-v9",
+        "longdoc": "runs/sweep-r20-a-w85-longdoc",
+        "semif": "runs/r20-27b-a-w85-semif",
+        "wanli2": "runs/r20-27b-a-w85-wanli2",
+        "typesafe": "runs/r20-27b-a-w85-typesafe",
+        "ood": "runs/sweep-r20-a-w85-ood",
+        "agentsood": "runs/sweep-r20-a-w85-agentsood",
+        "guardood": "runs/sweep-r20-a-w85-guardood"
+      }
+    },
+    "27b-r20a-w70": {
+      "checkpoint": "/runs/r20-wise/27b-a-w70/checkpoint",
+      "parent": "27b",
+      "trained_on": [
+        "evals/sft-v1"
+      ],
+      "reads": {
+        "breadth": "runs/r20-27b-a-w70-breadth",
+        "tsheld": "runs/sweep-r20-a-w70-tsheld",
+        "transfer4": "runs/r20-27b-a-w70-transfer4",
+        "hard": "runs/r20-27b-a-w70-hard",
+        "devtools": "runs/r20-27b-a-w70-devtools",
+        "docs": "runs/r20-27b-a-w70-docs",
+        "r3test": "runs/r20-27b-a-w70-r3test",
+        "r3cal": "runs/r20-27b-a-w70-r3cal",
+        "v9": "runs/r20-27b-a-w70-v9",
+        "longdoc": "runs/sweep-r20-a-w70-longdoc",
+        "semif": "runs/r20-27b-a-w70-semif",
+        "wanli2": "runs/r20-27b-a-w70-wanli2",
+        "typesafe": "runs/r20-27b-a-w70-typesafe",
+        "ood": "runs/sweep-r20-a-w70-ood",
+        "agentsood": "runs/sweep-r20-a-w70-agentsood",
+        "guardood": "runs/sweep-r20-a-w70-guardood"
+      }
+    },
+    "27b-r20a-w50": {
+      "checkpoint": "/runs/r20-wise/27b-a-w50/checkpoint",
+      "parent": "27b",
+      "trained_on": [
+        "evals/sft-v1"
+      ],
+      "reads": {
+        "breadth": "runs/r20-27b-a-w50-breadth",
+        "tsheld": "runs/sweep-r20-a-w50-tsheld",
+        "transfer4": "runs/r20-27b-a-w50-transfer4",
+        "hard": "runs/r20-27b-a-w50-hard",
+        "devtools": "runs/r20-27b-a-w50-devtools",
+        "docs": "runs/r20-27b-a-w50-docs",
+        "r3test": "runs/r20-27b-a-w50-r3test",
+        "r3cal": "runs/r20-27b-a-w50-r3cal",
+        "v9": "runs/r20-27b-a-w50-v9",
+        "longdoc": "runs/sweep-r20-a-w50-longdoc",
+        "semif": "runs/r20-27b-a-w50-semif",
+        "wanli2": "runs/r20-27b-a-w50-wanli2",
+        "typesafe": "runs/r20-27b-a-w50-typesafe",
+        "ood": "runs/sweep-r20-a-w50-ood",
+        "agentsood": "runs/sweep-r20-a-w50-agentsood",
+        "guardood": "runs/sweep-r20-a-w50-guardood"
+      }
+    },
+    "27b-r20b-w85": {
+      "checkpoint": "/runs/r20-wise/27b-b-w85/checkpoint",
+      "parent": "27b",
+      "trained_on": [
+        "evals/sft-v1"
+      ],
+      "reads": {
+        "breadth": "runs/r20-27b-b-w85-breadth",
+        "tsheld": "runs/sweep-r20-b-w85-tsheld",
+        "transfer4": "runs/r20-27b-b-w85-transfer4",
+        "hard": "runs/r20-27b-b-w85-hard",
+        "devtools": "runs/r20-27b-b-w85-devtools",
+        "docs": "runs/r20-27b-b-w85-docs",
+        "r3test": "runs/r20-27b-b-w85-r3test",
+        "r3cal": "runs/r20-27b-b-w85-r3cal",
+        "v9": "runs/r20-27b-b-w85-v9",
+        "longdoc": "runs/sweep-r20-b-w85-longdoc",
+        "semif": "runs/r20-27b-b-w85-semif",
+        "wanli2": "runs/r20-27b-b-w85-wanli2",
+        "typesafe": "runs/r20-27b-b-w85-typesafe",
+        "ood": "runs/sweep-r20-b-w85-ood",
+        "agentsood": "runs/sweep-r20-b-w85-agentsood",
+        "guardood": "runs/sweep-r20-b-w85-guardood"
+      }
+    },
+    "27b-r20b-w70": {
+      "checkpoint": "/runs/r20-wise/27b-b-w70/checkpoint",
+      "parent": "27b",
+      "trained_on": [
+        "evals/sft-v1"
+      ],
+      "reads": {
+        "breadth": "runs/r20-27b-b-w70-breadth",
+        "tsheld": "runs/sweep-r20-b-w70-tsheld",
+        "transfer4": "runs/r20-27b-b-w70-transfer4",
+        "hard": "runs/r20-27b-b-w70-hard",
+        "devtools": "runs/r20-27b-b-w70-devtools",
+        "docs": "runs/r20-27b-b-w70-docs",
+        "r3test": "runs/r20-27b-b-w70-r3test",
+        "r3cal": "runs/r20-27b-b-w70-r3cal",
+        "v9": "runs/r20-27b-b-w70-v9",
+        "longdoc": "runs/sweep-r20-b-w70-longdoc",
+        "semif": "runs/r20-27b-b-w70-semif",
+        "wanli2": "runs/r20-27b-b-w70-wanli2",
+        "typesafe": "runs/r20-27b-b-w70-typesafe",
+        "ood": "runs/sweep-r20-b-w70-ood",
+        "agentsood": "runs/sweep-r20-b-w70-agentsood",
+        "guardood": "runs/sweep-r20-b-w70-guardood"
+      }
+    },
+    "27b-r20b-w50": {
+      "checkpoint": "/runs/r20-wise/27b-b-w50/checkpoint",
+      "parent": "27b",
+      "trained_on": [
+        "evals/sft-v1"
+      ],
+      "reads": {
+        "breadth": "runs/r20-27b-b-w50-breadth",
+        "tsheld": "runs/sweep-r20-b-w50-tsheld",
+        "transfer4": "runs/r20-27b-b-w50-transfer4",
+        "hard": "runs/r20-27b-b-w50-hard",
+        "devtools": "runs/r20-27b-b-w50-devtools",
+        "docs": "runs/r20-27b-b-w50-docs",
+        "r3test": "runs/r20-27b-b-w50-r3test",
+        "r3cal": "runs/r20-27b-b-w50-r3cal",
+        "v9": "runs/r20-27b-b-w50-v9",
+        "longdoc": "runs/sweep-r20-b-w50-longdoc",
+        "semif": "runs/r20-27b-b-w50-semif",
+        "wanli2": "runs/r20-27b-b-w50-wanli2",
+        "typesafe": "runs/r20-27b-b-w50-typesafe",
+        "ood": "runs/sweep-r20-b-w50-ood",
+        "agentsood": "runs/sweep-r20-b-w50-agentsood",
+        "guardood": "runs/sweep-r20-b-w50-guardood"
+      }
+    },
+    "27b-r22-s25": {
+      "checkpoint": "/runs/r22-27b-lr2e6/00-trial-0/snapshots/step-0000285/checkpoint",
+      "parent": "27b",
+      "trained_on": [
+        "evals/sft-v2-r22"
+      ],
+      "reads": {
+        "breadth": "runs/r22-27b-lr2e6-s25-breadth",
+        "tsheld": "runs/r22-27b-lr2e6-s25-tsheld",
+        "transfer4": "runs/r22-27b-lr2e6-s25-transfer4",
+        "hard": "runs/r22-27b-lr2e6-s25-hard",
+        "devtools": "runs/r22-27b-lr2e6-s25-devtools",
+        "docs": "runs/r22-27b-lr2e6-s25-docs",
+        "r3test": "runs/r22-27b-lr2e6-s25-r3test",
+        "r3cal": "runs/r22-27b-lr2e6-s25-r3cal",
+        "v9": "runs/r22-27b-lr2e6-s25-v9",
+        "longdoc": "runs/r22-27b-lr2e6-s25-longdoc",
+        "semif": "runs/r22-27b-lr2e6-s25-semif",
+        "wanli2": "runs/r22-27b-lr2e6-s25-wanli2",
+        "typesafe": "runs/r22-27b-lr2e6-s25-typesafe",
+        "ood": "runs/r22-27b-lr2e6-s25-ood",
+        "agentsood": "runs/r22-27b-lr2e6-s25-agentsood",
+        "guardood": "runs/r22-27b-lr2e6-s25-guardood"
+      }
+    },
+    "27b-r22-s50": {
+      "checkpoint": "/runs/r22-27b-lr2e6/00-trial-0/snapshots/step-0000570/checkpoint",
+      "parent": "27b",
+      "trained_on": [
+        "evals/sft-v2-r22"
+      ],
+      "reads": {
+        "breadth": "runs/r22-27b-lr2e6-s50-breadth",
+        "tsheld": "runs/r22-27b-lr2e6-s50-tsheld",
+        "transfer4": "runs/r22-27b-lr2e6-s50-transfer4",
+        "hard": "runs/r22-27b-lr2e6-s50-hard",
+        "devtools": "runs/r22-27b-lr2e6-s50-devtools",
+        "docs": "runs/r22-27b-lr2e6-s50-docs",
+        "r3test": "runs/r22-27b-lr2e6-s50-r3test",
+        "r3cal": "runs/r22-27b-lr2e6-s50-r3cal",
+        "v9": "runs/r22-27b-lr2e6-s50-v9",
+        "longdoc": "runs/r22-27b-lr2e6-s50-longdoc",
+        "semif": "runs/r22-27b-lr2e6-s50-semif",
+        "wanli2": "runs/r22-27b-lr2e6-s50-wanli2",
+        "typesafe": "runs/r22-27b-lr2e6-s50-typesafe",
+        "ood": "runs/r22-27b-lr2e6-s50-ood",
+        "agentsood": "runs/r22-27b-lr2e6-s50-agentsood",
+        "guardood": "runs/r22-27b-lr2e6-s50-guardood"
+      }
+    },
+    "27b-r22-s75": {
+      "checkpoint": "/runs/r22-27b-lr2e6/00-trial-0/snapshots/step-0000855/checkpoint",
+      "parent": "27b",
+      "trained_on": [
+        "evals/sft-v2-r22"
+      ],
+      "reads": {
+        "breadth": "runs/r22-27b-lr2e6-s75-breadth",
+        "tsheld": "runs/r22-27b-lr2e6-s75-tsheld",
+        "transfer4": "runs/r22-27b-lr2e6-s75-transfer4",
+        "hard": "runs/r22-27b-lr2e6-s75-hard",
+        "devtools": "runs/r22-27b-lr2e6-s75-devtools",
+        "docs": "runs/r22-27b-lr2e6-s75-docs",
+        "r3test": "runs/r22-27b-lr2e6-s75-r3test",
+        "r3cal": "runs/r22-27b-lr2e6-s75-r3cal",
+        "v9": "runs/r22-27b-lr2e6-s75-v9",
+        "longdoc": "runs/r22-27b-lr2e6-s75-longdoc",
+        "semif": "runs/r22-27b-lr2e6-s75-semif",
+        "wanli2": "runs/r22-27b-lr2e6-s75-wanli2",
+        "typesafe": "runs/r22-27b-lr2e6-s75-typesafe",
+        "ood": "runs/r22-27b-lr2e6-s75-ood",
+        "agentsood": "runs/r22-27b-lr2e6-s75-agentsood",
+        "guardood": "runs/r22-27b-lr2e6-s75-guardood"
+      }
+    },
+    "27b-r22-final": {
+      "checkpoint": "/runs/r22-27b-lr2e6/00-trial-0/checkpoint",
+      "parent": "27b",
+      "trained_on": [
+        "evals/sft-v2-r22"
+      ],
+      "reads": {
+        "breadth": "runs/r22-27b-lr2e6-breadth",
+        "tsheld": "runs/r22-27b-lr2e6-tsheld",
+        "transfer4": "runs/r22-27b-lr2e6-transfer4",
+        "hard": "runs/r22-27b-lr2e6-hard",
+        "devtools": "runs/r22-27b-lr2e6-devtools",
+        "docs": "runs/r22-27b-lr2e6-docs",
+        "r3test": "runs/r22-27b-lr2e6-r3test",
+        "r3cal": "runs/r22-27b-lr2e6-r3cal",
+        "v9": "runs/r22-27b-lr2e6-v9",
+        "longdoc": "runs/r22-27b-lr2e6-longdoc",
+        "semif": "runs/r22-27b-lr2e6-semif",
+        "wanli2": "runs/r22-27b-lr2e6-wanli2",
+        "typesafe": "runs/r22-27b-lr2e6-typesafe",
+        "ood": "runs/r22-27b-lr2e6-ood",
+        "agentsood": "runs/r22-27b-lr2e6-agentsood",
+        "guardood": "runs/r22-27b-lr2e6-guardood"
+      }
+    }
+  },
+  "rule": {
+    "panels": {
+      "breadth": {
+        "reads": [
+          "breadth"
+        ],
+        "exclude_sources": [
+          "routerbench",
+          "cfcolor",
+          "humicroedit",
+          "chessbench"
+        ],
+        "metrics": [
+          "acc",
+          "ece"
+        ]
+      },
+      "tasksource_heldout": {
+        "reads": [
+          "tsheld"
+        ],
+        "exclude_file": {
+          "path": "runs/r24-private/tsheld-exclude.json",
+          "sha256": "a72030abc815261c3b675c3618af80dd410b2a46b295fd8dff20f2122d07e437"
+        },
+        "metrics": [
+          "acc",
+          "ece"
+        ]
+      },
+      "kev": {
+        "reads": [
+          "transfer",
+          "hard",
+          "devtools",
+          "docs"
+        ],
+        "exclude_sources": [
+          "emotion",
+          "flakeflagger"
+        ],
+        "exclude_tasks": [
+          "commitpackft_type"
+        ],
+        "metrics": [
+          "acc",
+          "ece"
+        ]
+      },
+      "short": {
+        "reads": [
+          "transfer",
+          "r3test"
+        ],
+        "exclude_sources": [
+          "emotion"
+        ],
+        "metrics": [
+          "acc",
+          "brier",
+          "confident_error_rate"
+        ]
+      },
+      "long": {
+        "reads": [
+          "longdoc"
+        ],
+        "source": "longdoc_cuad",
+        "metrics": [
+          "acc",
+          "ece"
+        ],
+        "by_length": {
+          "tokenizer": [
+            "Qwen/Qwen3.8-27B",
+            "1d4bf0f2ff6012fd82039f2fa52739d0dd7c60c0"
+          ]
+        }
+      },
+      "breadth_index": {
+        "reads": [
+          "breadth"
+        ],
+        "metrics": [
+          "acc",
+          "ece"
+        ],
+        "optional": true
+      },
+      "breadth_moved_to_report": {
+        "reads": [
+          "breadth"
+        ],
+        "source": [
+          "cfcolor",
+          "humicroedit",
+          "chessbench"
+        ],
+        "metrics": [
+          "acc"
+        ],
+        "optional": true
+      },
+      "tasksource_heldout_all_families": {
+        "reads": [
+          "tsheld"
+        ],
+        "metrics": [
+          "acc",
+          "ece"
+        ],
+        "optional": true
+      },
+      "hard": {
+        "reads": [
+          "hard"
+        ],
+        "metrics": [
+          "acc",
+          "ece"
+        ],
+        "optional": true
+      },
+      "kev_without_hard": {
+        "reads": [
+          "transfer",
+          "devtools",
+          "docs"
+        ],
+        "exclude_sources": [
+          "emotion",
+          "flakeflagger"
+        ],
+        "exclude_tasks": [
+          "commitpackft_type"
+        ],
+        "metrics": [
+          "acc"
+        ],
+        "optional": true
+      },
+      "semif": {
+        "reads": [
+          "semif"
+        ],
+        "metrics": [
+          "acc"
+        ],
+        "optional": true
+      },
+      "wanli2": {
+        "reads": [
+          "wanli2"
+        ],
+        "metrics": [
+          "acc"
+        ],
+        "optional": true
+      },
+      "typesafe": {
+        "reads": [
+          "typesafe"
+        ],
+        "metrics": [
+          "acc"
+        ],
+        "optional": true
+      },
+      "long_generated": {
+        "reads": [
+          "longdoc"
+        ],
+        "source": "longdoc_synthetic",
+        "report": [
+          "acc",
+          "ece"
+        ],
+        "optional": true
+      },
+      "ood": {
+        "reads": [
+          "ood"
+        ],
+        "metrics": [
+          "acc",
+          "ece"
+        ],
+        "optional": true
+      },
+      "agents_ood": {
+        "reads": [
+          "agentsood"
+        ],
+        "metrics": [
+          "acc",
+          "ece"
+        ],
+        "optional": true
+      },
+      "guardrails_ood": {
+        "reads": [
+          "guardood"
+        ],
+        "metrics": [
+          "acc",
+          "ece"
+        ],
+        "optional": true
+      }
+    },
+    "unknowable": "v9",
+    "criteria": {
+      "1_breadth_lower_above_0": {
+        "left": "breadth.acc.lower",
+        "op": ">",
+        "right": 0
+      },
+      "1_tasksource_heldout_lower_above_0": {
+        "left": "tasksource_heldout.acc.lower",
+        "op": ">",
+        "right": 0
+      },
+      "1_kev_lower_at_least_minus_1pp": {
+        "left": "kev.acc.lower",
+        "op": ">=",
+        "right": -0.01
+      },
+      "2_short_acc_lower_at_least_minus_2pp": {
+        "left": "short.acc.lower",
+        "op": ">=",
+        "right": -0.02
+      },
+      "2_short_brier_upper_at_most_0.02": {
+        "left": "short.brier.upper",
+        "op": "<=",
+        "right": 0.02
+      },
+      "2_short_confident_errors_upper_at_most_1pp": {
+        "left": "short.confident_error_rate.upper",
+        "op": "<=",
+        "right": 0.01
+      },
+      "2_long_cuad_lower_at_least_minus_2pp": {
+        "left": "long.acc.lower",
+        "op": ">=",
+        "right": -0.02
+      },
+      "2_long_cuad_16k_plus_at_least_minus_2pp": {
+        "left": [
+          "long.acc_16k_plus.candidate",
+          "long.acc_16k_plus.parent"
+        ],
+        "op": ">=",
+        "right": -0.02
+      },
+      "2_unknowable_at_most_0.05": {
+        "left": "unknowable.candidate",
+        "op": "<=",
+        "right": 0.05
+      },
+      "3_breadth_ece_at_most_parent_plus_0.01": {
+        "left": "breadth.ece.candidate",
+        "op": "<=",
+        "right": "breadth.ece.parent",
+        "plus": 0.01
+      },
+      "3_kev_ece_at_most_parent_plus_0.01": {
+        "left": "kev.ece.candidate",
+        "op": "<=",
+        "right": "kev.ece.parent",
+        "plus": 0.01
+      },
+      "3_tasksource_heldout_ece_at_most_parent_plus_0.01": {
+        "left": "tasksource_heldout.ece.candidate",
+        "op": "<=",
+        "right": "tasksource_heldout.ece.parent",
+        "plus": 0.01
+      }
+    },
+    "rank": [
+      {
+        "by": [
+          "breadth.acc.delta",
+          "tasksource_heldout.acc.delta",
+          "kev.acc.delta"
+        ],
+        "order": "desc"
+      }
+    ]
+  },
+  "confirm": {
+    "tests": {
+      "candidate_reads": "runs/r24c-{size}-cand-{tag}",
+      "parent_reads": "runs/r24c-{size}-parent-{tag}",
+      "panels": {
+        "breadthtest": {
+          "reads": [
+            "breadthtest"
+          ],
+          "exclude_sources": [
+            "routerbench",
+            "cfcolor",
+            "humicroedit",
+            "chessbench"
+          ],
+          "metrics": [
+            "acc"
+          ],
+          "report": [
+            "ece"
+          ]
+        },
+        "tshtest": {
+          "reads": [
+            "tshtest"
+          ],
+          "exclude_file": {
+            "path": "runs/r24-private/tsheld-exclude.json",
+            "sha256": "a72030abc815261c3b675c3618af80dd410b2a46b295fd8dff20f2122d07e437"
+          },
+          "metrics": [
+            "acc"
+          ],
+          "report": [
+            "ece"
+          ]
+        },
+        "pooled": {
+          "reads": [
+            "hardtest",
+            "devtest",
+            "docs1test"
+          ],
+          "exclude_sources": [
+            "flakeflagger"
+          ],
+          "exclude_tasks": [
+            "commitpackft_type"
+          ],
+          "metrics": [
+            "acc"
+          ]
+        },
+        "breadthtest_index": {
+          "reads": [
+            "breadthtest"
+          ],
+          "metrics": [
+            "acc"
+          ],
+          "report": [
+            "ece"
+          ],
+          "optional": true
+        },
+        "hardtest": {
+          "reads": [
+            "hardtest"
+          ],
+          "metrics": [
+            "acc"
+          ],
+          "optional": true
+        },
+        "devtest": {
+          "reads": [
+            "devtest"
+          ],
+          "exclude_sources": [
+            "flakeflagger"
+          ],
+          "exclude_tasks": [
+            "commitpackft_type"
+          ],
+          "metrics": [
+            "acc"
+          ],
+          "optional": true
+        },
+        "docs1test": {
+          "reads": [
+            "docs1test"
+          ],
+          "metrics": [
+            "acc"
+          ],
+          "optional": true
+        },
+        "docs2": {
+          "reads": [
+            "docs2"
+          ],
+          "metrics": [
+            "acc"
+          ],
+          "optional": true
+        },
+        "longtest": {
+          "reads": [
+            "longdoctest"
+          ],
+          "source": "longdoc_cuad",
+          "metrics": [
+            "acc"
+          ],
+          "report": [
+            "ece"
+          ],
+          "by_length": {
+            "tokenizer": [
+              "Qwen/Qwen3.8-27B",
+              "1d4bf0f2ff6012fd82039f2fa52739d0dd7c60c0"
+            ]
+          },
+          "optional": true
+        },
+        "longtest_generated": {
+          "reads": [
+            "longdoctest"
+          ],
+          "source": "longdoc_synthetic",
+          "report": [
+            "acc",
+            "ece"
+          ],
+          "optional": true
+        }
+      },
+      "criteria": {
+        "breadthtest_lower_above_0": {
+          "left": "breadthtest.acc.lower",
+          "op": ">",
+          "right": 0
+        },
+        "tshtest_lower_above_0": {
+          "left": "tshtest.acc.lower",
+          "op": ">",
+          "right": 0
+        },
+        "pooled_lower_at_least_minus_1pp": {
+          "left": "pooled.acc.lower",
+          "op": ">=",
+          "right": -0.01
+        }
+      }
+    },
+    "locked": {
+      "candidate_reads": {
+        "locked": "runs/locked/kev-{size}-r24-ungated/transfer"
+      },
+      "panels": {
+        "locked": {
+          "reads": [
+            "locked"
+          ],
+          "metrics": [
+            "acc",
+            "brier"
+          ]
+        }
+      },
+      "criteria": {
+        "locked_acc_at_least_0.886": {
+          "left": "locked.acc.candidate",
+          "op": ">=",
+          "right": 0.886
+        },
+        "served_brier_at_most_0.165": {
+          "left": "locked.brier.candidate",
+          "op": "<=",
+          "right": 0.165
+        }
+      }
+    }
+  }
+}

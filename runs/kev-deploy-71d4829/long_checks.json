@@ -1,0 +1,234 @@
+{
+ "started_utc": "2026-10-01T03:42:30Z",
+ "steps": [
+  {
+   "http": 422,
+   "body": {
+    "detail": "state is 70,065 tokens, over the 65,536-token limit (the <state> token included): shorten the document or split it across requests; or start the server with KEV_TRUNCATE_STATES=1 to read only its first 65,536 tokens (responses then say truncated: true)"
+   },
+   "round_trip_s": 0.89,
+   "server-timing": "app;dur=546.6",
+   "cache_after": {
+    "size": 4,
+    "min_state_tokens": 0,
+    "max_tokens": 65536,
+    "hits": 34,
+    "misses": 221,
+    "cached_states": 4,
+    "oom_retries": 0
+   },
+   "label": "b_70k",
+   "file": "long70k.json"
+  },
+  {
+   "http": 200,
+   "body": {
+    "model": "kev-latest",
+    "answers": {
+     "team": {
+      "type": "choice",
+      "choice": "billing",
+      "confidence": 0.9991,
+      "probabilities": {
+       "returns": 0.0005,
+       "shipping": 0.0001,
+       "billing": 0.9994
+      }
+     },
+     "duplicate": {
+      "type": "noul",
+      "noul": 0.9995
+     }
+    },
+    "usage": {
+     "input_tokens": 60118,
+     "output_tokens": 85
+    },
+    "latency_ms": 10127.1
+   },
+   "round_trip_s": 10.85,
+   "server-timing": "app;dur=10548.0",
+   "cache_after": {
+    "size": 4,
+    "min_state_tokens": 0,
+    "max_tokens": 65536,
+    "hits": 34,
+    "misses": 222,
+    "cached_states": 4,
+    "oom_retries": 0
+   },
+   "label": "c_60k_a_first",
+   "file": "long60k.json"
+  },
+  {
+   "http": 200,
+   "body": {
+    "model": "kev-latest",
+    "answers": {
+     "team": {
+      "type": "choice",
+      "choice": "billing",
+      "confidence": 0.9991,
+      "probabilities": {
+       "returns": 0.0005,
+       "shipping": 0.0001,
+       "billing": 0.9994
+      }
+     },
+     "duplicate": {
+      "type": "noul",
+      "noul": 0.9995
+     }
+    },
+    "usage": {
+     "input_tokens": 60118,
+     "output_tokens": 85
+    },
+    "latency_ms": 276.3
+   },
+   "round_trip_s": 0.93,
+   "server-timing": "app;dur=624.2",
+   "cache_after": {
+    "size": 4,
+    "min_state_tokens": 0,
+    "max_tokens": 65536,
+    "hits": 35,
+    "misses": 222,
+    "cached_states": 4,
+    "oom_retries": 0
+   },
+   "label": "c_60k_a_repeat",
+   "file": "long60k.json"
+  },
+  {
+   "http": 200,
+   "body": {
+    "model": "kev-latest",
+    "answers": {
+     "team": {
+      "type": "choice",
+      "choice": "billing",
+      "confidence": 0.9991,
+      "probabilities": {
+       "returns": 0.0006,
+       "shipping": 0.0001,
+       "billing": 0.9994
+      }
+     },
+     "duplicate": {
+      "type": "noul",
+      "noul": 0.9995
+     }
+    },
+    "usage": {
+     "input_tokens": 60118,
+     "output_tokens": 85
+    },
+    "latency_ms": 8137.4
+   },
+   "round_trip_s": 8.79,
+   "server-timing": "app;dur=8480.8",
+   "cache_after": {
+    "size": 4,
+    "min_state_tokens": 0,
+    "max_tokens": 65536,
+    "hits": 35,
+    "misses": 223,
+    "cached_states": 1,
+    "oom_retries": 0
+   },
+   "label": "c_60k_b_first",
+   "file": "long60k_b.json"
+  },
+  {
+   "http": 200,
+   "body": {
+    "model": "kev-latest",
+    "answers": {
+     "team": {
+      "type": "choice",
+      "choice": "billing",
+      "confidence": 0.9991,
+      "probabilities": {
+       "returns": 0.0006,
+       "shipping": 0.0001,
+       "billing": 0.9994
+      }
+     },
+     "duplicate": {
+      "type": "noul",
+      "noul": 0.9995
+     }
+    },
+    "usage": {
+     "input_tokens": 60118,
+     "output_tokens": 85
+    },
+    "latency_ms": 278.8
+   },
+   "round_trip_s": 0.95,
+   "server-timing": "app;dur=640.0",
+   "cache_after": {
+    "size": 4,
+    "min_state_tokens": 0,
+    "max_tokens": 65536,
+    "hits": 36,
+    "misses": 223,
+    "cached_states": 1,
+    "oom_retries": 0
+   },
+   "label": "c_60k_b_repeat",
+   "file": "long60k_b.json"
+  },
+  {
+   "http": 200,
+   "body": {
+    "model": "kev-latest",
+    "answers": {
+     "team": {
+      "type": "choice",
+      "choice": "billing",
+      "confidence": 0.9991,
+      "probabilities": {
+       "returns": 0.0005,
+       "shipping": 0.0001,
+       "billing": 0.9994
+      }
+     },
+     "duplicate": {
+      "type": "noul",
+      "noul": 0.9995
+     }
+    },
+    "usage": {
+     "input_tokens": 60118,
+     "output_tokens": 85
+    },
+    "latency_ms": 8130.4
+   },
+   "round_trip_s": 8.78,
+   "server-timing": "app;dur=8482.9",
+   "cache_after": {
+    "size": 4,
+    "min_state_tokens": 0,
+    "max_tokens": 65536,
+    "hits": 36,
+    "misses": 224,
+    "cached_states": 1,
+    "oom_retries": 0
+   },
+   "label": "c_60k_a_again",
+   "file": "long60k.json"
+  }
+ ],
+ "cache_before": {
+  "size": 4,
+  "min_state_tokens": 0,
+  "max_tokens": 65536,
+  "hits": 34,
+  "misses": 221,
+  "cached_states": 4,
+  "oom_retries": 0
+ },
+ "ended_utc": "2026-10-01T03:43:04Z"
+}

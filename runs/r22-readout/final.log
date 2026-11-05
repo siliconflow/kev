@@ -1,0 +1,25 @@
+2026-09-27T07:29:37Z r22-final start: continuation fc-01M3GW90WZZ1Q4S60DFYCF4SGK spawned ~07:35Z; checking
+2026-09-27T07:45Z continuation fc-01M3GW90WZZ1Q4S60DFYCF4SGK: container ta-01M3GW917PAWHZBRW1FBVNE35R started 07:29:26Z ("continuing"), world=8 07:30:38Z; FunctionCallGetInfo pending. Original call fc-01M3F33VP5PAYSSB0V3249S060: 1 input, timeout_inputs=1 (latest attempt ta-01M3FYY1V5 22:56:25->06:56:25).
+JOB2 finding: both attempts hit 28800 s and then "failed to respond to cancellation for too long: 30 seconds - killing task" (22:50:58, 06:57:37). Attempt-2 attempt token = 22:51:28.57 = kill + 30 s initial_delay, i.e. the retry came from the KILL, not the timeout.
+ Probe (/tmp/r22-retry-probe.py, ephemeral CPU app kev-retry-probe, timeout 10 s, spawn):
+  a: Retries(2) responsive -> 3 attempts (decorator and with_options alike); unresponsive (>30 s after cancel, killed) -> 2 attempts (both ways)
+  b: Retries(4) responsive -> 5; unresponsive -> 4 (attempt 4 started 6 s after attempt 3 = while it ran); graceful cleanup 15 s -> 3; single_use_containers + unresponsive -> 3 but attempt 3 started 5 s after attempt 2 (concurrent duplicates)
+  c: retries=0 unresponsive -> 1 attempt, no respawn after the kill (decorator and with_options)
+ => Modal charges a timed-out attempt that is killed after the 30 s cancellation grace twice (timeout + killed task), and the kill-triggered retry can start while another attempt runs. max_retries=2 gave 2 attempts. Fix: Modal retries off for full-weight trials; the watcher continues them.
+2026-09-27T07:46:24Z continuation resumed step 998 at 07:45:00Z (micro-batch 2590); plan next. Expect step 1140 ~09:50Z.
+2026-09-27T08:05Z probe rerun from worktree (scripts/modal_retry_probe.py, 8 variants): Retries(2) resp 3; unresp 2 (decorator) / 3 via with_options with 3rd starting 4 s after 2nd (concurrent); Retries(4) 5/4; graceful 3; single_use 3 (overlapping); retries=0 -> 1. Timing-dependent: lost attempt OR concurrent duplicate.
+ PR worktree /tmp/kev-retries (branch modal/full-trial-retries): retries=0 for all trials; spawn.json attempt ledger (calls/attempts/gpu/timeout/full_ft/modal_retries:0); modal_app.continue_full_trial (+ resume --trial/--beyond-bound); kev.rounds poll_modal->"timeout", watch_studies on_timeout, continue_trial; kev.budget.trial_attempts; tests; docs.
+2026-09-27T08:24:19Z continuation: step1010 07:57:39Z 0.161, 1020 0.247, 1030 0.188, 1040 08:23:09Z 0.228 (= attempt 2's losses exactly: bit-exact resume). ~51 s/step -> step 1140 ~09:48Z.
+2026-09-27T09:28:06Z PR #163 opened (https://github.com/jaredpalmer/kev/pull/163), commit 5bbcf27; local CI suite 424 passed 22 skipped. Not merged.
+2026-09-27T10:02:51Z PR #163 CI green (python 6m13s, playground).
+2026-09-27T10:34:48Z continuation: step1140 09:48:14Z loss 0.247; saved checkpoint 09:49:38Z; final checkpoint committed 09:53:27Z (head.pt on volume). In-trial scoring running (development-ish 5500/13385 at 10:18Z). metered $3496.00 at 10:18Z. Launching final-arm reads.
+2026-09-27T11:08:26Z final-arm reads launched ~10:25Z (17 jobs, H200, timeout 14400, ephemeral app ap-e51QZ6b4dqX7xE7p1oqv8A, log runs/r22-reads-27b-lr2e6-0.log); all 17 /bench dirs present at 11:10Z.
+2026-09-27T12:12:39Z continuation call fc-01M3GW90 returned: objective -0.4096, clean acc 0.9091, transfer 0.8491, T 0.933 (trial's own dev fit), wall 14416 s this attempt; gates: isolation_and_packing FAILED (max delta 0.00213 > 0.001; round 19's 27B trials 0.0016-0.0063, same), others pass. Pulled study (42 files, 0.20 GB; weights stay). Reads landed so far: breadth devtools docs guardood hard.
+2026-09-27T13:23:08Z reads: local client lost DNS (~11:xxZ, 12 FAILED locally); all 12 finished remotely; pulled from /bench manually. 17/17.
+2026-09-27T13:26Z READOUT regenerated: uv run python -m kev.rounds readout experiments/rounds/r22.json -> runs/r22-readout/round22.json (full text /tmp/r22-final-readout.txt; panels /tmp/r22-final-panels.txt; criteria /tmp/r22-final-criteria.txt)
+ pool T (648 q, excluded 0): s25 1.176, s50 1.516, s75 1.320, final 1.382 (= parent's 1.382: both the same point of the 121-point log grid, not a fallback; fit report names the final's own r3cal+v9 reads)
+ final 27b-lr2e6 FAIL: 2_short_acc (-1.22 [-2.27,-0.22]), 2_scienthoon (-5.50 [-7.79,-3.21]), 2_pooled (-2.23 [-3.61,-0.90]), 3_long_cuad_ece_16k+ (0.1023 vs 0.0708+0.01). Passes breadth primary +1.30 [+0.33,+2.32], tsheld +3.80, kev +7.80, short brier +0.0013, wanli2 +0.5.
+ candidates {'27b': None}: no candidate, no confirmation.
+ scienthoon (/tmp/r22-scienthoon-final/drift.json): final angry 0.852, FP(neutral) 0, FN(angry) 28, priority 0.419 (K27B 0.911 / 9 / 2 / 0.529)
+ breadth index (/tmp/r22-breadth-report-final): final 52.3 [49.5,55.2], +2.1 [-0.6,+4.7] vs K27B 50.2; Jev 53.3; AutoJev 51.7; s25 51.7 s50 52.1 s75 52.0
+ metered $3572.09 at 13:26Z (billing may lag). No containers running.

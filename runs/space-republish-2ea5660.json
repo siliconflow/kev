@@ -1,0 +1,291 @@
+{
+  "what": "Republished the jaredpalmer/kev HF Space (ZeroGPU) from kev main 2ea566009d95763bbcea7cc03468140cc559cbfd with scripts/publish_space.sh (space/ + vendored kev/{__init__,model,api,checkpoint}.py), then checked it through gradio_client's /decide endpoint",
+  "date": "2026-09-30",
+  "kev_commit": "2ea566009d95763bbcea7cc03468140cc559cbfd",
+  "ci_main": "run 36772633640 success (2ea5660)",
+  "space": {
+    "repo": "spaces/jaredpalmer/kev",
+    "previous_commit": "bc58df8299d0bcaaa6cf5466bdc48bb4a30dd961 (vendored from ce089c6: SERVE_MAX_STATE 8192, model.encode without strict)",
+    "commit": "f02a35d4a95d5073d562f4ffb52255b8cefeefb3",
+    "runtime_stage": "RUNNING",
+    "hardware": "zero-a10g",
+    "rebuild_seconds_to_running": 102
+  },
+  "requests": {
+    "preset": "space/presets.py PRESETS[0] ('Support triage'), model Kev-4B, raw (Calibrated off), no date_facts, no stability check",
+    "long_70k": "the state of runs/kev-deploy-2ea5660/make_long_state.py jaredpalmer/kev-4b 70000 (70,022 tokens on the plain text; 70,065 as admitted, <state> and markup included), sent with the preset's questions",
+    "mid_12k": "the same construction at 12000 tokens (12,022 on the plain text)"
+  },
+  "reference": {
+    "what": "Kev-4B loaded on this Mac through the Space's own path (Checkpoint.load('cpu', LoadOptions(attn='sdpa', temperature=1.0)), kev.model.admit, model.probs), fp32 CPU, torch reference DeltaNet kernels",
+    "machine": "macOS-26.6.2-arm64-arm-64bit-Mach-O",
+    "torch": "2.8.0",
+    "input_tokens": 253,
+    "answers": {
+      "department": {
+        "type": "choice",
+        "choice": "returns",
+        "confidence": 0.5629,
+        "probabilities": {
+          "returns": 0.7086,
+          "shipping": 0.2447,
+          "billing": 0.0467
+        }
+      },
+      "return_reason": {
+        "type": "choice",
+        "choice": "wrong_size",
+        "confidence": 0.9834,
+        "probabilities": {
+          "wrong_size": 0.9867,
+          "wrong_item": 0.0008,
+          "damaged": 0.0,
+          "changed_mind": 0.0002,
+          "other": 0.0123
+        }
+      },
+      "requested_resolution": {
+        "type": "choice",
+        "choice": "refund",
+        "confidence": 0.2002,
+        "probabilities": {
+          "exchange": 0.0991,
+          "refund": 0.4001,
+          "replacement": 0.2949,
+          "information": 0.2059
+        }
+      },
+      "tone": {
+        "type": "choice",
+        "choice": "frustrated",
+        "confidence": 0.5483,
+        "probabilities": {
+          "calm": 0.0041,
+          "frustrated": 0.6988,
+          "angry": 0.2971
+        }
+      },
+      "escalate": {
+        "type": "noul",
+        "noul": 0.9302
+      },
+      "frustration": {
+        "type": "score",
+        "score": 1.2754,
+        "legend": {
+          "0": "Calm",
+          "1": "Frustrated",
+          "2": "Very angry"
+        },
+        "probabilities": {
+          "0": 0.0015,
+          "1": 0.7217,
+          "2": 0.2768
+        },
+        "confidence": 0.5825
+      }
+    },
+    "long_admission": {
+      "refused": true,
+      "type": "ContextOverflow",
+      "message": "state is 70,065 tokens, over the 65,536-token limit (the <state> token included): shorten the document or split it across requests"
+    }
+  },
+  "before": {
+    "preset": {
+      "answers": {
+        "department": {
+          "type": "choice",
+          "choice": "returns",
+          "confidence": 0.5629,
+          "probabilities": {
+            "returns": 0.7086,
+            "shipping": 0.2447,
+            "billing": 0.0467
+          }
+        },
+        "return_reason": {
+          "type": "choice",
+          "choice": "wrong_size",
+          "confidence": 0.9834,
+          "probabilities": {
+            "wrong_size": 0.9867,
+            "wrong_item": 0.0008,
+            "damaged": 0.0,
+            "changed_mind": 0.0002,
+            "other": 0.0123
+          }
+        },
+        "requested_resolution": {
+          "type": "choice",
+          "choice": "refund",
+          "confidence": 0.2002,
+          "probabilities": {
+            "exchange": 0.0991,
+            "refund": 0.4001,
+            "replacement": 0.2949,
+            "information": 0.2059
+          }
+        },
+        "tone": {
+          "type": "choice",
+          "choice": "frustrated",
+          "confidence": 0.5483,
+          "probabilities": {
+            "calm": 0.0041,
+            "frustrated": 0.6988,
+            "angry": 0.2971
+          }
+        },
+        "escalate": {
+          "type": "noul",
+          "noul": 0.9302
+        },
+        "frustration": {
+          "type": "score",
+          "score": 1.2754,
+          "legend": {
+            "0": "Calm",
+            "1": "Frustrated",
+            "2": "Very angry"
+          },
+          "probabilities": {
+            "0": 0.0015,
+            "1": 0.7217,
+            "2": 0.2768
+          },
+          "confidence": 0.5825
+        }
+      },
+      "usage": {
+        "input_tokens": 253,
+        "output_tokens": 415
+      },
+      "vs_reference": {
+        "values": 19,
+        "max_abs_dp": 0.0,
+        "argmax_flips": 0
+      }
+    },
+    "long_70k": {
+      "answered": false,
+      "error_type": "AppError",
+      "error": "branch too long: 42 tokens with a 8192-token state (row limit 8192)",
+      "round_trip_s": 1.29
+    }
+  },
+  "after": {
+    "preset": {
+      "answers": {
+        "department": {
+          "type": "choice",
+          "choice": "returns",
+          "confidence": 0.5629,
+          "probabilities": {
+            "returns": 0.7086,
+            "shipping": 0.2447,
+            "billing": 0.0467
+          }
+        },
+        "return_reason": {
+          "type": "choice",
+          "choice": "wrong_size",
+          "confidence": 0.9834,
+          "probabilities": {
+            "wrong_size": 0.9867,
+            "wrong_item": 0.0008,
+            "damaged": 0.0,
+            "changed_mind": 0.0002,
+            "other": 0.0123
+          }
+        },
+        "requested_resolution": {
+          "type": "choice",
+          "choice": "refund",
+          "confidence": 0.2002,
+          "probabilities": {
+            "exchange": 0.0991,
+            "refund": 0.4001,
+            "replacement": 0.2949,
+            "information": 0.2059
+          }
+        },
+        "tone": {
+          "type": "choice",
+          "choice": "frustrated",
+          "confidence": 0.5483,
+          "probabilities": {
+            "calm": 0.0041,
+            "frustrated": 0.6988,
+            "angry": 0.2971
+          }
+        },
+        "escalate": {
+          "type": "noul",
+          "noul": 0.9302
+        },
+        "frustration": {
+          "type": "score",
+          "score": 1.2754,
+          "legend": {
+            "0": "Calm",
+            "1": "Frustrated",
+            "2": "Very angry"
+          },
+          "probabilities": {
+            "0": 0.0015,
+            "1": 0.7217,
+            "2": 0.2768
+          },
+          "confidence": 0.5825
+        }
+      },
+      "usage": {
+        "input_tokens": 253,
+        "output_tokens": 415
+      },
+      "latency_ms": 1948.2,
+      "vs_reference": {
+        "values": 19,
+        "max_abs_dp": 0.0,
+        "argmax_flips": 0
+      },
+      "vs_before": {
+        "values": 19,
+        "max_abs_dp": 0.0,
+        "argmax_flips": 0
+      }
+    },
+    "long_70k": {
+      "answered": false,
+      "error_type": "AppError",
+      "error": "state is 70,065 tokens, over the 65,536-token limit (the <state> token included): shorten the document or split it across requests",
+      "round_trip_s": 1.57
+    },
+    "mid_12k": {
+      "answered": true,
+      "usage": {
+        "input_tokens": 12266,
+        "output_tokens": 409
+      },
+      "latency_ms": 7758.6,
+      "round_trip_s": 10.46,
+      "department": {
+        "type": "choice",
+        "choice": "billing",
+        "confidence": 0.9265,
+        "probabilities": {
+          "returns": 0.049,
+          "shipping": 0.0,
+          "billing": 0.951
+        }
+      }
+    }
+  },
+  "tolerance": 0.03,
+  "verdict": {
+    "preset_within_tolerance": true,
+    "long_refused_with_count_and_limit": true,
+    "note": "The answers carry 4 decimals (kev.api.to_answers), so max_abs_dp 0.0 means equal at that rounding. Before the republish (vendored ce089c6, 8,192-token limits) the 70k state was cut to 8,192 tokens and then failed with a branch-length error that did not name the state; the 12k state was not sent to the old Space. After: the 12k state is read whole (input_tokens 12,266) and the 70k state is refused with its count, the limit and the fixes."
+  }
+}

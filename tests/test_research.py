@@ -7,7 +7,6 @@ import torch
 
 from kev import evaluate
 from kev.data import materialize
-from kev.suite import record_digest
 from kev.train import question_loss
 
 
@@ -638,7 +637,7 @@ class FakeServed:
     def __init__(self, leak=lambda others: 0.0):
         self.leak = leak
 
-    def encode(self, tok, rec):
+    def encode(self, tok, rec, **limits):   # the serving limits kev.model.admit passes
         return rec
 
     def probs_batch(self, recs, prefixes, keep):
@@ -911,61 +910,6 @@ def test_frozen_suites_load_under_any_locale(tmp_path):
     assert "*.jsonl text eol=lf" in attributes and "*.json text eol=lf" in attributes
 
 
-def test_semif_external_rows_convert_to_typed_requests():
-    """SemIf's build_*.py rows become Kev requests: WANLI as a 3-way choice in SemIf's per-row option order, TypeSafe rows keep
-    their primitive with the reference/published distributions keyed by option id (Kev's option_text adds the `id: ` prefix
-    SemIf bakes into descriptions, so it is stripped)."""
-    from scripts.freeze_semif_external import convert
-    wanli = {"id": "w1", "group_id": "g1", "split": "external_test", "family": "evidence_interpretation", "state": "premise", "question": "Assess: claim",
-             "options": [{"id": "insufficient", "description": "insufficient: neither"}, {"id": "supported", "description": "supported: yes"}, {"id": "contradicted", "description": "contradicted: no"}],
-             "label": 1, "provenance": {"source": "WANLI", "source_revision": "abc", "rights": "CC-BY-4.0"}}
-    rec = convert(wanli, "wanli")
-    q = rec["questions"]["decision"]
-    assert q == {"type": "choice", "instructions": "Assess: claim", "criteria": {"insufficient": "neither", "supported": "yes", "contradicted": "no"}, "label": "supported", "src": "wanli_nli"}
-    assert rec["_meta"]["id"] == "wanli/w1" and rec["_meta"]["group_id"] == "wanli/g1" and rec["_meta"]["variant"] == "clean"
-    ts = {"id": "t1", "group_id": "c1", "split": "external_typesafe_selected", "family": "typesafe_customer_service", "state": '{"ticket": "hi"}', "question": "Angry?",
-          "primitive": "noul", "options": [{"id": "true", "description": "true: yes"}, {"id": "false", "description": "false: no"}], "label": 1, "target_distribution": [0.1, 0.9],
-          "published_models": {"typesafe": {"model": "typesafe:v13", "distribution": [0.2, 0.8]}}, "provenance": {"workflow": "customer_service", "snapshot_sha256": "0" * 64}}
-    rec = convert(ts, "typesafe")
-    assert rec["state"] == {"ticket": "hi"}
-    assert rec["questions"]["decision"] == {"type": "noul", "instructions": "Angry?", "criteria": {"true": "yes", "false": "no"}, "label": False, "src": "typesafe_customer_service"}
-    assert rec["_meta"]["target"] == {"true": 0.1, "false": 0.9} and rec["_meta"]["published"]["typesafe"]["p"] == {"true": 0.2, "false": 0.8}
-    assert rec["_meta"]["row_sha256"] == record_digest({"state": rec["state"], "questions": rec["questions"]})
-
-
-def test_typesafe_equal_case_agreement_and_tvd():
-    """Rows average within a case, cases average equally; a row the model never answered scores agreement 0 / TVD 1."""
-    from scripts.compare_typesafe import case_means, score
-    assert score({"true": 0.7, "false": 0.3}, {"true": 1.0, "false": 0.0}) == (1.0, pytest.approx(0.3))
-    records = [{"_meta": {"id": f"r{i}", "group_id": g}} for i, g in enumerate(["a", "a", "b"])]
-    scores = {"r0": (1.0, 0.0), "r1": (0.0, 0.5)}  # case b unanswered
-    out = case_means(scores, records)
-    assert out["rows"] == 3 and out["cases"] == 2
-    assert out["equal_case_modal_agreement"] == pytest.approx((0.5 + 0.0) / 2)
-    assert out["equal_case_total_variation"] == pytest.approx((0.25 + 1.0) / 2)
-
-
-@pytest.mark.parametrize("suite, rows, tasks", [("wanli-v1", 256, {"wanli_nli"}),
-                                                 ("typesafe-v1", 102, {"typesafe_agent_trace_observability", "typesafe_customer_service", "typesafe_invoice_processing", "typesafe_security_incidents"})])
-def test_semif_external_suites_are_frozen_as_scored(suite, rows, tasks):
-    """The committed selections match SemIf's manifest sizes, are eval-only, carry the unique reference argmax the comparison relies on
-    and record the context they were admitted under (TypeSafe documents need the serving context; 13 of 102 exceed even that)."""
-    from kev.suite import load_split, read_manifest
-    root = pathlib.Path(__file__).resolve().parents[1] / "evals" / "external" / suite
-    manifest = read_manifest(root)
-    records = load_split(root, "development")
-    assert len(records) == rows and manifest["eval_only"] and manifest["holdout_sources"] == [] and set(manifest["tasks"]) == tasks
-    assert len({r["_meta"]["id"] for r in records}) == rows and all(r["_meta"]["variant"] == "clean" for r in records)
-    assert all(r["_meta"]["row_sha256"] == record_digest({"state": r["state"], "questions": r["questions"]}) for r in records)
-    if suite == "typesafe-v1":
-        assert len({r["_meta"]["group_id"] for r in records}) == 20
-        for r in records:
-            target = r["_meta"]["target"]
-            top = sorted(target.values(), reverse=True)
-            assert top[0] > top[1], r["_meta"]["id"]
-            assert set(target) == set(r["questions"]["decision"]["criteria"])
-
-
 def test_rotation_averaging_cancels_a_position_bias():
     import math
     from kev.api import question_keys
@@ -1051,3 +995,24 @@ def test_jsonl_round_trips_unicode_line_separators(tmp_path):
     recs = [{"state": "line one\u2028line two"}, {"state": "next\x85record\u2029end"}, {"state": "plain"}]
     write_jsonl(tmp_path / "x.jsonl", recs)
     assert read_jsonl(tmp_path / "x.jsonl") == recs
+
+
+def test_validated_context_is_the_largest_unbroken_bucket_within_the_margin():
+    from scripts.longdoc_report import validated_context
+    def buckets(lowers, answered=None):
+        out = {b: {"coverage": {"records": 240, "answered": 240}} for b in ("4k", "8k", "16k", "32k", "64k")}
+        for b, lower in lowers.items():
+            out[b]["cuad_paired_vs_8k"] = None if lower is None else {"questions": 450, "delta": lower + 0.02, "ci95": [lower, lower + 0.04], "falls": False}
+        for b, n in (answered or {}).items(): out[b]["coverage"]["answered"] = n
+        return out
+    full = validated_context(buckets({"16k": -0.02, "32k": -0.029, "64k": -0.03}), -0.03)
+    assert full["validated_tokens"] == 65536 and full["first_failure"] is None
+    # 32k breaks the chain: 64k passing on its own does not extend it
+    broken = validated_context(buckets({"16k": -0.01, "32k": -0.031, "64k": 0.0}), -0.03)
+    assert (broken["validated_bucket"], broken["first_failure"], broken["buckets"]["64k"]["within"]) == ("16k", "32k", True)
+    # nothing beyond the trained 4-8k bucket: the reference itself
+    assert validated_context(buckets({"16k": -0.05, "32k": 0.0, "64k": 0.0}), -0.03)["validated_tokens"] == 8192
+    # an unread or partly read bucket is not within tolerance, and neither is anything when 8k is incomplete
+    assert validated_context(buckets({"16k": 0.0, "32k": None, "64k": 0.0}), -0.03)["validated_bucket"] == "16k"
+    assert validated_context(buckets({"16k": 0.0, "32k": 0.0, "64k": 0.0}, {"64k": 239}), -0.03)["validated_bucket"] == "32k"
+    assert validated_context(buckets({"16k": 0.0, "32k": 0.0, "64k": 0.0}, {"8k": 0}), -0.03)["validated_tokens"] == 8192

@@ -417,7 +417,7 @@ def sft_probe(name: str, gpu: str = "H200", base: str = KEV_27B_BASE[0], revisio
 
 @app.function(image=image, cpu=INTERPOLATE_CPU, memory=INTERPOLATE_MEMORY, retries=0, timeout=INTERPOLATE_TIMEOUT,
               volumes={RUNS_MOUNT: runs_volume, HF_MOUNT: hf_cache}, secrets=secrets)
-def run_interpolate(sft, alphas, names, base, revision, study):
+def run_interpolate(sft, alphas, names, base, revision, study, toward=None, blend_head=False):
     """scripts/interpolate_checkpoint.py on a CPU container: one checkpoint per alpha at /runs/<study>/<name>/checkpoint,
     the runs volume committed after each."""
     sys.path.insert(0, "/root")
@@ -425,33 +425,83 @@ def run_interpolate(sft, alphas, names, base, revision, study):
     runs_volume.reload()
     try:
         return write_interpolations(sft, alphas, [Path(RUNS_MOUNT) / study / n / "checkpoint" for n in names], base, revision,
-                                    on_done=lambda report: runs_volume.commit(), log=lambda m: print(m, flush=True))
+                                    on_done=lambda report: runs_volume.commit(), log=lambda m: print(m, flush=True),
+                                    toward=toward or None, blend_head=blend_head)
     finally:
         runs_volume.commit(); hf_cache.commit()
 
 
 @app.local_entrypoint()
 def interpolate(sft: str, prefix: str, alphas: str = "0.85,0.70,0.50", base: str = KEV_27B_BASE[0], revision: str = KEV_27B_BASE[1],
-                study: str = "r20-wise", timeout: int = INTERPOLATE_TIMEOUT):
-    """WiSE-FT checkpoints of a full-weight SFT checkpoint on the runs volume (--sft /runs/<trial>/checkpoint) with its base:
+                study: str = "r20-wise", timeout: int = INTERPOLATE_TIMEOUT, toward: str = "", blend_head: bool = False):
+    """WiSE-FT checkpoints of a full-weight SFT checkpoint on the runs volume (--sft /runs/<trial>/checkpoint) with its base,
+    or with --toward another checkpoint of the same base and revision (a /runs/... checkpoint or a Hub id@rev; full weights,
+    or a LoRA adapter merged in fp32; --blend-head blends the pointer heads too, else the SFT head is kept):
     /runs/<study>/<prefix>-w<alpha x 100>/checkpoint for each alpha (weight on the SFT backbone). Refuses unless the SFT
     run's base is --base @ --revision (Kev-27B's by default). Reports land in runs/<study>/<name>/interpolation.json."""
     sys.path.insert(0, str(ROOT))
+    from kev.checkpoint import is_hub_id
     from scripts.interpolate_checkpoint import weight_label
     if not sft.startswith(f"{RUNS_MOUNT}/"): raise SystemExit(f"--sft is a checkpoint on the runs volume ({RUNS_MOUNT}/...), not {sft}")
+    if toward and not (toward.startswith(f"{RUNS_MOUNT}/") or (is_hub_id(toward) and "@" in toward)):
+        raise SystemExit(f"--toward is a checkpoint on the runs volume ({RUNS_MOUNT}/...) or a pinned Hub id (repo@revision), not {toward}")
+    if blend_head and not toward: raise SystemExit("--blend-head needs --toward (the base has no pointer head)")
     values = [float(a) for a in alphas.split(",")]
     names = [f"{prefix}-w{weight_label(a)}" for a in values]
     written = volume_names(f"/{study}")[0] if study in volume_names("/")[0] else set()
     taken = [n for n in names if n in written and "checkpoint" in volume_names(f"/{study}/{n}")[0]]
     if taken: raise SystemExit(f"/{study}/{taken} hold checkpoints already; interpolations are written once")
     print(f"admission bound ${interpolation_bound(timeout):.2f} ({INTERPOLATE_CPU} CPU, {INTERPOLATE_MEMORY[1] // 1024} GiB, {timeout} s, no GPU)", flush=True)
-    call = run_interpolate.with_options(timeout=timeout).spawn(sft, values, names, base, revision, study)
-    print(f"spawned interpolation of {sft} -> /{study}/{names}: call {call.object_id}", flush=True)
+    call = run_interpolate.with_options(timeout=timeout).spawn(sft, values, names, base, revision, study, toward or None, blend_head)
+    print(f"spawned interpolation of {sft}{f' toward {toward}' if toward else ''}{' (heads blended)' if blend_head else ''} -> /{study}/{names}: call {call.object_id}", flush=True)
     for report in call.get():
         name = Path(report["checkpoint"]).parent.name
         (ROOT / "runs" / study / name).mkdir(parents=True, exist_ok=True)
         pull_volume(f"/{study}/{name}/interpolation.json", ROOT / "runs" / study / name)
         print(f"{name}: alpha {report['alpha']}, {report['tensors']} tensors, weights {report['weights_sha256'][:12]}, {report['seconds']} s", flush=True)
+
+
+MERGE_TIMEOUT = 7200   # round 25's Kev-27B merge: base load + merge + a 51 GB write + hash, well under an hour expected
+
+
+@app.function(image=image, cpu=INTERPOLATE_CPU, memory=INTERPOLATE_MEMORY, retries=0, timeout=MERGE_TIMEOUT,
+              volumes={RUNS_MOUNT: runs_volume, HF_MOUNT: hf_cache}, secrets=secrets)
+def run_merge_adapter(lora, out, like=None):
+    """scripts/merge_lora_checkpoint.py on a CPU container: <out>/checkpoint on the runs volume, then one commit (timed)."""
+    sys.path.insert(0, "/root")
+    from scripts.merge_lora_checkpoint import merge
+    runs_volume.reload()
+    started = time.time()
+    try:
+        report = merge(lora, out, like, log=lambda m: print(f"[{time.time() - started:7.1f} s] {m}", flush=True))
+    finally:
+        commit = time.time(); runs_volume.commit()
+        print(f"runs volume commit: {time.time() - commit:.1f} s", flush=True)
+    return {**report, "commit_seconds": round(time.time() - commit, 1), "container_seconds": round(time.time() - started, 1)}
+
+
+@app.local_entrypoint()
+def merge_adapter(lora: str, out: str, like: str = ""):
+    """A LoRA checkpoint (a pinned Hub id repo@revision or a /runs/... directory) merged into its base as a full-weight
+    checkpoint at <out>/checkpoint on the runs volume (scripts/merge_lora_checkpoint.py), e.g. round 25's initialization
+    --lora jaredpalmer/kev-27b@<sha> --out /runs/r25-init/kev-27b-merged [--like /runs/<full-weight trial>/checkpoint].
+    The report lands in runs/<out without /runs>/merge.json."""
+    sys.path.insert(0, str(ROOT))
+    from kev.checkpoint import is_hub_id
+    if not out.startswith(f"{RUNS_MOUNT}/"): raise SystemExit(f"--out is a directory on the runs volume ({RUNS_MOUNT}/...), not {out}")
+    if not (lora.startswith(f"{RUNS_MOUNT}/") or (is_hub_id(lora) and "@" in lora)):
+        raise SystemExit(f"--lora is a checkpoint on the runs volume ({RUNS_MOUNT}/...) or a pinned Hub id (repo@revision), not {lora}")
+    rel = out.removeprefix(RUNS_MOUNT).rstrip("/")
+    try: existing = volume_names(rel)[0]
+    except Exception: existing = set()   # nothing there yet (listdir of a missing path raises)
+    if "checkpoint" in existing: raise SystemExit(f"{rel}/checkpoint exists; merges are written once")
+    print(f"admission bound ${interpolation_bound(MERGE_TIMEOUT):.2f} ({INTERPOLATE_CPU} CPU, {INTERPOLATE_MEMORY[1] // 1024} GiB, {MERGE_TIMEOUT} s, no GPU)", flush=True)
+    call = run_merge_adapter.spawn(lora, out, like or None)
+    print(f"spawned merge of {lora} -> {out}/checkpoint: call {call.object_id}", flush=True)
+    report = call.get()
+    (ROOT / "runs" / rel.lstrip("/")).mkdir(parents=True, exist_ok=True)
+    pull_volume(f"{rel}/merge.json", ROOT / "runs" / rel.lstrip("/"))
+    print(json.dumps(report, indent=1), flush=True)
 
 
 @app.function(image=image, gpu=GPU, cpu=2, memory=(32768, 65536), retries=0, timeout=3600,
@@ -609,6 +659,108 @@ def mirror_snapshots(study: str = "", paths: str = "", repo: str = "jaredpalmer/
     print(f"mirroring {len(targets)} checkpoint(s) to private {repo}: call {call.object_id}", flush=True)
     for path, entry in call.get().items():
         print(f"{path}: {'commit ' + entry['commit'] if entry else 'NOT uploaded (see the call log)'}", flush=True)
+
+
+RELEASE_CPU, RELEASE_MEMORY, RELEASE_TIMEOUT = 8, (8192, 32768), 4 * 3600   # copy + hash + upload of a ~51 GB checkpoint, no GPU
+
+
+@app.function(image=image, cpu=RELEASE_CPU, memory=RELEASE_MEMORY, retries=0, timeout=RELEASE_TIMEOUT, volumes={RUNS_MOUNT: runs_volume})
+def run_release_copy(src, dst, expect=None):
+    """scripts/release_checkpoint.py: copy a checkpoint on the runs volume to a new release directory (never over one) and
+    check the weights hash of the copy against the source's (and `expect`). CPU only."""
+    sys.path.insert(0, "/root")
+    from scripts.release_checkpoint import copy_checkpoint
+    runs_volume.reload()
+    report = copy_checkpoint(src, dst, expect, log=lambda m: print(m, flush=True))
+    runs_volume.commit()
+    return report
+
+
+@app.local_entrypoint()
+def release_copy(src: str, dst: str, expect: str = ""):
+    """Stage a release checkpoint: --src /runs/<...>/checkpoint --dst /runs/release/<name>/checkpoint (refused if it exists),
+    weights sha256 of the copy checked against the source's and --expect. The source is only read."""
+    for p in (src, dst):
+        if not p.startswith(f"{RUNS_MOUNT}/") or not p.endswith("/checkpoint"): raise SystemExit(f"{p} is not a /runs/.../checkpoint directory")
+    print(json.dumps(run_release_copy.remote(src, dst, expect or None), indent=1), flush=True)
+
+
+@app.function(image=image, cpu=RELEASE_CPU, memory=RELEASE_MEMORY, retries=0, timeout=RELEASE_TIMEOUT, volumes={RUNS_MOUNT: runs_volume},
+              secrets=[modal.Secret.from_name(MIRROR_SECRET)])
+def run_release_publish(run, repo, card, message, public=False, replace=False):
+    """kev.publish of a release checkpoint on the runs volume (`card`: the model card's text). Private by default: kev.publish
+    --private creates a missing repo private and refuses one that is not. `public` (the approved release) drops --private;
+    `replace` passes --replace (the target revision then holds exactly this upload). CPU only; HF_TOKEN from MIRROR_SECRET."""
+    import subprocess as sp
+    import tempfile
+    runs_volume.reload()
+    with tempfile.NamedTemporaryFile("w", suffix=".md", delete=False, encoding="utf-8") as f: f.write(card)
+    cmd = [sys.executable, "-m", "kev.publish", "--run", run, "--repo", repo, "--card", f.name, "--message", message,
+           *([] if public else ["--private"]), *(["--replace"] if replace else [])]
+    out = sp.run(cmd, cwd="/root", env={**os.environ, "PYTHONPATH": "/root"}, capture_output=True, text=True)
+    print(out.stdout[-4000:], out.stderr[-4000:], flush=True)
+    if out.returncode: raise RuntimeError(f"kev.publish exited {out.returncode}")
+    from huggingface_hub import HfApi
+    info = HfApi().repo_info(repo, repo_type="model", files_metadata=True)
+    return {"repo": repo, "private": info.private, "commit": info.sha, "files": sorted(s.rfilename for s in info.siblings),
+            "lfs_sha256": {s.rfilename: s.lfs.sha256 for s in info.siblings if s.lfs}}
+
+
+@app.local_entrypoint()
+def release_publish(run: str, repo: str, card: str, message: str, public: bool = False, confirm_public: str = "", replace: bool = False):
+    """Upload a staged release checkpoint (--run /runs/release/<name>/checkpoint) to a PRIVATE Hub repo with --card as its
+    README, from a CPU container (the weights never leave Modal and Hugging Face). An approved public release passes
+    --public --confirm-public <repo> (the repo named twice), usually with --replace after tagging the previous version."""
+    if not run.startswith(f"{RUNS_MOUNT}/release/"): raise SystemExit(f"--run is a staged release checkpoint under {RUNS_MOUNT}/release/, not {run}")
+    if public and confirm_public != repo: raise SystemExit(f"--public uploads to a public repo; repeat it as --confirm-public {repo}")
+    print(json.dumps(run_release_publish.remote(run, repo, Path(card).read_text(encoding="utf-8"), message, public, replace), indent=1), flush=True)
+
+
+RELEASE_VERIFY_DISK = 524288   # MiB (Modal's minimum explicit request): a fresh HF cache for a 27B release (51 GB) and, for a LoRA revision, its base (~55 GB)
+
+
+@app.function(image=image, gpu=GPU, cpu=4, memory=(32768, 131072), retries=0, timeout=3 * 3600, ephemeral_disk=RELEASE_VERIFY_DISK)
+def run_release_verify(jobs):
+    """What an anonymous user gets from a public release: no Modal secret, no kev-hf-cache volume, a fresh HF_HOME on the
+    scratch disk and no Hugging Face token. For each "<hub id[@rev]>@<suite>" job: kev.checkpoint's resolution of the id
+    (layout by the loader rule, head.pt temperature, weights and head sha256), then kev.benchmark on the suite's
+    development partition as a separate process. -> {"hf_home", "jobs": [{checkpoint (with the token it saw: None), report, rows}]}."""
+    import tempfile
+    home = tempfile.mkdtemp(prefix="hf-anon-", dir="/tmp")
+    env = {k: v for k, v in os.environ.items() if not k.startswith("HF_") or k == "HF_HUB_DISABLE_PROGRESS_BARS"}
+    env.update(HF_HOME=home, HF_HUB_DISABLE_IMPLICIT_TOKEN="1", PYTHONPATH="/root", TRITON_CACHE_DIR=f"{home}/triton-cache")
+    resolve = ("import json, sys; from pathlib import Path; from huggingface_hub import get_token; from kev.checkpoint import Checkpoint; "
+               "from kev.suite import digest; ck = Checkpoint(sys.argv[1]); print(json.dumps({'requested': sys.argv[1], 'token': get_token(), "
+               "'path': ck.path, 'layout': 'full' if ck.full else 'lora', 'temperature': ck.meta.temperature, 'weights_sha256': ck.weights_sha256(), "
+               "'head_sha256': digest(ck.file('head.pt')), 'files': sorted(p.name for p in Path(ck.path).iterdir())}))")
+    from kev.suite import read_json
+    out = {"hf_home": home, "jobs": []}
+    for job in jobs:   # every step in a fresh process with the anonymous environment (nothing imported here saw the image's HF_HOME)
+        run, suite = job.rsplit("@", 1)
+        info = json.loads(subprocess.run([sys.executable, "-c", resolve, run], check=True, cwd="/root", env=env, capture_output=True, text=True).stdout.strip().splitlines()[-1])
+        print(json.dumps(info), flush=True)
+        dest = Path(tempfile.mkdtemp(prefix="bench-", dir="/tmp")) / "out"   # kev.benchmark refuses an existing --out
+        subprocess.run([sys.executable, "-m", "kev.benchmark", "--run", run, "--suite", f"/root/{suite}", "--out", str(dest), "--device", "cuda"],
+                       check=True, cwd="/root", env=env)
+        out["jobs"].append({"job": job, "checkpoint": info, "report": read_json(dest / "report.json"), "rows": read_json(dest / "rows.json")})
+    return out
+
+
+@app.local_entrypoint()
+def release_verify(jobs: str, out: str, gpu: str = "H200"):
+    """Anonymous verification of a public release (run_release_verify): --jobs "jaredpalmer/kev-27b@evals/external/semif-v1,..."
+    (comma-separated; `@rev` pins a revision: jaredpalmer/kev-27b@v1-lora@evals/...), each job's report.json + rows.json
+    written to <out>/<n>-<repo>/ and the resolutions to <out>/verify.json."""
+    from kev.suite import write_json
+    result = run_release_verify.with_options(gpu=gpu).remote([j.strip() for j in jobs.split(",") if j.strip()])
+    root = Path(out)
+    for i, job in enumerate(result["jobs"]):
+        d = root / f"{i}-{job['checkpoint']['requested'].replace('/', '_').replace('@', '_')}"
+        d.mkdir(parents=True, exist_ok=True)
+        write_json(d / "report.json", job.pop("report")); write_json(d / "rows.json", job.pop("rows"))
+        job["dir"] = str(d)
+    write_json(root / "verify.json", result)
+    print(json.dumps(result, indent=1), flush=True)
 
 
 @app.local_entrypoint()

@@ -28,6 +28,9 @@ RULES = [
     ("the serving / long-state limits (SERVE_MAX_*, ROW_PASS_TOKENS, MAX_TRAIN_STATE) and the pre-64k aliases the frozen suites' builders "
      "rebuild byte for byte with (SERVE_MAX_*_8K, MAX_TRAIN_STATE_8K) are defined only in kev.model",
      r"^\s*(SERVE_MAX_(STATE|BRANCH|PACKED)|ROW_PASS_TOKENS|MAX_TRAIN_STATE)(_8K)?\s*(=|,[^\n=]*=)|(?<![\w.])7552\b", {"kev/model.py"}),
+    ("a request is admitted to the serving context (state refused over SERVE_MAX_STATE unless truncation is opted into, "
+     "question rows over SERVE_MAX_BRANCH refused) only by kev.model.admit, which kev.serve and the Space call",
+     r"max_state=SERVE_MAX_STATE|max_branch=SERVE_MAX_BRANCH", {"kev/model.py"}),
     ("the serving contexts manifests record (SERVING_CONTEXT, and SERVING_CONTEXT_8K for the suites frozen before 64k states) are defined only in kev.suite",
      r"^\s*SERVING_CONTEXT(_8K)?\s*=", {"kev/suite.py"}),
     ("text files are read and written as UTF-8 (kev.suite.read_json/read_jsonl/write_json/write_jsonl, or an explicit encoding=); "
@@ -37,6 +40,8 @@ RULES = [
      r"manifest\.json\"\)\.read_text\(\)", {"kev/suite.py"}),
     ("device selection, synchronize and empty_cache go through kev.device (the Space is a CUDA-only one-off)",
      r"is_available\(\) else|torch\.(mps|cuda)\.(synchronize|empty_cache|current_allocated_memory|max_memory_allocated)\(", {"kev/device.py", "space/app.py", "tests/test_vision.py"}),   # the full-chain tier picks its own device before touching the tower
+    ("default device and explicit startup selection are defined only in kev.device",
+     r"^DEVICES\s*=|^def default_device\(|^def select\(device=", {"kev/device.py"}),
     ("a poisoned accelerator context is kev.device.unrecoverable, and free device memory is kev.device.free_bytes (the driver's number, not the allocator's slack)",
      r"Sticky error|CUDA_ERROR_|torch\.cuda\.mem_get_info\(", {"kev/device.py", "tests/test_unit.py"}),   # the unit test pins the classification
     ("the isolation sibling probe is kev.experiment.ISOLATION_PROBE (fp32 mechanism check and served isolation read the same question)",
@@ -52,6 +57,9 @@ RULES = [
     ("calibration by state-token length is kev.metrics.calibration_by_length (LENGTH_EDGES), and whether a temperature fit set "
      "shares data with a checkpoint's training is kev.rounds.pool_conflicts (round pools and scripts/calibrate_checkpoint.py alike)",
      r"\(8192, 16384, 32768, 65536\)|def (pool_conflicts|calibration_by_length)\(|FIT_SPLITS = ", {"kev/metrics.py", "kev/rounds.py"}),
+    ("the kernel set a read's logits depend on (package versions, the DeltaNet kernels transformers bound, TRITON_F32_DEFAULT) "
+     "is kev.predictors.kernel_environment, which report.json and trial provenance both record",
+     r"getclosurevars|environ\.get\(\"TRITON_F32_DEFAULT\"|version\([\"'](triton|flash-linear-attention|causal-conv1d)[\"']\)", {"kev/predictors.py", "tests/test_unit.py"}),   # the unit test pins the contract
     ("a state's normalised-text hash (text_sha256) is kev.suite.text_digest",
      r"\.casefold\(\)\.split\(\)\)\.encode\(\)", {"kev/suite.py", "kev/data.py"}),   # kev.suite imports kev.data, so kev.data keeps its inline copy
 ]
@@ -84,7 +92,7 @@ def test_single_home(what, pattern, allowed):
     regex = re.compile(pattern)
     offenders = []
     for path in sources():
-        rel = str(path.relative_to(ROOT))
+        rel = path.relative_to(ROOT).as_posix()
         if rel in allowed:
             continue
         for n, line in enumerate(path.read_text().splitlines(), 1):

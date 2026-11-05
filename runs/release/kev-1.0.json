@@ -1,0 +1,306 @@
+{
+  "release": "Kev 1.0",
+  "date": "2026-10-01",
+  "approved_by": "Jared (\"Go for it\")",
+  "plan": "docs/releases/kev-1.0.md (maintainer plan, steps 3-9); packaging PR #206 (merge 6b719c3c3f367295f6ef336f4f751cf5ff970abc)",
+  "hub": {
+    "method": "one card-only commit per repo (HfApi.upload_file README.md, parent_commit = main before; message 'Kev 1.0 model card (weights unchanged)'), then annotated tag v1.0 on that commit (plan step 4: 'if step 3 ran first, tag the card commit'). Before: main was at the weights revision for 0.8b/4b/9b and differed from it only in README.md for 27b. After: every file other than README.md has the same blob id and LFS sha256 as before the commit; README.md equals docs/model-cards/kev-<size>.md byte for byte; model_info card_data parses with the card's base_model and base_model_relation.",
+    "repos": {
+      "jaredpalmer/kev-0.8b": {
+        "weights_revision": "9a45d25eb2ab761841196625383fa1dff0e56c1e",
+        "main_before": "9a45d25eb2ab761841196625383fa1dff0e56c1e",
+        "card_commit": "bf75a6a8848ea6960ff2ed108d9ed44c2941174f",
+        "tag": "v1.0",
+        "tag_commit": "bf75a6a8848ea6960ff2ed108d9ed44c2941174f",
+        "tag_object": "788ddbdd65715bb03a56788c822f6c632c9a551d",
+        "card": "docs/model-cards/kev-0.8b.md",
+        "weights_sha256": {
+          "adapter_model.safetensors": "9b908623acb162118575f4e7a94524f9c139c335be4bfb74d6cfceca01e1885a",
+          "head.pt": "f400bd12802b2b105ae45d6b03774a158a3db4fccff42413734ddca2e5c920b6",
+          "tokenizer.json": "06b9509352d2af50381ab2247e083b80d32d5c0aba91c272ca9ff729b6a0e523"
+        },
+        "head": {
+          "temperature": 2.3510958125672174,
+          "base": "Qwen/Qwen3.5-0.8B-Base",
+          "base_revision": "dc7cdfe2ee4154fa7e30f5b51ca41bfa40174e68",
+          "weights": null
+        },
+        "card_data": {
+          "base_model": "Qwen/Qwen3.5-0.8B-Base",
+          "base_model_relation": "adapter",
+          "library_name": "peft",
+          "license": "apache-2.0",
+          "eval_results": 10
+        }
+      },
+      "jaredpalmer/kev-4b": {
+        "weights_revision": "139fdd94f1b6a6ad80cc15e08fcb99cac885a101",
+        "main_before": "139fdd94f1b6a6ad80cc15e08fcb99cac885a101",
+        "card_commit": "6cfce5c2fa4b4bd64026336ab649c5ca78857d52",
+        "tag": "v1.0",
+        "tag_commit": "6cfce5c2fa4b4bd64026336ab649c5ca78857d52",
+        "tag_object": "591dcb5bd6d05eb0b5131ea6608f93f10243335c",
+        "card": "docs/model-cards/kev-4b.md",
+        "weights_sha256": {
+          "adapter_model.safetensors": "90e817356246e7f18bfa7ca3d31794cd4fbeb3332a66a84cb51d9ceae925f2b2",
+          "head.pt": "dd633435998ecc751ac538717a3742e32149500fabf7d7276287dbf0693f347c",
+          "tokenizer.json": "06b9509352d2af50381ab2247e083b80d32d5c0aba91c272ca9ff729b6a0e523"
+        },
+        "head": {
+          "temperature": 2.406050072164233,
+          "base": "Qwen/Qwen3.5-4B-Base",
+          "base_revision": "1001bb4d826a52d1f399e183466143f4da7b741b",
+          "weights": null
+        },
+        "card_data": {
+          "base_model": "Qwen/Qwen3.5-4B-Base",
+          "base_model_relation": "adapter",
+          "library_name": "peft",
+          "license": "apache-2.0",
+          "eval_results": 8
+        }
+      },
+      "jaredpalmer/kev-9b": {
+        "weights_revision": "b5d8c18e44c60888d138b65cb6507ff0a5a448a0",
+        "main_before": "b5d8c18e44c60888d138b65cb6507ff0a5a448a0",
+        "card_commit": "db029f08b290afd9fee4aa4bbcd9ae48602d1eb0",
+        "tag": "v1.0",
+        "tag_commit": "db029f08b290afd9fee4aa4bbcd9ae48602d1eb0",
+        "tag_object": "3afdec81efc91da83dee06d30714adf54ee35531",
+        "card": "docs/model-cards/kev-9b.md",
+        "weights_sha256": {
+          "adapter_model.safetensors": "2b2a70cf4ef4440b6c22899e1f72c2f8ea5c6f65b19aa344539b4b8971d1f13d",
+          "head.pt": "8e1dab2c8e3664f6fee843e0257d57946c25e0210c61901ea77e71761f4244e1",
+          "tokenizer.json": "06b9509352d2af50381ab2247e083b80d32d5c0aba91c272ca9ff729b6a0e523"
+        },
+        "head": {
+          "temperature": 2.193649959389252,
+          "base": "Qwen/Qwen3.5-9B-Base",
+          "base_revision": "68c46c4b3498877f3ef123c856ecfde50c39f404",
+          "weights": "lora"
+        },
+        "card_data": {
+          "base_model": "Qwen/Qwen3.5-9B-Base",
+          "base_model_relation": "adapter",
+          "library_name": "peft",
+          "license": "apache-2.0",
+          "eval_results": 6
+        }
+      },
+      "jaredpalmer/kev-27b": {
+        "weights_revision": "28be62e9c5ae0471bda2b7c636a55224b4f4b887",
+        "main_before": "ef78cc8a34d5f426fb229c52089db189218cfe5c",
+        "card_commit": "af0e6d551bdc2cc724f3e9d7a8bee1cd4fb8f7bf",
+        "tag": "v1.0",
+        "tag_commit": "af0e6d551bdc2cc724f3e9d7a8bee1cd4fb8f7bf",
+        "tag_object": "631b7905a1294f5aa2e3a19d8fc67419d876f86a",
+        "card": "docs/model-cards/kev-27b.md",
+        "weights_sha256": {
+          "head.pt": "7968f17b03479c1ef9d1c0f3ab8a15e31ecb441cf40691b07ee945ab554d45ad",
+          "model-00001-of-00011.safetensors": "d934f5d5d625a627af59f8f7deca1f915bf165050f5c55834a25080d5cd3f68a",
+          "model-00002-of-00011.safetensors": "983a355958ed0c1ed8eb4ef756bf8083db445da9b98447194944fba25ca91a76",
+          "model-00003-of-00011.safetensors": "47cf3227ae3f48b31e53200dab72ac597d79479a0dd0b742fb8e9a41e4e940e3",
+          "model-00004-of-00011.safetensors": "6ae162fc2aa03f04c8a9ccbcf35bf44a76d410bbc723a6d0225b520a86f02400",
+          "model-00005-of-00011.safetensors": "0455fa671e71b4861ca7480a25ba6f61718ce7d6bf17b121580e6cc8314c0cb3",
+          "model-00006-of-00011.safetensors": "91f42758762ef0f62cc18e4d968b7efda7267bbf8ae6818df16767a17bbc4c91",
+          "model-00007-of-00011.safetensors": "15f979818d2325cd886b022e966e7e15be179e573e8d9f78e29ae0189e304240",
+          "model-00008-of-00011.safetensors": "e235645cb7aa8e4d31823963cb89d52a11eaad3f4a83768f47ada686246a41bd",
+          "model-00009-of-00011.safetensors": "a87e281e36d15217a97a670bc58596a683978bd8a117c5d7d14d36cdf5a5c7fe",
+          "model-00010-of-00011.safetensors": "7a5942495d9188c030ec12a498b3c16ca6d1500d04cbc33317dd55cb8e7d3a0a",
+          "model-00011-of-00011.safetensors": "60ecc5aa8f4d6db13d312027e640e6a6601d09bc4812ef9fc93859fe6a73830e",
+          "tokenizer.json": "06b9509352d2af50381ab2247e083b80d32d5c0aba91c272ca9ff729b6a0e523"
+        },
+        "head": {
+          "temperature": 1.319507910772894,
+          "base": "Qwen/Qwen3.8-27B",
+          "base_revision": "1d4bf0f2ff6012fd82039f2fa52739d0dd7c60c0",
+          "weights": "full"
+        },
+        "card_data": {
+          "base_model": "Qwen/Qwen3.8-27B",
+          "base_model_relation": "finetune",
+          "library_name": "transformers",
+          "license": "apache-2.0",
+          "eval_results": 5
+        }
+      }
+    },
+    "note": "list_repo_refs reports an annotated tag's object id (tag_object); the commit it resolves to is tag_commit (model_info(revision='v1.0').sha)."
+  },
+  "github": {
+    "release": "kev-1.0",
+    "url": "https://github.com/jaredpalmer/kev/releases/tag/kev-1.0",
+    "tag": "kev-1.0",
+    "tag_commit": "6b719c3c3f367295f6ef336f4f751cf5ff970abc",
+    "published_at": "2026-10-01T17:25:27Z",
+    "latest": true,
+    "body": "docs/releases/kev-1.0.md above '## Release plan', without the H1 (the release title is 'Kev 1.0')",
+    "built_with": "uv run python scripts/build_release_assets.py --release docs/releases/kev-1.0-assets.json --out /tmp/kev-1.0-dated-a, from main 1b89bff (PR #209), release_date 2026-10-01 -> every member and the gzip header at mtime 1790812800 (2026-10-01T00:00:00Z; manifest source_date_epoch); adapter + head sha256 checked against the spec; rebuilt into a second directory: all three tarballs, SHA256SUMS.txt and manifest.json byte-identical",
+    "assets": {
+      "kev-0.8b.tar.gz": {
+        "sha256": "0ae144c7675f0c3f333be0bb878a0f202ab9e6fa84169fb7cb16efe6176c1ef1",
+        "repo": "jaredpalmer/kev-0.8b",
+        "revision": "9a45d25eb2ab761841196625383fa1dff0e56c1e",
+        "adapter_sha256": "9b908623acb162118575f4e7a94524f9c139c335be4bfb74d6cfceca01e1885a",
+        "head_sha256": "f400bd12802b2b105ae45d6b03774a158a3db4fccff42413734ddca2e5c920b6"
+      },
+      "kev-4b.tar.gz": {
+        "sha256": "2e707e2ebd08980dc7881222b7024cea5606401441c1a086afb170ae7784201c",
+        "repo": "jaredpalmer/kev-4b",
+        "revision": "139fdd94f1b6a6ad80cc15e08fcb99cac885a101",
+        "adapter_sha256": "90e817356246e7f18bfa7ca3d31794cd4fbeb3332a66a84cb51d9ceae925f2b2",
+        "head_sha256": "dd633435998ecc751ac538717a3742e32149500fabf7d7276287dbf0693f347c"
+      },
+      "kev-9b.tar.gz": {
+        "sha256": "acd13320b7d1b052ce989f19ca9d1d9ba5219b8beced0ee67337908aef1deb3f",
+        "repo": "jaredpalmer/kev-9b",
+        "revision": "b5d8c18e44c60888d138b65cb6507ff0a5a448a0",
+        "adapter_sha256": "2b2a70cf4ef4440b6c22899e1f72c2f8ea5c6f65b19aa344539b4b8971d1f13d",
+        "head_sha256": "8e1dab2c8e3664f6fee843e0257d57946c25e0210c61901ea77e71761f4244e1"
+      }
+    },
+    "sha256sums_txt": "495d104f5887c46c21f985128e7ed349eaba74d07c3b5ad7ef546c1d77c9e644",
+    "replaced_assets": {
+      "date": "2026-10-01",
+      "why": "The first upload (built with mtime 0 for every member and the gzip header) extracted with every file dated 1970-01-01, and kev.serve reported release_date 1969-12-31 in /v1/models (Checkpoint.release_date dated a local run by head.pt's mtime in local time). PR #209 made the builder stamp the release date (SOURCE_DATE_EPOCH convention) and the loader read UTC and skip pre-2000 mtimes. The tarballs were rebuilt with the fixed builder and replaced with gh release upload --clobber; the release body's asset table was updated to the new hashes. Metadata only: the weights are identical.",
+      "weights_identical": "the same members in the same order with the same mode, size, type, owner and sha256 in the old and new tarballs (adapter_model.safetensors and head.pt equal to docs/releases/kev-1.0-assets.json's expect); only the member mtimes (0 -> 1790812800) and the gzip header mtime differ; manifest.json's per-file hashes are unchanged",
+      "previous_sha256": {
+        "kev-0.8b.tar.gz": "943891a2f9a652d7cffd5f83e5e56e1df0d5b9e164f652f05f29f514cac5adc5",
+        "kev-4b.tar.gz": "6f87da108149bcde761fd61a978b1bd4863cabb43a7d6add712fe2c4ea7e1bf8",
+        "kev-9b.tar.gz": "905188502c465691265c479f5ad88a7127a2c10bc87d213e86f9c4b0c04b5f44",
+        "SHA256SUMS.txt": "bc5c520ea37e650e0731369749c319462b790acaca3e8590808302899bce7e31"
+      }
+    },
+    "kev_27b": "Hub only (51 GB > GitHub's 2 GB asset limit): jaredpalmer/kev-27b@v1.0 (card commit af0e6d55, weights commit 28be62e9, head.pt 7968f17b...)",
+    "files": [
+      "runs/release/kev-1.0-SHA256SUMS.txt",
+      "runs/release/kev-1.0-manifest.json"
+    ]
+  },
+  "kev_family": {
+    "fate": "kept as a release, retired per plan step 7: its three tarballs and SHA256SUMS.txt deleted, title 'Kev family (superseded by Kev 1.0)', body replaced by a pointer to kev-1.0; tag kev-family kept; no longer Latest",
+    "removed_assets": {
+      "kev-0.8b.tar.gz": "45a6b6851b5050d4d8f769018ba416cc28a2d08cf80e88b1cc11cc2b905c1490",
+      "kev-4b.tar.gz": "df6a9e3d33e6ef065a5c10477459f0577f16ffc97ca3b97f3746a2356d5b3f5a",
+      "kev-9b.tar.gz": "56cdeb20e13f8dbc797dcfe7db0d54cdae6319a0ac196287493c5db07be04a38",
+      "SHA256SUMS.txt": "b782110d4bb8f9d63bfcc055f1b1bee188f834e7285a1361d72f49b674789f18"
+    },
+    "checked_before_removal": "downloaded, shasum -c OK; adapter_model.safetensors and head.pt inside each tarball byte-identical to Kev 1.0's (0.8b 9b908623/f400bd12, 4b 90e81735/dd633435, 9b 2b2a70cf/8e1dab2c). The old tarballs also carried chat_template.jinja (the tokenizer always comes from the base, kev.checkpoint) and lacked the training log.",
+    "previous_notes": "runs/release/kev-family-notes-retired.md"
+  },
+  "verification": {
+    "anonymous_hub": {
+      "how": "fresh HF_HOME and HF_HUB_CACHE (no token; get_token() is None; only the Qwen base snapshots symlinked in), kev.checkpoint.resolve_run / Checkpoint('jaredpalmer/kev-<size>@v1.0'); 27B: model_info + head.pt + config.json + index only",
+      "jaredpalmer/kev-0.8b": {
+        "v1.0_commit": "bf75a6a8848ea6960ff2ed108d9ed44c2941174f",
+        "matches_card_commit": true,
+        "snapshot_dir_commit": "bf75a6a8848ea6960ff2ed108d9ed44c2941174f",
+        "adapter_sha256": "9b908623acb162118575f4e7a94524f9c139c335be4bfb74d6cfceca01e1885a",
+        "head_sha256": "f400bd12802b2b105ae45d6b03774a158a3db4fccff42413734ddca2e5c920b6",
+        "adapter_match": true,
+        "head_match": true,
+        "temperature": 2.3510958125672174,
+        "temperature_ok": true,
+        "base": "Qwen/Qwen3.5-0.8B-Base",
+        "weights": "lora"
+      },
+      "jaredpalmer/kev-4b": {
+        "v1.0_commit": "6cfce5c2fa4b4bd64026336ab649c5ca78857d52",
+        "matches_card_commit": true,
+        "snapshot_dir_commit": "6cfce5c2fa4b4bd64026336ab649c5ca78857d52",
+        "adapter_sha256": "90e817356246e7f18bfa7ca3d31794cd4fbeb3332a66a84cb51d9ceae925f2b2",
+        "head_sha256": "dd633435998ecc751ac538717a3742e32149500fabf7d7276287dbf0693f347c",
+        "adapter_match": true,
+        "head_match": true,
+        "temperature": 2.406050072164233,
+        "temperature_ok": true,
+        "base": "Qwen/Qwen3.5-4B-Base",
+        "weights": "lora"
+      },
+      "jaredpalmer/kev-9b": {
+        "v1.0_commit": "db029f08b290afd9fee4aa4bbcd9ae48602d1eb0",
+        "matches_card_commit": true,
+        "snapshot_dir_commit": "db029f08b290afd9fee4aa4bbcd9ae48602d1eb0",
+        "adapter_sha256": "2b2a70cf4ef4440b6c22899e1f72c2f8ea5c6f65b19aa344539b4b8971d1f13d",
+        "head_sha256": "8e1dab2c8e3664f6fee843e0257d57946c25e0210c61901ea77e71761f4244e1",
+        "adapter_match": true,
+        "head_match": true,
+        "temperature": 2.193649959389252,
+        "temperature_ok": true,
+        "base": "Qwen/Qwen3.5-9B-Base",
+        "weights": "lora"
+      },
+      "jaredpalmer/kev-27b": {
+        "v1.0_commit": "af0e6d551bdc2cc724f3e9d7a8bee1cd4fb8f7bf",
+        "matches_card_commit": true,
+        "shards": 11,
+        "shard_sha256_match": true,
+        "index_present": true,
+        "head_sha256": "7968f17b03479c1ef9d1c0f3ab8a15e31ecb441cf40691b07ee945ab554d45ad",
+        "head_match": true,
+        "temperature": 1.319507910772894,
+        "temperature_ok": true,
+        "base": "Qwen/Qwen3.8-27B",
+        "weights": "full"
+      }
+    },
+    "smoke_benchmarks": {
+      "data": "first 2 lines of evals/smoke-v1/development.jsonl (banking77), sha256 41ad93fb45cd17cb44ac8a9e621a8944b62acae7d1515f15bc90b452511319d1",
+      "command": "kev.benchmark --run <run> --data smoke2.jsonl --device mps (fp32, torch, eager), anonymous cache as above",
+      "reads": {
+        "hub-0.8b": {
+          "run": "jaredpalmer/kev-0.8b@v1.0",
+          "n": 2,
+          "acc": 1.0,
+          "nll": 0.8079,
+          "inference_temperature": 2.3510958125672174,
+          "device": "mps",
+          "dtype": "float32"
+        },
+        "hub-4b": {
+          "run": "jaredpalmer/kev-4b@v1.0",
+          "n": 2,
+          "acc": 1.0,
+          "nll": 0.5885,
+          "inference_temperature": 2.406050072164233,
+          "device": "mps",
+          "dtype": "float32"
+        },
+        "tar-0.8b": {
+          "run": "/tmp/kev-1.0-dl/kev-0.8b",
+          "n": 2,
+          "acc": 1.0,
+          "nll": 0.8079,
+          "inference_temperature": 2.3510958125672174,
+          "device": "mps",
+          "dtype": "float32"
+        }
+      },
+      "tarball_vs_hub_0.8b": "logits identical row for row (kev-0.8b.tar.gz from the draft release vs jaredpalmer/kev-0.8b@v1.0)",
+      "dirs": "runs/release/kev-1.0-verify/{hub-0.8b,hub-4b,tar-0.8b}"
+    },
+    "tarball_serve": "kev.serve --run <extracted kev-0.8b.tar.gz> on MPS (MLX, bf16): /v1/models temperature 2.351; POST /v1/systemone 'charged twice' -> refund 0.7635. Replacement: the re-downloaded kev-0.8b.tar.gz extracted with every file at 2026-10-01T00:00:00Z; kev.serve (main 1b89bff, MPS, MLX bf16) /v1/models release_date 2026-10-01 for kev-latest and jev-latest, temperature 2.351",
+    "github_assets": "first upload: downloaded from the draft (gh release download) and again anonymously from the published URLs (curl): shasum -a 256 -c SHA256SUMS.txt OK for all three; GitHub's asset digests equal SHA256SUMS.txt. Replacement (2026-10-01): downloaded anonymously from the published URLs (curl, no token): shasum -a 256 -c SHA256SUMS.txt OK for all three, SHA256SUMS.txt 495d104f... equal to the build; GitHub's asset digests equal SHA256SUMS.txt",
+    "collection": "huggingface.co/collections/jaredpalmer/kev-6aad9d0ea49f2589665e07cd lists space jaredpalmer/kev, kev-27b, kev-9b, kev-4b, kev-0.8b (and kev-0.5b)",
+    "space": {
+      "repo": "jaredpalmer/kev",
+      "stage": "RUNNING",
+      "hardware": "zero-a10g",
+      "space_commit": "f02a35d4a95d5073d562f4ffb52255b8cefeefb3",
+      "decide": {
+        "Kev-4B": {
+          "refund": 0.9781,
+          "new_card": 0.0054,
+          "balance": 0.0165
+        },
+        "Kev-0.8B": {
+          "refund": 0.767,
+          "new_card": 0.1238,
+          "balance": 0.1092
+        }
+      },
+      "republished": false,
+      "vendored_modules": "kev/__init__.py, model.py, api.py and space/* equal main; kev/checkpoint.py differs only by #200 (MLX full-weight loading, a full-weight dtype refactor), neither on the Space's path (LoRA on CUDA). The Space loads main of kev-4b / kev-0.8b, whose weights are the v1.0 weights."
+    }
+  }
+}

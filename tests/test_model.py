@@ -328,7 +328,7 @@ def test_cuda_graphs_match_eager():
     if not torch.cuda.is_available(): pytest.skip("needs CUDA")
     from kev.checkpoint import Checkpoint, LoadOptions
     from kev import cuda_graphs
-    from kev.model import SERVE_MAX_BRANCH, SERVE_MAX_STATE
+    from kev.model import admit
     tok, m = Checkpoint(KEV_08B).load("cuda", LoadOptions(dtype=torch.bfloat16, cuda_graphs=True, fused=True))
     q = {"instr": "Which team should handle this?", "options": ["returns", "shipping", "billing", "other"], "label": 0}
     recs = [{"state": "Order 4411 arrived late and the box was crushed. Two charges appear on the card." * k, "questions": [q] * n}
@@ -336,7 +336,7 @@ def test_cuda_graphs_match_eager():
     recs.append({"state": "short", "questions": [{**q, "instr": "word " * (cuda_graphs.GRAPH_ROW + 10)}]})
     graphs = m.graphs
     with torch.no_grad():
-        encs = [m.encode(tok, rec, max_state=SERVE_MAX_STATE, max_branch=SERVE_MAX_BRANCH) for rec in recs + recs[:2]]
+        encs = [admit(m, tok, rec) for rec in recs + recs[:2]]
         m.graphs = None; refs = [m.probs(e) for e in encs]; eager_prefix = m.prefix(encs[2])
         m.graphs = graphs
         new_prefixes = None
@@ -349,6 +349,43 @@ def test_cuda_graphs_match_eager():
             assert p is not None and c is p or c is eager_prefix
             assert all((a - b).abs().max() < 0.05 for a, b in zip(ref, ps)) and all((a - b).abs().max() < 0.05 for a, b in zip(ref, hs))
     assert graphs.captures > 0 and not graphs.pending
+
+
+def test_long_rows_run_fp32_attention_in_linear_memory():
+    """kev.predictors.LocalPredictor on CUDA in fp32 (Kev-0.8B): a record past ROW_PASS_TOKENS runs its state once through
+    SDPA's memory-efficient kernel in fp32 (long_row_kernels) and is labelled. Before, the state pass fell back to the math
+    kernel, whose L x L scores ran the small family out of memory on 32k-64k states. Here the long pass stays far under
+    the math kernel's score matrix, while the same shared-prefix pass under the math kernel exceeds it. Its answers match
+    the math pass: scripts/long_state_memory.py measured max |dp| <= 6.4e-4 and 0 flips for Kev-4B / 9B at 8k-16k."""
+    import torch
+    if not torch.cuda.is_available(): pytest.skip("needs CUDA")
+    from kev.data import materialize
+    from kev.device import allocated_bytes, empty_cache, sync
+    from kev.model import ROW_PASS_TOKENS, rows_of
+    from kev.predictors import LONG_ROW_KERNELS, LocalPredictor
+    from kev.suite import SERVING_CONTEXT
+    p = LocalPredictor(KEV_08B, "cuda", context=SERVING_CONTEXT)
+    unit = "Order 4411 arrived late and the box was crushed. Two charges appear on the card for the same order. "
+    record = {"state": unit * 900, "questions": {"billing": {"type": "noul", "instructions": "Is there a billing problem?", "label": True, "src": "t"},
+                                                   "team": {"type": "choice", "instructions": "Which team should handle this?",
+                                                            "criteria": {"returns": None, "shipping": None, "billing": None, "other": None}, "label": "billing", "src": "t"}}}
+    enc = p.model.encode(p.tok, materialize(record), max_state=SERVING_CONTEXT["max_state"], max_branch=SERVING_CONTEXT["max_branch"])
+    L = len(rows_of(enc)[0]); config = p.model.lm.config.get_text_config()
+    scores = config.num_attention_heads * L * L * 4   # one fp32 L x L score matrix per head: what the math kernel materialises
+    assert ROW_PASS_TOKENS < L < 32768
+
+    def peak(fn):
+        empty_cache("cuda"); torch.cuda.reset_peak_memory_stats(); base = torch.cuda.memory_allocated()
+        out = fn(); sync("cuda")
+        return out, allocated_bytes("cuda") - base   # the CUDA peak since the reset
+    long, long_bytes = peak(lambda: p(record))
+    with torch.no_grad():
+        math, math_bytes = peak(lambda: [torch.softmax(z, -1).cpu() for z in p.model.forward_batch([enc], shared_prefix=True)[0]])
+    assert long["kernels"] == LONG_ROW_KERNELS
+    assert long_bytes < scores / 4 and math_bytes > scores, (long_bytes, math_bytes, scores)
+    for qid, ref in zip(record["questions"], math):
+        got = torch.tensor(list(long["probabilities"][qid].values()))
+        assert (got - ref).abs().max() < 2e-3 and got.argmax() == ref.argmax()
 
 
 def test_server_recovers_when_a_pass_runs_out_of_memory():
@@ -365,7 +402,7 @@ def test_server_recovers_when_a_pass_runs_out_of_memory():
     from kev.checkpoint import Checkpoint, LoadOptions
     from kev import cuda_graphs
     from kev.device import empty_cache, sync
-    from kev.model import SERVE_MAX_BRANCH, SERVE_MAX_STATE
+    from kev.model import admit
     from kev.serve import Server
     ck = Checkpoint(KEV_08B)
     tok, m = ck.load("cuda", LoadOptions(dtype=torch.bfloat16, cuda_graphs=True, fused=True))
@@ -375,7 +412,7 @@ def test_server_recovers_when_a_pass_runs_out_of_memory():
     # entry (graphed question rows); ~46 MiB of prefix each on Kev-0.8B
     rec = lambda i: {"state": f"Ticket {i}. " + f"Order {4400 + i} arrived late and the box was crushed. Two charges appear on the card. " * 170, "questions": qs}
     fills, target, after = [rec(i) for i in range(16)], rec(100), rec(101)
-    enc = lambda r: m.encode(tok, r, max_state=SERVE_MAX_STATE, max_branch=SERVE_MAX_BRANCH)
+    enc = lambda r: admit(m, tok, r)
     n = enc(target)["seg"].count(0)
     assert cuda_graphs.GRAPH_STATE < n <= cuda_graphs.BANK_WIDTH, n
     total = torch.cuda.get_device_properties(torch.cuda.current_device()).total_memory

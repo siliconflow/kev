@@ -49,8 +49,16 @@ Spec (paths are relative to the repo root; templates take {round}, {arm}, {size}
     drop_ids  record ids dropped on both sides of every comparison (devtools-v1's duplicated ids)
     rule      {panels, unknowable?, criteria, rank}
     confirm   {stage: {candidate_reads, parent_reads?, panels, criteria}}
-A panel is {reads: [tags], metrics: [bootstrapped], report: [value only], source?: filter, versus?: {name: dir}, by_length?};
-the tag "transfer" is the trial's own in-trial transfer read (or the arm's transfer_read). by_length (true, or {edges?:
+A panel is {reads: [tags], metrics: [bootstrapped], report: [value only], source?: filter, versus?: {name: dir}, by_length?,
+exclude_sources?, exclude_tasks?, exclude_file?, optional?}; the tag "transfer" is the trial's own in-trial transfer read (or
+the arm's transfer_read). source keeps one source (or a list of them); exclude_sources / exclude_tasks drop rows by source /
+task, and exclude_file ({path, sha256}: a JSON object of `ids` (question or record ids), `sources` and `tasks` lists, or a
+bare list of any of them) drops what it lists, checked against its registered hash, so a private list (round 24's
+tasksource-heldout families) enters a public spec only as a path and a sha256 (panel_filter; the same rows leave both
+sides and any `versus` reference; the panel records how many questions they removed as `excluded`). optional: true marks
+a report-only panel no criterion or rank may read; its absent reads leave the comparison complete (`missing_optional`).
+The `temperature` pool may carry ci: {level, samples, seed}, which adds each arm's bootstrap interval of its pooled
+temperature to the read-out (`temperature_ci`, report only). by_length (true, or {edges?:
 [tokens], tokenizer?: [name, revision]}) adds acc / ece / brier / confident_error_rate per state-token bucket
 (kev.metrics.calibration_by_length: "<metric>_<bucket>" entries, e.g. ece_16k_plus, value only) with state tokens counted
 from the reads' suite records. A criterion is {left, op, right, plus?} where left is a path
@@ -65,7 +73,8 @@ are a training corpus's (in distribution: round 19's failure mode). From round 2
 confirmation with a temperature-dependent criterion must register a `temperature` pool: validate and launch refuse it
 otherwise; earlier rounds get a warning, so their recorded specs keep validating.
 
-Removed suites (kev.suite.REMOVED_SUITES: evals/external/scienthoon-v1, removed 2026-09-27, last read by round 22). A round
+Removed suites (kev.suite.REMOVED_SUITES: evals/external/scienthoon-v1, removed 2026-09-27, last read by round 22;
+evals/external/wanli-v2 and typesafe-v1, removed 2026-09-30, last read by round 26; wanli-v1, last read by round 5). A round
 up to the suite's `last_round` that reads one validates with the read listed under `archived`; its read-out and
 confirmations are computed from the committed rows as before (they need rows, not the suite). A later round that names
 one is refused with the reason, and no read of one is launched again (read_commands skips it; kev.suite.load_split refuses it).
@@ -119,6 +128,7 @@ class Pool(NamedTuple):
     reads: list     # directories whose rows are pooled
     sources: dict   # {directory: [source, ...]}: the only sources pooled from that read (absent = every source)
     exclude: list   # directories whose record ids are removed from the pool
+    ci: dict = None # {level, samples, seed}: also bootstrap the fitted temperature's interval (report only; round 24)
 
 
 def select_rows(reads, exclude=()):
@@ -136,6 +146,25 @@ def pooled_temperature(pool, root=ROOT):
     kept, rows = select_rows([(Path(root) / d / "rows.json", pool.sources.get(d)) for d in pool.reads], [Path(root) / d / "rows.json" for d in pool.exclude])
     return served(kept, [])[0], {"reads": pool.reads, **({"sources": pool.sources} if pool.sources else {}), "exclude_reads": pool.exclude,
                                  "questions": len(scored_rows(kept)), "excluded_questions": len(scored_rows(rows)) - len(scored_rows(kept))}
+
+
+def pooled_temperature_ci(pool, root=ROOT):
+    """The pooled temperature's bootstrap interval (report only; the audit of 2026-09-27: the served T of a 648-question pool
+    moves by ~±0.15, enough to move an ECE criterion by more than its margin): the same fit (TEMPERATURE_FIT's grid and
+    objective, knowable clean rows of select_rows) on `samples` resamples of the pool's (source, group) clusters within each
+    source (kev.metrics.cluster_resamples, seed), percentile interval at `level`. Each question's NLL on the grid is computed
+    once; a resample's fit is the grid point with the least mean NLL over its questions."""
+    import numpy as np
+    from kev.metrics import TEMPERATURE_FIT, cluster_resamples, nll_at_temperature
+    kept, _ = select_rows([(Path(root) / d / "rows.json", pool.sources.get(d)) for d in pool.reads], [Path(root) / d / "rows.json" for d in pool.exclude])
+    raw = served_at(kept, 1.0)
+    grid = np.exp(np.linspace(np.log(0.25), np.log(4), TEMPERATURE_FIT["points"]))
+    nll = np.asarray([[nll_at_temperature(r, float(t)) for t in grid] for r in raw])
+    level, samples, seed = pool.ci.get("level", 0.9), pool.ci.get("samples", SAMPLES), pool.ci.get("seed", 0)
+    fits = np.asarray([grid[int(np.argmin(nll[idx].mean(axis=0)))] for idx in cluster_resamples(raw, samples, seed)])
+    lower, upper = np.quantile(fits, [(1 - level) / 2, 1 - (1 - level) / 2])
+    return {"level": level, "samples": samples, "seed": seed, "lower": float(lower), "upper": float(upper), "questions": len(raw),
+            "resampled": "(source, group) clusters within each source (kev.metrics.cluster_resamples)"}
 
 
 class Side:
@@ -180,12 +209,90 @@ class Side:
         return self._served[tag]
 
     def panel(self, spec):
-        """A panel's served, knowable rows, reads concatenated in the order listed."""
-        rows = [r for tag in spec["reads"] for r in self.served(tag)]
-        return [r for r in rows if r["id"] not in self.drop and ("source" not in spec or r["source"] == spec["source"])]
+        """A panel's served, knowable rows, reads concatenated in the order listed, minus drop_ids and whatever the
+        panel's filters leave out (panel_filter: `source`, `exclude_sources`, `exclude_tasks`, `exclude_file`)."""
+        keep = panel_filter(spec, self.root)
+        return [r for tag in spec["reads"] for r in self.served(tag) if r["id"] not in self.drop and keep(r)]
 
     def unknowable_share(self, tag):
         return unknowable_report(served_clean(read_json(self.rows_path(tag)), self.t))["share_at_0_9"] if self.has(tag) else None
+
+
+# --- panel filters ---------------------------------------------------------------------------------------------------
+
+EXCLUDE_KEYS = ("exclude_sources", "exclude_tasks", "exclude_file")   # round 24: the audit's per-suite fixes, applied to both sides
+EXCLUDE_FILE_KEYS = ("ids", "sources", "tasks")                       # what an exclude file may list (other keys, e.g. a salt, are ignored)
+
+
+def exclude_file_path(entry, root=ROOT):
+    return Path(root) / entry["path"]
+
+
+@functools.cache
+def _exclusion(path, sha256):
+    if digest(path) != sha256:
+        raise ValueError(f"exclude_file {path} does not match the sha256 the spec registers ({sha256[:12]}...): a changed exclusion list is a new spec")
+    data = read_json(path)
+    if isinstance(data, list): return {k: frozenset(data) for k in EXCLUDE_FILE_KEYS}   # a bare list: ids, sources or tasks alike
+    return {k: frozenset(data.get(k, ())) for k in EXCLUDE_FILE_KEYS}
+
+
+def exclusion(entry, root=ROOT):
+    """{ids, sources, tasks} of a panel's exclude_file ({path, sha256}: a JSON object with any of those lists, or a bare list
+    matched against all three), checked against its registered sha256. The file may be private (never in git: e.g. round 24's
+    tasksource-heldout families, restored with scripts/private_rows.py); the spec carries only its path and hash."""
+    return _exclusion(exclude_file_path(entry, root), entry["sha256"])
+
+
+def panel_filter(panel, root=ROOT):
+    """row -> kept? for a panel: `source` (a name, or a list of names) keeps only those sources; `exclude_sources` and
+    `exclude_tasks` drop rows by source and task; `exclude_file` drops rows whose id, record (group), source or task it lists.
+    The same filter serves both sides of a comparison (and a `versus` reference), so paired deltas stay paired."""
+    source = panel.get("source")
+    only = None if source is None else {source} if isinstance(source, str) else set(source)
+    sources, tasks = set(panel.get("exclude_sources", ())), set(panel.get("exclude_tasks", ()))
+    listed = exclusion(panel["exclude_file"], root) if panel.get("exclude_file") else None
+    def keep(r):
+        if only is not None and r["source"] not in only: return False
+        if r["source"] in sources or r.get("task") in tasks: return False
+        return not (listed and (r["id"] in listed["ids"] or r.get("group") in listed["ids"] or r["source"] in listed["sources"] or r.get("task") in listed["tasks"]))
+    return keep
+
+
+def filter_problems(panel, spec, root=ROOT, rows=True):
+    """What is wrong with a panel's filters: malformed values, an exclude_file without {path, sha256}, and (rows: the local
+    data a read-out needs) an exclude_file here that does not match its hash. `exclude_sources` names are checked
+    against the manifests of the panel's reads (a typo would silently keep a source the rule means to drop)."""
+    problems, source = [], panel.get("source")   # an absent exclude_file is not a problem here: validate lists it with the absent rows
+    if source is not None and not (isinstance(source, str) or (isinstance(source, list) and source and all(isinstance(s, str) for s in source))):
+        problems.append("source is a source name or a non-empty list of names")
+    for key in ("exclude_sources", "exclude_tasks"):
+        if key in panel and not (isinstance(panel[key], list) and panel[key] and all(isinstance(s, str) for s in panel[key])):
+            problems.append(f"{key} is a non-empty list of names")
+    if "optional" in panel and not isinstance(panel["optional"], bool): problems.append("optional is true or false")
+    entry = panel.get("exclude_file")
+    if entry is not None:
+        if not (isinstance(entry, dict) and isinstance(entry.get("path"), str) and isinstance(entry.get("sha256"), str) and len(entry["sha256"]) == 64):
+            problems.append("exclude_file is {path, sha256}")
+        elif rows and exclude_file_path(entry, root).exists() and digest(exclude_file_path(entry, root)) != entry["sha256"]:
+            problems.append(f"exclude_file {entry['path']} does not match its registered sha256")
+    if isinstance(panel.get("exclude_sources"), list):
+        suites = [spec["reads"][t].get("suite") for t in panel["reads"] if t in spec["reads"]]
+        if TRANSFER in panel["reads"]:
+            tag = spec.get("transfer_read")
+            suites.append(spec["reads"].get(tag, {}).get("suite") if tag else None)
+        manifests = [suite_manifest(suite_dir(s)) if s and suite_dir(s) else None for s in suites]
+        if manifests and all(m is not None for m in manifests):
+            listed = set().union(*(listed_sources(m) for m in manifests))
+            if unknown := sorted(set(panel["exclude_sources"]) - listed): problems.append(f"exclude_sources name {unknown}, which no read of the panel lists")
+    return problems
+
+
+def gating_panels(rule):
+    """Panels a criterion or the rank reads: an `optional` panel (report only) must not be one of them."""
+    paths = [p for c in rule["criteria"].values() for p in _paths(c)]
+    paths += [p for key in rule.get("rank", []) for p in (key["by"] if isinstance(key["by"], list) else [key["by"]])]
+    return {p.split(".")[0] for p in paths}
 
 
 # --- spec ------------------------------------------------------------------------------------------------------------
@@ -226,7 +333,7 @@ def arm_side(spec, arm, root=ROOT, stage=None):
     pool, registered = None, spec.get("temperature")
     if registered:
         fit = {**development, **({TRANSFER: transfer} if transfer else {})}
-        pool = Pool([fit[r] for r in registered["reads"]], {fit[r]: s for r, s in registered.get("sources", {}).items()}, [fit[r] for r in registered.get("exclude_reads", [])])
+        pool = Pool([fit[r] for r in registered["reads"]], {fit[r]: s for r, s in registered.get("sources", {}).items()}, [fit[r] for r in registered.get("exclude_reads", [])], registered.get("ci"))
     suite = trial_suite(spec, a["trial"], root) if a.get("trial") and not pool else None
     return Side(a.get("trial"), dirs, root, spec.get("drop_ids", ()), pool, a.get("checkpoint"), suite)
 
@@ -302,6 +409,8 @@ def validate(spec, root=ROOT, rows=True, plans=True, partitions=False):
             if unknown: problems.append(f"{where} panel {pname}: unknown read tags {sorted(unknown)}")
             if not panel.get("metrics") and not panel.get("report"): problems.append(f"{where} panel {pname}: nothing to compute")
             problems += [f"{where} panel {pname}: {p}" for p in by_length_problems(panel, spec)]
+            problems += [f"{where} panel {pname}: {p}" for p in filter_problems(panel, spec, root, rows)]
+            if panel.get("optional") and pname in gating_panels(rule): problems.append(f"{where} panel {pname}: optional (report only), but a criterion or the rank reads it")
         for cname, c in rule["criteria"].items():
             if c.get("op") not in OPS: problems.append(f"{where} criterion {cname}: op {c.get('op')!r}")
             for path in _paths(c):
@@ -316,11 +425,15 @@ def validate(spec, root=ROOT, rows=True, plans=True, partitions=False):
         elif (root / s["suite"] / "manifest.json").exists(): problems += _validate_plan(study, s, root, partitions)
         else: absent(f"study {study}: suite {s['suite']} not in this checkout")
     if rows:
+        for where, pname, entry in [(s or "rule", n, p["exclude_file"]) for s, rule in stages.items() for n, p in rule["panels"].items() if isinstance(p.get("exclude_file"), dict)]:
+            if isinstance(entry.get("path"), str) and not exclude_file_path(entry, root).exists():
+                absent(f"{where} panel {pname}: exclude_file {entry['path']} not in this checkout (a private list: scripts/private_rows.py restore)")
         for pname, p in spec["parents"].items():
             if not (root / p["trial"] / "development/rows.json").exists(): absent(f"parent {pname}: {p['trial']}/development/rows.json not in this checkout")
         for arm in spec["arms"]:
             side = parent_side(spec, arm, root)
-            for tag in sorted(rule_tags(spec["rule"]) - {spec["rule"].get("unknowable")}):   # the parent's unknowable read is reported, not required
+            required = {t for panel in spec["rule"]["panels"].values() if not panel.get("optional") for t in panel["reads"]}   # an optional panel's reads may be absent
+            for tag in sorted(required - {spec["rule"].get("unknowable")}):   # the parent's unknowable read is reported, not required
                 if not side.has(tag): absent(f"arm {arm}: parent read {tag} not in this checkout ({side.dirs.get(tag, 'no location')})")
     return Validation(problems, archived)
 
@@ -673,6 +786,10 @@ def pool_problems(spec, stages):
     if not pool: return []
     reads, exclude = pool.get("reads") or [], pool.get("exclude_reads", [])
     problems = ["temperature: no reads to pool"] if not reads else []
+    ci = pool.get("ci")
+    if ci is not None and not (isinstance(ci, dict) and not set(ci) - {"level", "samples", "seed"} and 0 < ci.get("level", 0.9) < 1
+                               and isinstance(ci.get("samples", SAMPLES), int) and ci.get("samples", SAMPLES) > 0 and isinstance(ci.get("seed", 0), int)):
+        problems.append("temperature: ci is {level (0-1), samples (> 0), seed}")
     problems += [f"temperature: {tag!r} is not a read tag of this spec" for tag in reads if tag not in spec["reads"]]
     problems += [f"temperature: exclude_reads {tag!r} is not a read tag of this spec" for tag in exclude if tag not in spec["reads"] and tag != TRANSFER]
     for tag, sources in pool.get("sources", {}).items():
@@ -721,14 +838,22 @@ def compare(candidate, parent, rule, lengths=None):
         return {**out, "temperature": None, "missing": absent, "complete": False, "passed": None}
     out.update(temperature=candidate.t, parent_temperature=parent.t, panels={}, missing=[])
     if candidate.fit: out["temperature_fit"] = candidate.fit
+    if candidate.pool and candidate.pool.ci: out["temperature_ci"] = pooled_temperature_ci(candidate.pool, candidate.root)
     out["temperature_source"] = candidate.temperature_source()
     out["parent_temperature_source"] = parent.temperature_source()   # parents are served at their trial's development rows; `shipped` is head.pt's T
     for name, spec in rule["panels"].items():
         absent = [f"{who}:{side.dirs[t] if t in side.dirs else t}" for who, side in (("candidate", candidate), ("parent", parent)) for t in spec["reads"] if not side.has(t)]
-        if absent: out["missing"] += absent; continue
+        if isinstance(spec.get("exclude_file"), dict) and not exclude_file_path(spec["exclude_file"], candidate.root).exists():
+            absent.append(f"exclude_file:{spec['exclude_file']['path']}")
+        if absent:   # an optional (report-only) panel's absent reads leave the comparison complete
+            if spec.get("optional"): out.setdefault("missing_optional", []).extend(absent)
+            else: out["missing"] += absent
+            continue
         c, p = candidate.panel(spec), parent.panel(spec)
         mc, mp = metrics(c), metrics(p)
         panel = {"n": len(c)}
+        if any(k in spec for k in EXCLUDE_KEYS):   # questions the panel's exclusions removed (candidate side; the parent's are the same records)
+            panel["excluded"] = len(candidate.panel({k: v for k, v in spec.items() if k not in EXCLUDE_KEYS})) - len(c)
         for m in spec.get("metrics", ()):
             panel[m] = {"candidate": mc[m], "parent": mp[m], **paired(c, p, m)}
         for m in spec.get("report", ()):
@@ -736,7 +861,8 @@ def compare(candidate, parent, rule, lengths=None):
         if spec.get("by_length"):
             panel.update(_by_length(spec, c, p, lengths))
         for ref, d in spec.get("versus", {}).items():
-            rows = [r for r in read_json(candidate.root / d / "rows.json") if r["variant"] == "clean"]   # a reference as it served itself
+            keep = panel_filter(spec, candidate.root)
+            rows = [r for r in read_json(candidate.root / d / "rows.json") if r["variant"] == "clean" and keep(r)]   # a reference as it served itself
             panel.setdefault("versus", {})[ref] = {m: {"reference": metrics(rows)[m], **paired(c, rows, m)} for m in spec.get("metrics", ())}
         out["panels"][name] = panel
     if rule.get("unknowable"):
@@ -838,7 +964,11 @@ def table(report):
         if r.get("unknowable"): cells.append(f"unk {r['unknowable']['candidate']}")
         failed = [k for k, v in r.get("criteria", {}).items() if v is False]
         verdict = "incomplete" if not r.get("complete") else {True: "PASS", None: "reported", False: "fail: " + ", ".join(failed)}[r["passed"]]
-        lines.append(f"{arm:16} {' | '.join(cells)} -> {verdict}" + (f" (missing {len(r['missing'])})" if r.get("missing") else ""))
+        lines.append(f"{arm:16} {' | '.join(cells)} -> {verdict}" + (f" (missing {len(r['missing'])})" if r.get("missing") else "")
+                     + (f" (report-only reads missing {len(r['missing_optional'])})" if r.get("missing_optional") else ""))
+        if r.get("temperature_ci"):
+            ci = r["temperature_ci"]
+            lines.append(f"{'':16} T {r['temperature']:.3f}, {100 * ci['level']:.0f} % bootstrap interval [{ci['lower']:.3f}, {ci['upper']:.3f}] ({ci['questions']} pool questions)")
         for p, panel in r.get("panels", {}).items():
             if "by_length" not in panel: continue
             buckets = [name for name, _, _ in length_buckets(tuple(panel["by_length"]["edges"])) if panel[f"ece_{name}"]["n"]]

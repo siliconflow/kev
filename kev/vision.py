@@ -244,17 +244,21 @@ class VisionHook:
         return out
 
     @torch.no_grad()
-    def probs_with_images(self, rec, images, max_state=MAX_STATE, max_branch=MAX_BRANCH):
+    def probs_with_images(self, rec, images, enc=None, max_state=MAX_STATE, max_branch=MAX_BRANCH):
         """probs() for a text record + PIL images: row form with the tower rows spliced
         into the placeholder embeddings. One implementation for every backbone (rows form
         is exact on any architecture, model.rows_of); the serving prefix cache does not
-        apply (image requests always pay the full row pass)."""
+        apply (image requests always pay the full row pass). `enc`: an already-admitted
+        encoding of `rec` (kev.model.admit) - the serving path passes one so image requests
+        follow the text requests' admission (refuse over SERVE_MAX_STATE unless truncation
+        is opted into) instead of silently cutting the state here."""
         from .model import rows_of
 
         if self.model.option_isolation:
             raise ValueError("image path uses the row form; unavailable with option_isolation")
         rows, n_per = self.embed(images)
-        enc = self.model.encode(self.tok, rec, max_state=max_state, max_branch=max_branch)
+        if enc is None:
+            enc = self.model.encode(self.tok, rec, max_state=max_state, max_branch=max_branch)
         enc = self._inject(enc, n_per)
         S, Sp, qrows = rows_of(enc)
         B = len(qrows)
@@ -285,4 +289,4 @@ class VisionHook:
             d = len(S) + r["decide"]
             oi = torch.tensor([len(S) + o for o in r["opts"]], device=dev)
             out.append(F.softmax(self.model.head(h[i, d], h[i, oi]), -1).cpu())
-        return out, {"tokens": len(enc["ids"]), "state_tokens": enc["seg"].count(0)}
+        return out, {"tokens": len(enc["ids"]), "state_tokens": enc["state_tokens"], "state_tokens_used": enc["seg"].count(0)}

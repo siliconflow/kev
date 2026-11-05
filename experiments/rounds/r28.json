@@ -1,0 +1,571 @@
+{
+  "round": 28,
+  "registered": "PLAN.md > Round 28 - the small family's shipped temperatures refitted on the held-out-datasets pool (Kev-4B round 10, Kev-0.8B round 15; post hoc, no training) and a registered validated-context-length rule per size; registered with this spec's commit, before any round-28 read",
+  "gpu": "H100",
+  "app": "kev-r28",
+  "reads": {
+    "breadth": {
+      "suite": "evals/breadth-v1"
+    },
+    "tsheld": {
+      "suite": "evals/tasksource-heldout-v1"
+    },
+    "hard": {
+      "suite": "evals/hard-v1"
+    },
+    "devtools": {
+      "suite": "evals/devtools-v1"
+    },
+    "docs": {
+      "suite": "evals/documents-v1"
+    },
+    "v9": {
+      "suite": "evals/v9/transfer-v9"
+    },
+    "r3cal": {
+      "suite": "evals/round3/transfer-r3",
+      "flags": "--split calibration"
+    },
+    "longdoc": {
+      "suite": "evals/longdoc-v1"
+    },
+    "ood": {
+      "suite": "evals/ood-v2"
+    },
+    "agentsood": {
+      "suite": "evals/agents-ood-v1"
+    },
+    "guardood": {
+      "suite": "evals/guardrails-ood-v1"
+    },
+    "breadthtest": {
+      "suite": "evals/breadth-v1",
+      "flags": "--allow-test"
+    },
+    "locked": {
+      "entrypoint": "locked_test",
+      "decision": "evals/v7/decision-v7"
+    }
+  },
+  "temperature": {
+    "reads": [
+      "r3cal",
+      "v9"
+    ],
+    "sources": {
+      "v9": [
+        "mmlu_pro"
+      ],
+      "r3cal": [
+        "composition_holdout",
+        "emotion",
+        "legacy_holdout",
+        "mmlu",
+        "paws",
+        "qnli",
+        "sciq",
+        "tweet_offensive"
+      ]
+    },
+    "exclude_reads": [
+      "transfer"
+    ],
+    "ci": {
+      "level": 0.9,
+      "samples": 2000,
+      "seed": 0
+    }
+  },
+  "drop_ids": [
+    "codereviewer/cls-test/13657",
+    "codereviewer/cls-test/19245"
+  ],
+  "parents": {
+    "4b": {
+      "trial": "runs/r10-skills/00-trial-0",
+      "checkpoint": "jaredpalmer/kev-4b@139fdd94f1b6a6ad80cc15e08fcb99cac885a101",
+      "reads": {
+        "breadth": "runs/fam-4b-breadth",
+        "hard": "runs/r10-4b-skills-hard",
+        "devtools": "runs/r10-4b-skills-devtools",
+        "docs": "runs/r10-4b-skills-docs",
+        "v9": "runs/r10-4b-skills-v9",
+        "tsheld": "runs/r28-4b-r10-tsheld",
+        "r3cal": "runs/r28-4b-r10-r3cal",
+        "longdoc": "runs/r28-4b-r10-longdoc",
+        "ood": "runs/r28-4b-r10-ood",
+        "agentsood": "runs/r28-4b-r10-agentsood",
+        "guardood": "runs/r28-4b-r10-guardood",
+        "locked": "runs/locked/kev-4b-r10-ungated/transfer"
+      }
+    },
+    "08b": {
+      "trial": "runs/r15-08b/00-trial-0",
+      "checkpoint": "jaredpalmer/kev-0.8b@9a45d25eb2ab761841196625383fa1dff0e56c1e",
+      "reads": {
+        "breadth": "runs/fam-08b-breadth",
+        "hard": "runs/r15-08b-a-hard",
+        "devtools": "runs/r15-08b-a-devtools",
+        "docs": "runs/r15-08b-a-docs",
+        "v9": "runs/r15-08b-a-v9",
+        "tsheld": "runs/r28-08b-r15-tsheld",
+        "r3cal": "runs/r28-08b-r15-r3cal",
+        "longdoc": "runs/r28-08b-r15-longdoc",
+        "ood": "runs/r28-08b-r15-ood",
+        "agentsood": "runs/r28-08b-r15-agentsood",
+        "guardood": "runs/r28-08b-r15-guardood",
+        "locked": "runs/locked/kev-08b-r15-ungated/transfer"
+      }
+    }
+  },
+  "arms": {
+    "4b-r10": {
+      "trial": "runs/r10-skills/00-trial-0",
+      "parent": "4b",
+      "reads": {
+        "breadth": "runs/fam-4b-breadth",
+        "hard": "runs/r10-4b-skills-hard",
+        "devtools": "runs/r10-4b-skills-devtools",
+        "docs": "runs/r10-4b-skills-docs",
+        "v9": "runs/r10-4b-skills-v9",
+        "tsheld": "runs/r28-4b-r10-tsheld",
+        "r3cal": "runs/r28-4b-r10-r3cal",
+        "longdoc": "runs/r28-4b-r10-longdoc",
+        "ood": "runs/r28-4b-r10-ood",
+        "agentsood": "runs/r28-4b-r10-agentsood",
+        "guardood": "runs/r28-4b-r10-guardood"
+      },
+      "trained_on": [
+        "evals/v7/decision-v7",
+        "evals/documents-v1",
+        "evals/round10/skills",
+        "evals/hard-v1",
+        "evals/devtools-v1"
+      ]
+    },
+    "08b-r15": {
+      "trial": "runs/r15-08b/00-trial-0",
+      "parent": "08b",
+      "reads": {
+        "breadth": "runs/fam-08b-breadth",
+        "hard": "runs/r15-08b-a-hard",
+        "devtools": "runs/r15-08b-a-devtools",
+        "docs": "runs/r15-08b-a-docs",
+        "v9": "runs/r15-08b-a-v9",
+        "tsheld": "runs/r28-08b-r15-tsheld",
+        "r3cal": "runs/r28-08b-r15-r3cal",
+        "longdoc": "runs/r28-08b-r15-longdoc",
+        "ood": "runs/r28-08b-r15-ood",
+        "agentsood": "runs/r28-08b-r15-agentsood",
+        "guardood": "runs/r28-08b-r15-guardood"
+      },
+      "trained_on": [
+        "evals/v7/decision-v7",
+        "evals/documents-v1",
+        "evals/round10/skills",
+        "evals/hard-v1",
+        "evals/devtools-v1"
+      ]
+    }
+  },
+  "rule": {
+    "panels": {
+      "calibration_primary": {
+        "reads": [
+          "breadth",
+          "tsheld"
+        ],
+        "exclude_sources": [
+          "routerbench",
+          "cfcolor",
+          "humicroedit",
+          "chessbench"
+        ],
+        "exclude_file": {
+          "path": "runs/r24-private/tsheld-exclude.json",
+          "sha256": "a72030abc815261c3b675c3618af80dd410b2a46b295fd8dff20f2122d07e437"
+        },
+        "metrics": [
+          "ece",
+          "brier"
+        ],
+        "report": [
+          "acc"
+        ]
+      },
+      "breadth": {
+        "reads": [
+          "breadth"
+        ],
+        "exclude_sources": [
+          "routerbench",
+          "cfcolor",
+          "humicroedit",
+          "chessbench"
+        ],
+        "metrics": [
+          "ece"
+        ],
+        "report": [
+          "acc",
+          "brier"
+        ]
+      },
+      "tasksource_heldout": {
+        "reads": [
+          "tsheld"
+        ],
+        "exclude_file": {
+          "path": "runs/r24-private/tsheld-exclude.json",
+          "sha256": "a72030abc815261c3b675c3618af80dd410b2a46b295fd8dff20f2122d07e437"
+        },
+        "metrics": [
+          "ece"
+        ],
+        "report": [
+          "acc",
+          "brier"
+        ]
+      },
+      "transfer4": {
+        "reads": [
+          "transfer"
+        ],
+        "exclude_sources": [
+          "emotion"
+        ],
+        "metrics": [
+          "ece"
+        ],
+        "report": [
+          "acc",
+          "brier"
+        ]
+      },
+      "hard": {
+        "reads": [
+          "hard"
+        ],
+        "metrics": [
+          "ece"
+        ],
+        "report": [
+          "acc",
+          "brier"
+        ]
+      },
+      "devtools": {
+        "reads": [
+          "devtools"
+        ],
+        "exclude_sources": [
+          "flakeflagger"
+        ],
+        "exclude_tasks": [
+          "commitpackft_type"
+        ],
+        "metrics": [
+          "ece"
+        ],
+        "report": [
+          "acc",
+          "brier"
+        ]
+      },
+      "docs": {
+        "reads": [
+          "docs"
+        ],
+        "metrics": [
+          "ece"
+        ],
+        "report": [
+          "acc",
+          "brier"
+        ]
+      },
+      "long_context": {
+        "reads": [
+          "longdoc"
+        ],
+        "metrics": [
+          "acc",
+          "ece"
+        ],
+        "by_length": {
+          "edges": [
+            4096,
+            8192,
+            16384,
+            32768
+          ]
+        },
+        "optional": true
+      },
+      "long_cuad": {
+        "reads": [
+          "longdoc"
+        ],
+        "source": "longdoc_cuad",
+        "metrics": [
+          "acc",
+          "ece"
+        ],
+        "by_length": {
+          "edges": [
+            4096,
+            8192,
+            16384,
+            32768
+          ]
+        },
+        "optional": true
+      },
+      "long_generated": {
+        "reads": [
+          "longdoc"
+        ],
+        "source": "longdoc_synthetic",
+        "metrics": [
+          "acc",
+          "ece"
+        ],
+        "by_length": {
+          "edges": [
+            4096,
+            8192,
+            16384,
+            32768
+          ]
+        },
+        "optional": true
+      },
+      "breadth_index": {
+        "reads": [
+          "breadth"
+        ],
+        "metrics": [
+          "ece",
+          "brier"
+        ],
+        "report": [
+          "acc"
+        ],
+        "optional": true
+      },
+      "tasksource_heldout_all_families": {
+        "reads": [
+          "tsheld"
+        ],
+        "metrics": [
+          "ece",
+          "brier"
+        ],
+        "report": [
+          "acc"
+        ],
+        "optional": true
+      },
+      "ood": {
+        "reads": [
+          "ood"
+        ],
+        "metrics": [
+          "acc",
+          "ece"
+        ],
+        "optional": true
+      },
+      "agents_ood": {
+        "reads": [
+          "agentsood"
+        ],
+        "metrics": [
+          "acc",
+          "ece"
+        ],
+        "optional": true
+      },
+      "guardrails_ood": {
+        "reads": [
+          "guardood"
+        ],
+        "metrics": [
+          "acc",
+          "ece"
+        ],
+        "optional": true
+      }
+    },
+    "unknowable": "v9",
+    "criteria": {
+      "1_primary_brier_upper_below_0": {
+        "left": "calibration_primary.brier.upper",
+        "op": "<",
+        "right": 0
+      },
+      "1_primary_ece_below_shipped": {
+        "left": "calibration_primary.ece.candidate",
+        "op": "<",
+        "right": "calibration_primary.ece.parent"
+      },
+      "2_breadth_ece_at_most_shipped_plus_0.005": {
+        "left": "breadth.ece.candidate",
+        "op": "<=",
+        "right": "breadth.ece.parent",
+        "plus": 0.005
+      },
+      "2_tasksource_heldout_ece_at_most_shipped_plus_0.005": {
+        "left": "tasksource_heldout.ece.candidate",
+        "op": "<=",
+        "right": "tasksource_heldout.ece.parent",
+        "plus": 0.005
+      },
+      "2_transfer4_ece_at_most_shipped_plus_0.005": {
+        "left": "transfer4.ece.candidate",
+        "op": "<=",
+        "right": "transfer4.ece.parent",
+        "plus": 0.005
+      },
+      "2_hard_ece_at_most_shipped_plus_0.005": {
+        "left": "hard.ece.candidate",
+        "op": "<=",
+        "right": "hard.ece.parent",
+        "plus": 0.005
+      },
+      "2_devtools_ece_at_most_shipped_plus_0.005": {
+        "left": "devtools.ece.candidate",
+        "op": "<=",
+        "right": "devtools.ece.parent",
+        "plus": 0.005
+      },
+      "2_docs_ece_at_most_shipped_plus_0.005": {
+        "left": "docs.ece.candidate",
+        "op": "<=",
+        "right": "docs.ece.parent",
+        "plus": 0.005
+      }
+    },
+    "rank": [
+      {
+        "by": "calibration_primary.brier.delta",
+        "order": "asc"
+      }
+    ]
+  },
+  "context": {
+    "rule": "PLAN.md > Round 28 (registered) > validated context length: report only, gates nothing; computed by scripts/longdoc_report.py --context-margin -0.03 (validated_context)",
+    "suite": "evals/longdoc-v1",
+    "split": "development",
+    "statistic": "cuad_paired_vs_8k: CUAD accuracy of bucket b minus bucket 8k on the same (target contract, repeat, question), 95 % target-clustered bootstrap, 2,000 resamples, seed 0",
+    "reference": "8k",
+    "buckets": [
+      "16k",
+      "32k",
+      "64k"
+    ],
+    "margin": -0.03,
+    "reads": {
+      "4b": "runs/r28-4b-r10-longdoc",
+      "08b": "runs/r28-08b-r15-longdoc",
+      "9b": "runs/r29-9b-r18a-longdoc"
+    },
+    "command": "uv run python scripts/longdoc_report.py --suite evals/longdoc-v1 --out runs/r28-context --context-margin -0.03 --result 'Kev-4B=runs/r28-4b-r10-longdoc' --result 'Kev-0.8B=runs/r28-08b-r15-longdoc' --result 'Kev-9B v2=runs/r29-9b-r18a-longdoc'"
+  },
+  "confirm": {
+    "tests": {
+      "candidate_reads": {
+        "breadthtest": "runs/fam-{size}-breadthtest"
+      },
+      "parent_reads": {
+        "breadthtest": "runs/fam-{size}-breadthtest"
+      },
+      "panels": {
+        "breadthtest": {
+          "reads": [
+            "breadthtest"
+          ],
+          "exclude_sources": [
+            "routerbench",
+            "cfcolor",
+            "humicroedit",
+            "chessbench"
+          ],
+          "metrics": [
+            "ece",
+            "brier"
+          ],
+          "report": [
+            "acc"
+          ]
+        },
+        "breadthtest_index": {
+          "reads": [
+            "breadthtest"
+          ],
+          "metrics": [
+            "ece",
+            "brier"
+          ],
+          "report": [
+            "acc"
+          ],
+          "optional": true
+        }
+      },
+      "criteria": {
+        "breadthtest_ece_below_shipped": {
+          "left": "breadthtest.ece.candidate",
+          "op": "<",
+          "right": "breadthtest.ece.parent"
+        }
+      }
+    },
+    "locked": {
+      "candidate_reads": {
+        "locked": "runs/locked/kev-{arm}-ungated/transfer"
+      },
+      "parent_reads": {
+        "locked": "runs/locked/kev-{arm}-ungated/transfer"
+      },
+      "panels": {
+        "locked": {
+          "reads": [
+            "locked"
+          ],
+          "metrics": [
+            "brier",
+            "ece"
+          ],
+          "report": [
+            "acc"
+          ]
+        }
+      },
+      "criteria": {
+        "locked_brier_at_most_shipped_plus_0.005": {
+          "left": "locked.brier.candidate",
+          "op": "<=",
+          "right": "locked.brier.parent",
+          "plus": 0.005
+        },
+        "locked_acc_identical_low": {
+          "left": [
+            "locked.acc.candidate",
+            "locked.acc.parent"
+          ],
+          "op": ">=",
+          "right": 0
+        },
+        "locked_acc_identical_high": {
+          "left": [
+            "locked.acc.candidate",
+            "locked.acc.parent"
+          ],
+          "op": "<=",
+          "right": 0
+        }
+      }
+    }
+  }
+}

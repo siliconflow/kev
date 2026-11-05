@@ -11,7 +11,8 @@ with a new state per request (the usual API call: every ticket is a new state) a
 hit), eager and with graphs. Isolation (--isolation): on the same records through the served bf16 path, each question
 alone against (a) the full request and (b) the question plus an unrelated sibling (kev.experiment.ISOLATION_PROBE); the
 fp32 mechanism check (kev.experiment.mechanism_checks, 8 records, tolerance 1e-3) is exact arithmetic, this is the
-precision the API serves. Writes report.json.
+precision the API serves. Every record is encoded as the server admits it (kev.model.admit: the serving context, strict),
+so no read here runs on a cut state. Writes report.json.
 """
 import argparse, gc, json, statistics, time
 from pathlib import Path
@@ -23,6 +24,7 @@ from kev.checkpoint import Checkpoint, LoadOptions
 from kev.data import materialize
 from kev.device import allocated_bytes, empty_cache
 from kev.experiment import ISOLATION_PROBE
+from kev.model import admit
 from kev.serve import Server
 from kev.suite import load_split, write_json
 
@@ -109,7 +111,7 @@ def isolation(m, tok, raw):
     """Each question alone vs in the full request ("packed") and vs after ISOLATION_PROBE ("sibling"), through the served
     path (probs_batch: bf16, fused kernels and graphs if loaded). raw = labelled records, before materialize."""
     def serve(record):
-        return m.probs_batch([m.encode(tok, materialize(record))], [None], [False])[0][0]
+        return m.probs_batch([admit(m, tok, materialize(record))], [None], [False])[0][0]
     out = {"packed": [], "sibling": []}
     for r in raw:
         full = serve(r)
@@ -194,7 +196,7 @@ def main():
     if a.reference == "fp32":   # fp32 as the evaluation path runs (kev.predictors.LocalPredictor): no TF32, no fused SDPA; probs() is the prefix form, within fp32 rounding of its rows
         tok, ref = ck.load("cuda")
         torch.backends.cuda.enable_flash_sdp(False); torch.backends.cuda.enable_mem_efficient_sdp(False)
-        targets = [ref.probs(ref.encode(tok, r)) for r in recs]
+        targets = [ref.probs(admit(ref, tok, r)) for r in recs]
         torch.backends.cuda.enable_flash_sdp(True); torch.backends.cuda.enable_mem_efficient_sdp(True)   # serving keeps them
         del ref; gc.collect(); empty_cache("cuda")
     t = time.time()
@@ -207,7 +209,7 @@ def main():
     served = {"eager": [], "graphs_miss": [], "graphs_hit": []}
     with server.lock:   # the model directly: keep the server's model thread (and its idle captures) out
         for r in recs:
-            enc = m.encode(tok, r)
+            enc = admit(m, tok, r)
             m.graphs = None; served["eager"].append(m.probs_with_prefix(enc, m.prefix(enc)))
             m.graphs = graphs; m.probs_batch([enc], [None], [False]); graphs.capture_pending()   # so both reads below replay graphs
             (miss,), (prefix,) = m.probs_batch([enc], [None], [True])                         # the served path, a new state

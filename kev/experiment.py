@@ -28,7 +28,7 @@ import torch
 
 from kev.benchmark import evaluate_records
 from kev.checkpoint import LoadOptions
-from kev.device import default_device, empty_cache
+from kev.device import DEVICE_HELP, DEVICES, empty_cache, select
 from kev.full_ft import snapshot_fractions, too_many_snapshots
 from kev.metrics import fit_temperature, paired_bootstrap
 from kev.model import MAX_STATE, MAX_TRAIN_STATE
@@ -330,6 +330,10 @@ def score_trial(run, suite, output, expected_sources, device, provenance, transf
                                           "head_sha256": digest(Path(predictor.run) / "head.pt"),
                                           "weights_sha256": predictor.checkpoint.weights_sha256(),
                                           "inference_temperature": predictor.temperature}
+    # the kernel set every read below is scored on, from the loaded predictor as kev.benchmark's report.json takes it
+    # (execute_trial's `torch` / `gpu` say where the trial started; a resume re-scores and replaces this). Scoring runs in
+    # this process only: a full-weight trial's torchrun ranks are train_checkpoint's subprocess.
+    provenance["environment"] = predictor.environment
     write_json(output / "provenance.json", provenance)
     try:
         calibration_records = load_split(suite, "calibration")
@@ -429,7 +433,8 @@ def main():
     ap.add_argument("--out", required=True)
     ap.add_argument("--existing", nargs="*", default=[])
     ap.add_argument("--wait-pid", type=int)
-    ap.add_argument("--device", choices=["cpu", "mps", "cuda"], default=default_device())
+    ap.add_argument("--device", choices=("auto", *DEVICES), default="auto",
+                    help="device for local trials; " + DEVICE_HELP + " (not used by --aggregate or --dry-run)")
     ap.add_argument("--dry-run", action="store_true")
     ap.add_argument("--aggregate", action="store_true", help="rank an existing study directory (e.g. after Modal trials)")
     ap.add_argument("--transfer", help="eval-only suite whose development partition is scored for every trial (out-of-domain check)")
@@ -440,6 +445,7 @@ def main():
         aggregate(a.out); return
     if a.resume:
         if not a.suite: ap.error("--suite is required with --resume")
+        a.device = select(a.device)
         suite = Path(a.suite).resolve()
         for directory in sorted(Path(a.out).iterdir()):
             if (directory / "result.json").exists() or not (directory / "provenance.json").exists(): continue
@@ -459,6 +465,7 @@ def main():
     if a.dry_run:
         print(json.dumps({"trials": trials, "existing": a.existing, "suite_sha256": digest(suite / "manifest.json"), "locked_test": "not read"}, indent=2))
         return
+    a.device = select(a.device)
     expected_sources = source_hashes()
     with study_lock():
         if a.wait_pid:

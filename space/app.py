@@ -20,7 +20,7 @@ from pydantic import ValidationError  # noqa: E402
 
 from kev.api import SystemOneRequest, output_tokens, render, to_answers, to_record, with_date_facts  # noqa: E402
 from kev.checkpoint import Checkpoint, LoadOptions  # noqa: E402
-from kev.model import SERVE_MAX_BRANCH, SERVE_MAX_STATE  # noqa: E402
+from kev.model import admit  # noqa: E402
 from presets import PRESETS  # noqa: E402
 
 MODELS = {"Kev-4B": "jaredpalmer/kev-4b", "Kev-0.8B": "jaredpalmer/kev-0.8b"}
@@ -71,7 +71,7 @@ def probs(name, req, calibrated):
     tok, model, fitted = LOADED[name]
     model.head.temperature = fitted if calibrated else 1.0   # argmax unchanged either way; requests run one at a time (Gradio queue)
     rec, meta = to_record(req)
-    try: enc = model.encode(tok, rec, max_state=SERVE_MAX_STATE, max_branch=SERVE_MAX_BRANCH)
+    try: enc = admit(model, tok, rec)   # kev.serve's admission: an over-length state is refused, not truncated
     except ValueError as e: raise gr.Error(str(e)) from None
     torch.cuda.synchronize(); t0 = time.perf_counter()
     ps = model.probs(enc)

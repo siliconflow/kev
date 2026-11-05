@@ -18,7 +18,7 @@ TASKS = [("sciq", "SciQ"), ("qnli", "QNLI"), ("contrastive_authorization", "Poli
          ("composition_held_or_not", "Rule: (A and B) or not C"), ("tweet_offensive", "TweetEval offensive"), ("paws", "PAWS"),
          ("composition_held_conditional", "Rule: if A then not B else C"), ("mmlu", "MMLU, 4-way"), ("contrastive_deadline", "Policy: deadline (3-level Score)"), ("emotion", "Emotion, 6-way")]
 MODELS = [("kev-0.8b", "runs/r15-08b/00-trial-0/result.json"), ("kev-4b", "runs/r10-skills/00-trial-0/result.json"),
-          ("kev-9b", "runs/night2-9b-du/00-trial-0/result.json"), ("kev-27b", "runs/release/kev-27b-v2/result.json")]
+          ("kev-9b", "runs/r18-9b/00-trial-0/result.json"), ("kev-27b", "runs/r23-27b-k-w85-transfer4/report.json")]   # Kev-27B v2: round 23's raw transfer-v4 read
 JEV_PATH = "runs/jev-transfer-v4/report.json"
 
 
@@ -61,7 +61,7 @@ def main():
     body(fig, .05, .135, f"Notice: Kev-27B is within three points of Jev, or ahead, on {close} of the {len(TASKS)} sources; the 4B and 9B are close on the classification-shaped ones.\n"
          "The gap is concentrated in knowledge (MMLU) and, below 27B, day-precision date arithmetic (the deadline policy).\n"
          "Sources: QNLI, SciQ, TweetEval, PAWS, MMLU, Emotion; the policy families and rule structures shown were never trained.", size=10.5, va="top")
-    body(fig, .05, .022, "LoRA r=16 + pointer head. Kev-0.8B, 4B, 9B on Qwen3.5 base models; Kev-27B on the post-trained Qwen3.8-27B.  Regenerate: uv run python scripts/plot_family.py", size=9.5)
+    body(fig, .05, .022, "Kev-0.8B, 4B, 9B: LoRA r=16 + pointer head on Qwen3.5 base models; Kev-27B: full-weight fine-tune of the post-trained Qwen3.8-27B.  Regenerate: uv run python scripts/plot_family.py", size=9.5)
 
     out = ROOT / "docs/kev-family.png"
     fig.savefig(out, dpi=170, metadata={"Title": "Kev family vs Jev, out of domain"}); plt.close(fig)

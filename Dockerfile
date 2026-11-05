@@ -73,11 +73,14 @@ ENV PYTORCH_CUDA_ALLOC_CONF="expandable_segments:True"
 # (see deploy/kev-4b-4090.yaml in os_jev_exp).
 CMD ["python", "-m", "kev.serve", "--run", "jaredpalmer/kev-4b", "--port", "8000"]
 
-# Container-level liveness: /healthz (process + model thread), 3 failures -> unhealthy.
+# Container-level liveness: /healthz (process + model thread + still-serving), 3 failures -> unhealthy.
 # The deep check is /healthz/ready — point the platform's readiness probe there, not here:
 # it runs one real forward pass through the same path traffic takes and is what
 # "true reflection of the instance's serving capability" means (a CUDA-OOMed instance
 # answers GET endpoints with 200 forever; 2026-09-25: 4,288 /metrics polls green across
-# a 5% hard-error window). start-period covers weight loading (ModelScope + HF, ~4 min cold).
+# a 5% hard-error window). /healthz also fails when no retry can serve again (a sticky
+# CUDA error, a wedged batch, KEV_UNREADY_MAX_S without a completed batch), so this
+# healthcheck restarts the container — the 2026-11-04 instance stayed 200 here and served
+# nothing for 117 minutes. start-period covers weight loading (ModelScope + HF, ~4 min cold).
 HEALTHCHECK --interval=30s --timeout=5s --start-period=420s --retries=3 \
   CMD ["python", "-c", "import urllib.request as u; u.urlopen('http://127.0.0.1:8000/healthz', timeout=4)"]

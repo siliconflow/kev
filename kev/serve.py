@@ -6,7 +6,9 @@ TypeSafe-compatible: POST /v1/systemone, GET /v1/models, the `x-typesafe-request
 when KEV_API_KEY is set (unset = open server, the local default). Demo extras: POST /v1/systemone/permute (one Choice
 under several option orders) and POST /v1/systemone/separate (each question in its own pass, for the packed-vs-separate
 comparison). KEV_PREFIX_CACHE / KEV_PREFIX_MIN_TOKENS / KEV_PREFIX_MAX_TOKENS size the state-prefix cache; KEV_MAX_QUEUE bounds the
-waiting requests (default 64, 0 = unbounded, beyond it 503 + Retry-After); KEV_DATE_FACTS=1 opts into the
+waiting requests (default 64, 0 = unbounded, beyond it 503 + Retry-After); KEV_UNREADY_MAX_S is how long /healthz/ready may keep
+failing with no completed batch before /healthz fails too (600 s, 0 = off); KEV_MIN_FREE_MIB makes a batch shed the caches and
+graph buffers up front when the device is that empty (256, 0 = off); KEV_DATE_FACTS=1 opts into the
 date preprocessing (api.with_date_facts). Backend and precision follow LoadOptions (KEV_BACKEND, KEV_DTYPE, ...): on Apple
 Silicon the hybrid Qwen3.5 checkpoints run on MLX by default, elsewhere on torch in bf16.
 """
@@ -20,7 +22,7 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 from .api import SystemOneRequest, to_record, to_answers, output_tokens, with_date_facts
 from .checkpoint import Checkpoint, LoadOptions, fused_available, is_hub_id
-from .device import default_device, empty_cache, out_of_memory, sync
+from .device import default_device, empty_cache, free_bytes, kind, out_of_memory, sync, unrecoverable
 from .model import SERVE_MAX_BRANCH, SERVE_MAX_STATE
 
 PREFIX_CACHE_SIZE = int(os.environ.get("KEV_PREFIX_CACHE", "4"))          # states kept (KV + DeltaNet states; attention-only backbones also the state's hidden states); 0 disables
@@ -34,6 +36,13 @@ MAX_BATCH = 64                                                           # reque
 MAX_QUEUE = int(os.environ.get("KEV_MAX_QUEUE", "64"))                   # requests allowed to wait at once; 0 = unbounded. Beyond it a request is refused 503 + Retry-After
                                                                          # instead of queueing forever behind a batch that cannot allocate (2026-10-28: 269 requests
                                                                          # queued against a full card, every one of them a 500 minutes later)
+UNREADY_MAX_S = float(os.environ.get("KEV_UNREADY_MAX_S", "600"))        # /healthz/ready failing this long with no completed batch fails /healthz too, whatever the
+                                                                         # cause: nothing in this process recovers an instance that has served nothing for 10 minutes
+                                                                         # (2026-11-04: 117 minutes unready, /healthz green, no restart). 0 disables the watchdog
+STALL_S = float(os.environ.get("KEV_STALL_S", "600"))                    # one batch in flight longer than this means the model thread is wedged (a wedged thread
+                                                                         # cannot report its own failure); long enough that a legitimate pass never comes near it
+MIN_FREE_MIB = int(os.environ.get("KEV_MIN_FREE_MIB", "256"))            # with less device-free VRAM than this a batch sheds caches/buffers before it runs: the
+                                                                         # allocation that fails at ~2 MiB free poisons the context (2026-11-04). 0 disables
 MODEL_NAMES = ("kev-latest", "jev-latest")                               # both names serve this checkpoint; jev-latest is the TypeSafe SDK default model, so an unconfigured client works
 
 
@@ -109,6 +118,14 @@ class Server:
     latency: object = None   # LatencyView: request-level model-time observations for kev_latency_ms_*
     refusals: int = 0        # requests refused because the queue was full (enqueue)
     graph_sheds: int = 0     # batches that shed the CUDA graphs' memory after an OOM (_run)
+    pressure_sheds: int = 0  # batches that shed the caches/graph buffers up front because the device was nearly full (_ease_pressure)
+    # Health bookkeeping the probes read. Single-word assignments of monotonic times from the model thread and the
+    # event loop, no lock: Server.lock is held across a whole batch, and a probe that waited on it would time out
+    # (and restart a healthy instance) whenever a batch ran long.
+    fatal: str = ""                # an unrecoverable accelerator error this process cannot serve through (observe_error)
+    unready_since: float = None    # monotonic time /healthz/ready started failing; None while it passes
+    busy_since: float = None       # monotonic time the in-flight batch started; None between batches (_work)
+    last_batch_at: float = field(default_factory=time.monotonic)   # last batch that completed (_run)
 
     def __post_init__(self):
         self.release_date = self.release_date or self.checkpoint.release_date()
@@ -132,11 +149,36 @@ class Server:
             self.queue.get_nowait()[1].set_exception(RuntimeError("the server stopped")); self.queue.task_done()
         sys.setswitchinterval(self.switch_interval)
 
+    def observe_error(self, e):
+        """Record a failure no retry inside this process can clear (kev.device.unrecoverable: a poisoned CUDA context).
+        The first cause wins. Every later request is refused and /healthz fails, so the liveness probe restarts the
+        container - the only thing that serves again. A recoverable error (OOM, a shape error) is not recorded."""
+        if self.fatal or not unrecoverable(e): return
+        self.fatal = repr(e)[:300]
+        print(f"kev.serve: unrecoverable accelerator error, this process cannot serve again: {self.fatal}", flush=True)
+
+    def _capture(self, graphs):
+        """capture_pending() on the model thread. A capture that escapes its own per-bucket handling (a poisoned
+        context, an allocator that cannot map the pool) must not kill the thread: graphs stay off for good and eager
+        serving continues; an unrecoverable one also fails /healthz. Their shared buffers are released too - eager
+        passes never rebuild them, so an instance that just failed a capture for want of VRAM does not keep holding
+        the VRAM it was short of."""
+        try:
+            with self.lock: graphs.capture_pending(limit=1)
+        except Exception as e:
+            traceback.clear_frames(e.__traceback__)   # the traceback would hold the capture's tensors
+            try: graphs.release(buffers=True, final=True, why=f"a failed capture ({type(e).__name__})")
+            except Exception: graphs.disabled = True   # a release that fails too (a dead driver) still leaves graphs off
+            self.observe_error(e)
+            print(f"kev.serve: capturing a CUDA graph failed, every later pass runs eagerly: {type(e).__name__}: {e}", flush=True)
+
     def submit(self, rec):
         """Queue one record for the model thread. -> a Future of (probabilities, stats). The state prefix (tokens up to the
         first question) is cached across requests, so a repeated state only pays for its question rows. latency_ms is the
         model time of the batch the request ran in (not its wait in the queue)."""
         if self.stopping.is_set(): raise HTTPException(503, "the server is stopping")
+        if self.fatal:
+            raise HTTPException(503, f"unrecoverable accelerator error: {self.fatal}", headers={"Retry-After": "1"})
         try: enc = self.model.encode(self.tok, rec, max_state=SERVE_MAX_STATE, max_branch=SERVE_MAX_BRANCH)
         except ValueError as e: raise HTTPException(422, str(e))
         done = Future()
@@ -155,21 +197,25 @@ class Server:
             try: batch = [self.queue.get(timeout=0.05)]
             except queue.Empty:
                 if graphs is not None and graphs.capture_due(idle=True):
-                    with self.lock: graphs.capture_pending(limit=1)
+                    self._capture(graphs)
                 continue
             while len(batch) < MAX_BATCH:
                 try: batch.append(self.queue.get_nowait())
                 except queue.Empty: break
             try:
-                with self.lock: results = self._run([enc for enc, _ in batch])
+                with self.lock:   # inside the lock: a batch waiting on the image path's forward is not a wedged batch
+                    self.busy_since = time.monotonic()
+                    try: results = self._run([enc for enc, _ in batch])
+                    finally: self.busy_since = None
             except Exception as e:   # every request of the batch gets the error; the thread lives on
                 traceback.clear_frames(e.__traceback__)   # the batch's futures keep the exception, and its frames held the failed pass's tensors (142 MiB, a 3,578-token state on Kev-0.8B); the traceback keeps its lines
+                self.observe_error(e)                    # a poisoned context: /healthz fails, the platform restarts
                 results = [e] * len(batch)
             for (_, done), result in zip(batch, results):
                 (done.set_exception if isinstance(result, Exception) else done.set_result)(result)
                 self.queue.task_done()
             if graphs is not None and graphs.capture_due(idle=False):
-                with self.lock: graphs.capture_pending(limit=1)
+                self._capture(graphs)
 
     def _run(self, encs):
         """One batch through model.probs_batch, with the prefix cache. -> per request (probs, stats).
@@ -181,8 +227,9 @@ class Server:
         allocation and nothing recovered until the container restarted). After the second shed the model
         routes these passes eagerly (kev.cuda_graphs.admits), so serving continues on a card that cannot
         hold the graphs. Only a third OOM reaches the client."""
-        sync(self.device); t = time.time()
         graphs = getattr(self.model, "graphs", None)
+        self._ease_pressure(graphs)   # before the batch allocates: one that fails asynchronously poisons the context first
+        sync(self.device); t = time.time()
         for step in ("cache", "graphs", None):
             keys, cached, keep = self.prefix_cache.plan(encs)
             try: ps, prefixes = self.model.probs_batch(encs, cached, keep); break
@@ -198,6 +245,7 @@ class Server:
         sync(self.device); dt = round((time.time() - t) * 1000, 1)
         self.prefix_cache.store(keys, cached, prefixes)
         self.batches += 1; self.batched_requests += len(encs)
+        self.last_batch_at = time.monotonic()
         # per-request latency observation for kev_latency_ms_*: a request's share of the batch is
         # an honest request-level view (the batch runs as one fused pass; without separate streams
         # there is no per-row timer to read). Same state -> same number, which is exactly what a
@@ -205,6 +253,35 @@ class Server:
         self.latency.observe(dt, len(encs))
         return [([q.tolist() for q in p], {"tokens": len(enc["ids"]), "state_tokens": enc["seg"].count(0), "latency_ms": dt, "prefix_cache_hit": c is not None})
                 for enc, p, c in zip(encs, ps, cached)]
+
+    def _ease_pressure(self, graphs):
+        """Make room before a batch if the device is nearly out of free memory, shedding what only costs speed: the
+        cached states, then the CUDA graphs and their shared buffers (eager serving continues without them).
+
+        Proactive, because a full card's next allocation can fail asynchronously: on 2026-11-04 a 24 GB instance at
+        1.9 MiB free took a 719 launch failure from a host copy and the sticky error ended the instance's
+        serving for good. An OOM raised inside the batch still takes _run's ladder; this only removes the common cause.
+
+        The graphs go off for good (release(..., final=True)) rather than merely dropping their buffers: admits()
+        rebuilds released buffers for this very batch (_ensure_buffers), which would spend the headroom just made.
+        No-op off CUDA and with KEV_MIN_FREE_MIB=0."""
+        if MIN_FREE_MIB <= 0 or kind(self.device) != "cuda": return
+        try: free = free_bytes(self.device)
+        except Exception: return   # the device itself is unhappy: the batch's own path reports it
+        if free >= MIN_FREE_MIB * 2**20: return
+        before, shed = free, []
+        if self.prefix_cache.entries:
+            self.prefix_cache.clear(); empty_cache(self.device); shed.append("the cached states")
+            try: free = free_bytes(self.device)
+            except Exception: free = None
+        if (free is None or free < MIN_FREE_MIB * 2**20) and graphs is not None \
+                and getattr(graphs, "bank", None) is not None and not getattr(graphs, "disabled", False):
+            try: graphs.release(buffers=True, final=True, why="low device memory")
+            except Exception: pass   # a device that fails the shed itself: the batch's own path reports it
+            else: shed.append("the CUDA graphs")
+        if shed:   # nothing to shed is not a shed: no counter bump, no log line on every batch of a full card
+            self.pressure_sheds += 1
+            print(f"kev.serve: {before // 2**20} MiB device-free < {MIN_FREE_MIB} MiB, shed {' and '.join(shed)} before this batch", flush=True)
 
     def wait_idle(self):
         """Block until every submitted request is answered and no CUDA graph waits to be captured (benchmarks, warm-up)."""
@@ -300,6 +377,8 @@ def _probs_images(rec, refs):
     segment now holds tower rows, so a cached text-state KV would be wrong). Runs under the
     Server's lock so it never interleaves with a text batch."""
     s = server()
+    if s.fatal:   # the vision tower runs on the same poisoned context: refuse like submit does, before any work
+        raise HTTPException(503, f"unrecoverable accelerator error: {s.fatal}", headers={"Retry-After": "1"})
     if s.vision is None:
         raise HTTPException(422, "image requests need KEV_VISION=1 and a base with a vision tower")
     from .vision import decode_image
@@ -308,11 +387,15 @@ def _probs_images(rec, refs):
     except ValueError as e:
         raise HTTPException(422, str(e))
     with s.lock:
+        s._ease_pressure(getattr(s.model, "graphs", None))   # the vision pass allocates on the same nearly-full device
         sync(s.device); t = time.time()
         try:
             ps, m = s.vision.probs_with_images(rec, images, max_state=SERVE_MAX_STATE, max_branch=SERVE_MAX_BRANCH)
         except ValueError as e:
             raise HTTPException(422, str(e))
+        except Exception as e:
+            s.observe_error(e)   # the image path runs under the same device context as the batched one
+            raise
         sync(s.device); dt = time.time() - t
     s.latency.observe(dt * 1000)   # one request-level observation per image call (s = server() above)
     return [p.tolist() for p in ps], {"tokens": m["tokens"], "state_tokens": m["state_tokens"], "latency_ms": round(dt * 1000, 1), "prefix_cache_hit": False}
@@ -320,17 +403,38 @@ def _probs_images(rec, refs):
 
 @app.get("/healthz")
 def healthz():
-    """Liveness: the process is up and the model thread exists. Deep checks live at /healthz/ready.
+    """Liveness: the process is up, the model thread is running, and the instance can still serve.
 
-    A probe on /healthz alone cannot see an inference-path failure: the batched model
-    thread can be erroring every forward pass (OOM, a broken fused kernel) while every
-    GET endpoint stays 200 — exactly the 2026-09-25 production incident, where 4,288
-    /metrics polls returned 200 across a 5% hard-error window on /v1/systemone. The
-    platform's probes must therefore cover both."""
+    Self-healing failures stay at /healthz/ready, where the platform only takes the instance out of
+    traffic: a full queue (backpressure), an OOM batch that shed memory and retried, a transient error.
+    A failure no retry inside this process can clear fails HERE, so the liveness probe restarts the
+    container — the only recovery:
+      - an unrecoverable accelerator error (kev.device.unrecoverable: a sticky CUDA failure poisons the
+        whole context; every later call fails in-process);
+      - one batch in flight longer than KEV_STALL_S (a wedged model thread cannot report its own death);
+      - /healthz/ready failing for KEV_UNREADY_MAX_S with no batch completed in that window, whatever
+        the cause (a wedged thread, a broken kernel); last_batch_at keeps pure overload out of this
+        rule, because a busy instance is still completing batches.
+
+    2026-11-04: a 24 GB instance went from 29 MiB device-free to a sticky launch failure at
+    07:31, /healthz/ready answered 503 for the next 117 minutes and /healthz stayed 200 (the thread was
+    alive), so the platform neither served nor restarted it."""
     s = app.state.server if hasattr(app, "state") and hasattr(app.state, "server") else None
     if s is None or not getattr(s, "thread", None) or not s.thread.is_alive():
         return JSONResponse({"ok": False, "why": "model thread not running"}, status_code=503)
-    return {"ok": True, "model_thread_alive": True}
+    now, why = time.monotonic(), ""
+    fatal = getattr(s, "fatal", "")
+    busy_since, unready_since = getattr(s, "busy_since", None), getattr(s, "unready_since", None)
+    if fatal:
+        why = f"unrecoverable accelerator error: {fatal}"
+    elif STALL_S > 0 and busy_since is not None and now - busy_since > STALL_S:
+        why = f"one batch has been in flight for {now - busy_since:.0f}s"
+    elif UNREADY_MAX_S > 0 and unready_since is not None and now - max(unready_since, getattr(s, "last_batch_at", unready_since)) > UNREADY_MAX_S:
+        why = (f"unready for {now - unready_since:.0f}s with no batch completed for "
+               f"{now - max(unready_since, getattr(s, 'last_batch_at', unready_since)):.0f}s")
+    if why: return JSONResponse({"ok": False, "why": why}, status_code=503)
+    return {"ok": True, "model_thread_alive": True,
+            "unready_s": None if unready_since is None else round(now - unready_since, 1)}
 
 
 @app.get("/healthz/ready")
@@ -339,6 +443,13 @@ def healthz_ready():
     model thread -> batch). This is the check that "reflects the instance's serving capability": a
     CUDA OOM, a fused-kernel crash or a wedged model thread surfaces here as 503 + the error,
     while /metrics and /v1/models stay green.
+
+    Every 503 here starts the unready clock that /healthz turns into a restart after KEV_UNREADY_MAX_S,
+    including a full queue: a wedged model thread fills the queue, so the probe would otherwise only
+    ever see "queue full" and the watchdog would never fire. Pure overload does not restart anything —
+    /healthz compares the clock against the last completed batch. An answer that is not a well-formed score is a
+    503 too, not a 200 with ok: false: the platform routes on the status code, and a probe that keeps answering
+    nonsense must not clear the clock.
 
     The probe record is minimal and fixed (a short state, one two-option score question); it
     waits in the same queue as traffic, so it also reflects queue backlog. It costs one small
@@ -349,8 +460,14 @@ def healthz_ready():
                                            "questions": {"probe": {"type": "score", "instructions": "healthy?",
                                                                    "criteria": ["no", "yes"]}}})
     t0 = time.perf_counter()
+    s = app.state.server
+    ready_since = getattr(s, "unready_since", None)
+    if getattr(s, "fatal", ""):   # the inference path is gone until a restart: fail now, queue no probe pass behind it
+        if ready_since is None: s.unready_since = time.monotonic()
+        q = getattr(getattr(s, "queue", None), "qsize", lambda: -1)()
+        return JSONResponse({"ok": False, "why": f"unrecoverable accelerator error: {s.fatal}", "queued": q,
+                             "errors": METRICS["errors"]}, status_code=503)
     try:
-        s = app.state.server
         # one real inference through the same dispatch every request takes; bounded wait so a dead
         # model thread (future never completing) turns into a 503 probe failure, not a hung probe
         rec, meta = to_record(prepare(req))
@@ -359,12 +476,18 @@ def healthz_ready():
         answers = body["answers"]["probe"]
         ok = answers["type"] == "score" and answers["legend"] == {"0": "no", "1": "yes"} \
              and sum(answers["probabilities"].values()) > 0.99
+        if not ok:   # a probe pass that answers nonsense is not ready either: 200 here would clear the liveness clock
+            if getattr(s, "unready_since", None) is None: s.unready_since = time.monotonic()
+            return JSONResponse({"ok": False, "why": "the probe's answer was not a well-formed score", "queued": s.queue.qsize(),
+                                 "errors": METRICS["errors"]}, status_code=503)
+        s.unready_since = None
         return {"ok": ok, "latency_ms": body["latency_ms"], "probe_ms": round((time.perf_counter() - t0) * 1000, 1),
                 "queued": s.queue.qsize(), "capacity": getattr(s.queue, "maxsize", 0),
                 "batches": s.batches, "errors": METRICS["errors"], "refused": getattr(s, "refusals", 0)}
     except Exception as e:
         METRICS["errors"] += 1
         s = getattr(app.state, "server", None)
+        if s is not None and getattr(s, "unready_since", None) is None: s.unready_since = time.monotonic()
         q = getattr(getattr(s, "queue", None), "qsize", lambda: -1)()
         return JSONResponse({"ok": False, "why": repr(e)[:300], "queued": q,
                              "errors": METRICS["errors"]}, status_code=503)
@@ -398,6 +521,26 @@ def metrics():
         lines.append(f"kev_queue_capacity {getattr(s.queue, 'maxsize', 0)}")
         lines.append(f"kev_queue_refusals_total {getattr(s, 'refusals', 0)}")
         lines.append(f"kev_graph_sheds_total {getattr(s, 'graph_sheds', 0)}")
+        lines.append(f"kev_pressure_sheds_total {getattr(s, 'pressure_sheds', 0)}")
+        # health as gauges: 2026-11-04 had an instance serving nothing for 117 minutes while every
+        # scraped metric said "no traffic". kev_unready_seconds is 0 exactly while readiness passes.
+        lines.append(f"kev_fatal {1 if getattr(s, 'fatal', '') else 0}")
+        since = getattr(s, "unready_since", None)
+        lines.append(f"kev_unready_seconds {0 if since is None else round(time.monotonic() - since, 1)}")
+        # the CUDA graphs' own memory is the biggest non-model allocation and was invisible to a
+        # scraper before (only /v1/models JSON carried it) — the 2026-11-04 card held ~3 GiB of it
+        graphs = getattr(getattr(s, "model", None), "graphs", None)
+        st = None
+        if graphs is not None and hasattr(graphs, "stats"):
+            # stats() reads the driver (mem_get_info) and the buffers being released: a scrape during the incident
+            # these gauges exist for must not 500 and lose kev_fatal/kev_unready_seconds with it
+            try: st = graphs.stats()
+            except Exception: st = None
+        if st is not None:
+            lines += [f"kev_graph_buffers_bytes {st['buffers_mib'] * 2**20}",
+                      f"kev_graph_captured {st['captured']}", f"kev_graph_pending {st['pending']}",
+                      f"kev_graph_failed {st['failed']}", f"kev_graph_gated_total {st['gated']}",
+                      f"kev_graph_disabled {int(bool(st['disabled']))}"]
         if s.device == "cuda":
             a, r = torch.cuda.memory_allocated(), torch.cuda.memory_reserved()
             lines += [f"kev_gpu_memory_allocated_bytes {a}", f"kev_gpu_memory_reserved_bytes {r}",

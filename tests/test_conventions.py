@@ -37,6 +37,8 @@ RULES = [
      r"manifest\.json\"\)\.read_text\(\)", {"kev/suite.py"}),
     ("device selection, synchronize and empty_cache go through kev.device (the Space is a CUDA-only one-off)",
      r"is_available\(\) else|torch\.(mps|cuda)\.(synchronize|empty_cache|current_allocated_memory|max_memory_allocated)\(", {"kev/device.py", "space/app.py", "tests/test_vision.py"}),   # the full-chain tier picks its own device before touching the tower
+    ("a poisoned accelerator context is kev.device.unrecoverable, and free device memory is kev.device.free_bytes (the driver's number, not the allocator's slack)",
+     r"Sticky error|CUDA_ERROR_|torch\.cuda\.mem_get_info\(", {"kev/device.py", "tests/test_unit.py"}),   # the unit test pins the classification
     ("the isolation sibling probe is kev.experiment.ISOLATION_PROBE (fp32 mechanism check and served isolation read the same question)",
      r"CRANE-9274", {"kev/experiment.py"}),
     ("which partitions stay out of git is kev.suite.GIT_LIMIT",

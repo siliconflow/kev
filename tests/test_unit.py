@@ -422,6 +422,60 @@ def test_out_of_memory_drops_the_prefix_cache_and_retries_once():
     finally:
         s.close()
     assert out_of_memory(RuntimeError("MPS backend out of memory (MPS allocated: 1 GB)")) and not out_of_memory(RuntimeError("shape mismatch"))
+    # the health bookkeeping starts clean: nothing has failed, no batch is in flight, none has completed before this one
+    assert (s.fatal, s.unready_since, s.busy_since, s.pressure_sheds) == ("", None, None, 0)
+    assert s.last_batch_at > 0
+
+
+def test_unrecoverable_classification():
+    """kev.device.unrecoverable: a poisoned accelerator context (sticky CUDA errors) fails liveness and restarts the
+    container; OOM stays recoverable whatever its wording, because kev.serve sheds and retries it."""
+    import torch
+    from kev.device import unrecoverable
+
+    recoverable = [torch.OutOfMemoryError("CUDA out of memory. Tried to allocate 2.00 MiB."),
+                   RuntimeError("MPS backend out of memory (MPS allocated: 1 GB)"),
+                   RuntimeError("CUDA error: out of memory"),
+                   RuntimeError("CUDA graphs are off: their shared buffers could not be rebuilt after an OOM"),
+                   RuntimeError("shape mismatch"),
+                   # torch.AcceleratorError covers every checked cudaError_t, not only the sticky ones: a failed
+                   # workspace allocation and a host-side launch configuration error keep the context usable
+                   RuntimeError("CUDA error: invalid configuration argument"),
+                   RuntimeError("CUBLAS_STATUS_ALLOC_FAILED when calling `cublasCreate(handle)`")]
+    fatal = [RuntimeError("Sticky error detected"),
+             RuntimeError("Returning 719 (CUDA_ERROR_LAUNCH_FAILED) from cuMemcpyDtoHAsync_v2"),
+             RuntimeError("CUDA error: unspecified launch failure"),
+             RuntimeError("an illegal memory access was encountered"),
+             RuntimeError("device-side assert triggered"),
+             RuntimeError("CUDA error: an illegal instruction was encountered"),
+             RuntimeError("the context is destroyed")]
+    assert [unrecoverable(e) for e in recoverable] == [False] * len(recoverable)
+    assert [unrecoverable(e) for e in fatal] == [True] * len(fatal)
+    if hasattr(torch, "AcceleratorError"):     # torch >= 2.6: an empty message is still an accelerator failure
+        assert unrecoverable(torch.AcceleratorError(""))
+        assert not unrecoverable(torch.AcceleratorError("CUDA error: invalid configuration argument"))
+        assert not unrecoverable(torch.AcceleratorError("CUBLAS_STATUS_ALLOC_FAILED when calling cublasCreate(handle)"))
+
+
+def test_free_bytes_reads_the_driver_only_on_cuda(monkeypatch):
+    """kev.device.free_bytes is the driver's free-device number (not the allocator's slack), and None off CUDA."""
+    import torch
+    from kev import device
+
+    assert device.free_bytes("cpu") is None and device.free_bytes(torch.device("mps")) is None
+    monkeypatch.setattr(torch.cuda, "mem_get_info", lambda d=None: (1234, 5678))
+    assert device.free_bytes("cuda:0") == 1234
+
+
+def test_cuda_graphs_free_bytes_delegates_to_device(monkeypatch):
+    """kev.cuda_graphs._free_bytes has one home: the driver query in kev.device.free_bytes."""
+    import torch
+    from kev import cuda_graphs as G
+
+    monkeypatch.setattr(G, "free_bytes", lambda device: 4242)
+    g = object.__new__(G.CudaGraphs)
+    g.device = torch.device("cuda:0")
+    assert G.CudaGraphs._free_bytes(g) == 4242
 
 
 def test_graph_buckets_and_length_groups():

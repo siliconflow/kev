@@ -43,7 +43,7 @@ import torch
 from transformers import DynamicCache
 from transformers.cache_utils import DynamicLayer, LinearAttentionLayer
 
-from .device import empty_cache, out_of_memory, sync
+from .device import empty_cache, free_bytes, out_of_memory, sync
 
 
 def _int_env(name, default):
@@ -207,11 +207,15 @@ class CudaGraphs:
               f"KEV_GRAPH_* shrinks them on a card that cannot hold the defaults", flush=True)
 
     def buffer_mib(self):
-        """Device memory the shared bank/row buffers hold (0 once released and before a rebuild)."""
-        if not getattr(self, "bank", None) or not hasattr(self.bank, "slots"): return 0
-        n = sum(t.numel() * t.element_size() for _, flats, _ in self.bank.slots for t in flats)
-        n += sum(t.numel() * t.element_size() for _, flats, _ in self.rowbuf.slots for t in flats)
-        return (n + self.hidden.numel() * self.hidden.element_size()) // 2**20
+        """Device memory the shared bank/row buffers hold (0 once released and before a rebuild).
+
+        Reads the three buffers once into locals: release(buffers=True) drops them one by one from another thread,
+        and a /metrics scrape landing between two of those assignments must report 0, not raise AttributeError."""
+        bank, rowbuf, hidden = getattr(self, "bank", None), getattr(self, "rowbuf", None), getattr(self, "hidden", None)
+        if bank is None or rowbuf is None or hidden is None or not hasattr(bank, "slots"): return 0
+        n = sum(t.numel() * t.element_size() for _, flats, _ in bank.slots for t in flats)
+        n += sum(t.numel() * t.element_size() for _, flats, _ in rowbuf.slots for t in flats)
+        return (n + hidden.numel() * hidden.element_size()) // 2**20
 
     def _ensure_buffers(self):
         """Allocate the shared bank/row buffers if they are not resident; -> False when they cannot fit.
@@ -237,14 +241,17 @@ class CudaGraphs:
             print(f"kev.cuda_graphs: rebuilding the shared buffers failed, every later pass runs eagerly: {e}", flush=True)
             return False
 
-    def release(self, buffers=False):
+    def release(self, buffers=False, *, final=False, why="an OOM"):
         """Shed what an OOM batch could not allocate from, then retry: every captured graph and their shared
         private pool (1.47 GiB on the 2026-10-28 incident card), and with `buffers` the shared bank/row buffers
         too (~3 GiB at the defaults). Buffers are rebuilt by the next admitted pass (_ensure_buffers).
 
         A capture's private memory is freed when its last graph reference goes, so the drop is followed by
         gc.collect(); device-free is re-read after empty_cache. After GRAPH_SHEDS_MAX sheds the graphs stay
-        off for good: a card that cannot hold them serves eagerly instead of shedding, recapturing, shedding."""
+        off for good: a card that cannot hold them serves eagerly instead of shedding, recapturing, shedding.
+        final=True turns them off now regardless of that budget: a caller that knows the card has no headroom
+        (kev.serve._ease_pressure at KEV_MIN_FREE_MIB, a capture that failed) must not have the next admitted
+        pass rebuild the buffers it just freed (kev.cuda_graphs._ensure_buffers via admits)."""
         try: sync(self.device)   # a replay still in flight would fault when its pool goes
         except Exception: pass
         self.graphs.clear(); self.pending.clear(); self.eager_runs.clear(); self.failed.clear()
@@ -253,9 +260,9 @@ class CudaGraphs:
         gc.collect()
         empty_cache(self.device)
         self.sheds += 1
-        if self.sheds >= GRAPH_SHEDS_MAX:
+        if final or self.sheds >= GRAPH_SHEDS_MAX:
             self.disabled = True
-        print(f"kev.cuda_graphs: shed the graphs{' and their buffers' if buffers else ''} after an OOM "
+        print(f"kev.cuda_graphs: shed the graphs{' and their buffers' if buffers else ''} after {why} "
               f"({self.sheds}/{GRAPH_SHEDS_MAX}), {self._free_bytes() // 2**20} MiB device-free"
               f"{'; graphs stay off now' if self.disabled else ''}", flush=True)
 
@@ -304,10 +311,9 @@ class CudaGraphs:
         return max(GRAPH_MIN_FREE, tokens * GRAPH_BYTES_PER_TOKEN)
 
     def _free_bytes(self):
-        """Free VRAM as the device sees it: reserved-but-unallocated caching-allocator slack is NOT free for a
-        graph-private pool, so read device free memory, not allocator slack."""
-        free, _total = torch.cuda.mem_get_info(self.device)
-        return free
+        """Free VRAM as the driver sees it (kev.device.free_bytes): reserved-but-unallocated caching-allocator slack
+        is NOT free for a graph-private pool, so read device free memory, not allocator slack."""
+        return free_bytes(self.device)
 
     @torch.no_grad()
     def capture_pending(self, limit=None):

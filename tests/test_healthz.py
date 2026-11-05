@@ -439,3 +439,81 @@ def test_metrics_exposes_the_graph_and_health_dimensions():
         assert "kev_unready_seconds 0" in txt
     finally:
         del S.app.state.server
+
+
+def test_metrics_survives_a_failing_graph_stats():
+    """/metrics is the one endpoint that must keep answering through the incident its health gauges exist for:
+    a stats() that raises (the driver query on a destroyed context) costs the graph dimensions, not the scrape."""
+
+    from fastapi.testclient import TestClient
+    from types import SimpleNamespace
+    import kev.serve as S
+
+    def broken(): raise RuntimeError("CUDA error: the context is destroyed")
+    class MS:
+        class _T:
+            def is_alive(self): return True
+        class _Ck:
+            requested = "jaredpalmer/kev-4b"
+            class meta:
+                base = "Qwen/Qwen3.5-4B-Base"
+        checkpoint = _Ck()
+        model = SimpleNamespace(backend="torch", graphs=SimpleNamespace(stats=broken))
+        device = "cpu"
+        thread = _T()
+        class _Q:
+            def qsize(self): return 0
+            maxsize = 64
+        queue = _Q()
+        batches = 5
+        batched_requests = 9
+        prefix_cache = __import__("types").SimpleNamespace(hits=0, misses=0, size=4, min_tokens=384, entries=[])
+        pressure_sheds = 2
+        fatal = "the device context is broken"
+        unready_since = None
+
+    m = MS()
+    m.latency = S.LatencyView()
+    S.app.state.server = m
+    try:
+        r = TestClient(S.app).get("/metrics")
+        assert r.status_code == 200
+        assert "kev_fatal 1" in r.text and "kev_pressure_sheds_total 2" in r.text
+        assert "kev_graph_buffers_bytes" not in r.text
+    finally:
+        del S.app.state.server
+
+
+def test_healthz_ready_fails_on_a_malformed_probe_answer():
+    """A probe pass that answers something other than a well-formed score is not ready: 503, and the unready clock
+    keeps running (a 200 here would clear it, so the UNREADY_MAX_S restart could never fire for an instance whose
+    every answer is nonsense)."""
+
+    from concurrent.futures import Future
+    from fastapi.testclient import TestClient
+    import kev.serve as S
+
+    class Nonsense:
+        class _T:
+            def is_alive(self): return True
+        thread = _T()
+        fatal = ""
+        unready_since = None
+        queue = __import__("queue").Queue()
+        batches = 1
+        def submit(self, rec):
+            f = Future(); f.set_result(([[0.5, 0.5]], {"tokens": 9, "state_tokens": 4, "latency_ms": 3.0, "prefix_cache_hit": False}))
+            return f
+        def _body(self, req, meta, ps, m):
+            return {"model": req.model, "answers": {"probe": {"type": "noul", "legend": {"0": "no"},
+                    "probabilities": {"0": 0.5}}}, "usage": {}, "latency_ms": 3.0}
+
+    s = Nonsense()
+    S.app.state.server = s
+    try:
+        r = TestClient(S.app).get("/healthz/ready")
+        assert r.status_code == 503, r.text[:200]
+        assert r.json()["ok"] is False and "well-formed score" in r.json()["why"]
+        assert s.unready_since is not None
+    finally:
+        del S.app.state.server

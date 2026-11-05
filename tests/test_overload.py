@@ -206,16 +206,40 @@ def test_submit_refuses_after_an_unrecoverable_error():
     assert s.refusals == 0 and s.queue.qsize() == 0
 
 
+def test_image_requests_are_refused_after_an_unrecoverable_error():
+    """The vision tower runs on the same poisoned context: image requests get the same 503 + Retry-After as text
+    ones instead of a 500 out of the dead device."""
+
+    from fastapi import HTTPException
+    import kev.serve as S
+
+    class Served:
+        fatal = "the device context is broken"
+        vision = object()
+
+    S.app.state.server = Served()
+    try:
+        S._probs_images({"state": "x"}, ["data:image/png;base64,AA"])
+        raise AssertionError("an image request must be refused too")
+    except HTTPException as e:
+        assert e.status_code == 503 and "unrecoverable accelerator error" in e.detail
+        assert e.headers["Retry-After"] == "1"
+    finally:
+        del S.app.state.server
+
+
 def test_ease_pressure_sheds_cache_then_graph_buffers(monkeypatch):
     """_run sheds up front when the device is nearly out of free memory (2026-11-04: the allocation that
-    failed at 1.9 MiB free poisoned the CUDA context): the cached states first, then the graphs' shared
-    buffers. A card with room keeps both; off CUDA this never runs."""
+    failed at 1.9 MiB free poisoned the CUDA context): the cached states first, then the graphs. Graphs go off
+    for good (final=True): admits() would rebuild released buffers for this very batch and spend the headroom
+    just made. A card with room keeps both; off CUDA this never runs; nothing to shed is not a shed."""
 
     from types import SimpleNamespace
     import kev.serve as S
 
     released = []
-    graphs = SimpleNamespace(bank="bank", disabled=False, release=lambda buffers=False: released.append(buffers))
+    graphs = SimpleNamespace(bank="bank", disabled=False,
+                             release=lambda buffers=False, **kw: released.append((buffers, kw)))
     s = object.__new__(S.Server)
     s.device, s.prefix_cache, s.pressure_sheds = "cpu", S.PrefixCache(4, 0), 0
 
@@ -237,41 +261,59 @@ def test_ease_pressure_sheds_cache_then_graph_buffers(monkeypatch):
     assert not s.prefix_cache.entries and emptied == ["cuda"]    # the cache alone made room
     assert s.pressure_sheds == 1 and not released
 
-    monkeypatch.setattr(S, "free_bytes", lambda device: 10 * 2**20)   # nothing cached: the buffers go
+    monkeypatch.setattr(S, "free_bytes", lambda device: 10 * 2**20)   # nothing cached: the graphs go
     S.Server._ease_pressure(s, graphs)
-    assert released == [True] and s.pressure_sheds == 2
+    assert released == [(True, {"final": True, "why": "low device memory"})] and s.pressure_sheds == 2
     assert s.prefix_cache.oom_retries == 0            # a proactive shed is not an OOM retry
 
     released.clear()
     S.Server._ease_pressure(s, SimpleNamespace(bank=None, disabled=False, release=graphs.release))
-    assert not released                               # no resident buffers, nothing to release
+    assert not released and s.pressure_sheds == 2     # nothing left to shed: no release, no counter bump
 
     def gone(device): raise RuntimeError("the device went away")
     monkeypatch.setattr(S, "free_bytes", gone)
     S.Server._ease_pressure(s, graphs)                # the batch's own path reports it, not the pre-flight
 
+    def boom(buffers=False, **kw): raise RuntimeError("the driver went away")
+    s.pressure_sheds = 3
+    monkeypatch.setattr(S, "free_bytes", lambda device: 10 * 2**20)
+    S.Server._ease_pressure(s, SimpleNamespace(bank="bank", disabled=False, release=boom))
+    assert s.pressure_sheds == 3                      # a shed that itself failed is not counted, and does not raise
+
 
 def test_capture_failure_turns_graphs_off_without_killing_the_thread(monkeypatch):
     """A capture that escapes capture_pending's per-bucket handling must not kill the model thread: graphs
-    go off, eager serving continues, and only an unrecoverable error also fails liveness."""
+    go off for good, their buffers are released (eager passes never rebuild them), eager serving continues,
+    and only an unrecoverable error also fails liveness."""
 
     import threading
     import kev.serve as S
 
+    released = []
     class Graphs:
         disabled = False
         def capture_pending(self, limit=None): raise RuntimeError("the capture machinery broke")
+        def release(self, buffers=False, **kw):
+            released.append((buffers, kw))
+            if kw.get("final"): self.disabled = True   # CudaGraphs.release's rule: final turns them off for good
 
     s = object.__new__(S.Server)
     s.lock, s.fatal = threading.Lock(), ""
     g = Graphs()
     S.Server._capture(s, g)
     assert g.disabled is True and s.fatal == ""
+    assert released == [(True, {"final": True, "why": "a failed capture (RuntimeError)"})]
 
     monkeypatch.setattr(S, "unrecoverable", lambda e: True)
     g2 = Graphs()
     S.Server._capture(s, g2)
     assert s.fatal and "the capture machinery broke" in s.fatal
+
+    class DeadDriver(Graphs):
+        def release(self, buffers=False, **kw): raise RuntimeError("the driver is gone")
+    g3 = DeadDriver()
+    S.Server._capture(s, g3)                          # the release fails too: the thread still lives, graphs still off
+    assert g3.disabled is True
 
 
 def test_run_eases_pressure_before_the_batch(monkeypatch):

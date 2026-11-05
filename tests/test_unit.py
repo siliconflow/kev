@@ -437,7 +437,11 @@ def test_unrecoverable_classification():
                    RuntimeError("MPS backend out of memory (MPS allocated: 1 GB)"),
                    RuntimeError("CUDA error: out of memory"),
                    RuntimeError("CUDA graphs are off: their shared buffers could not be rebuilt after an OOM"),
-                   RuntimeError("shape mismatch")]
+                   RuntimeError("shape mismatch"),
+                   # torch.AcceleratorError covers every checked cudaError_t, not only the sticky ones: a failed
+                   # workspace allocation and a host-side launch configuration error keep the context usable
+                   RuntimeError("CUDA error: invalid configuration argument"),
+                   RuntimeError("CUBLAS_STATUS_ALLOC_FAILED when calling `cublasCreate(handle)`")]
     fatal = [RuntimeError("Sticky error detected"),
              RuntimeError("Returning 719 (CUDA_ERROR_LAUNCH_FAILED) from cuMemcpyDtoHAsync_v2"),
              RuntimeError("CUDA error: unspecified launch failure"),
@@ -449,6 +453,8 @@ def test_unrecoverable_classification():
     assert [unrecoverable(e) for e in fatal] == [True] * len(fatal)
     if hasattr(torch, "AcceleratorError"):     # torch >= 2.6: an empty message is still an accelerator failure
         assert unrecoverable(torch.AcceleratorError(""))
+        assert not unrecoverable(torch.AcceleratorError("CUDA error: invalid configuration argument"))
+        assert not unrecoverable(torch.AcceleratorError("CUBLAS_STATUS_ALLOC_FAILED when calling cublasCreate(handle)"))
 
 
 def test_free_bytes_reads_the_driver_only_on_cuda(monkeypatch):

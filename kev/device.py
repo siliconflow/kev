@@ -53,6 +53,10 @@ _UNRECOVERABLE = re.compile(
     r"Sticky error|CUDA_ERROR_|unspecified launch failure|illegal memory access|device-side assert|"
     r"CUDA error:|illegal instruction|context is destroyed|context has been destroyed", re.IGNORECASE)
 
+# Runtime errors that keep the context usable: a workspace allocation that failed can be shed and retried, and a
+# launch configuration only the host got wrong is that request's 500, not the instance's death.
+_RECOVERABLE_CUDA = re.compile(r"ALLOC_FAILED|invalid (configuration )?argument", re.IGNORECASE)
+
 
 def unrecoverable(e):
     """Whether a failure poisons the accelerator context: shedding and retrying cannot serve again, only a restart of
@@ -60,8 +64,11 @@ def unrecoverable(e):
 
     Out-of-memory is NOT unrecoverable even when the message says "CUDA error: out of memory": kev.serve sheds and
     retries those, and the eager path serves without the graphs. A plain RuntimeError is not either ("CUDA graphs are
-    off: ..." is one)."""
+    off: ..." is one), and neither is every torch.AcceleratorError: torch raises that one type for every checked
+    cudaError_t, including CUBLAS_STATUS_ALLOC_FAILED and "invalid configuration argument", which leave the context
+    valid - restarting the container over them would loop on a request that only deserves its own 500."""
     msg = str(e) or repr(e)
     if out_of_memory(e) or "out of memory" in msg.lower(): return False
+    if _RECOVERABLE_CUDA.search(msg): return False
     if _ACCELERATOR_ERROR is not None and isinstance(e, _ACCELERATOR_ERROR): return True
     return bool(_UNRECOVERABLE.search(msg))
